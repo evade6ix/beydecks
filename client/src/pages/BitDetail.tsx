@@ -127,7 +127,7 @@ export default function BitDetail() {
             return (
               <Link to={`/combo/${slug}`} key={i} className="block">
                 <div className="card bg-base-200 p-4 hover:shadow-md transition cursor-pointer">
-                  <p className="font-medium">{combo.blade} / {combo.ratchet}</p>
+                  <p className="font-medium">{combo.blade} / {combo.ratchet} / {readable}</p>
                   <p className="text-sm text-neutral-content">{combo.count} use{combo.count > 1 ? "s" : ""}</p>
                 </div>
               </Link>
