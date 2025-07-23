@@ -212,7 +212,6 @@ export default function Home() {
         <div className="mt-12 text-center space-y-2 opacity-60">
   <img src="/game3-logo.png" alt="Game 3 Logo" className="mx-auto h-12" />
   <p className="text-sm font-medium">Meta Beys is a Game 3 Company</p>
-  <p className="text-xs text-accent font-semibold">🚀 Test Launch</p>
 </div>
 
       </motion.div>
