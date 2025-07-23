@@ -24,14 +24,15 @@ interface Event {
   topCut?: Player[]
 }
 
-interface BladeStats {
+interface PartStats {
   name: string
   count: number
 }
 
 export default function Leaderboard() {
-  const [blades, setBlades] = useState<BladeStats[]>([])
+  const [parts, setParts] = useState<PartStats[]>([])
   const [timeframe, setTimeframe] = useState("All")
+  const [partType, setPartType] = useState<"blade" | "ratchet" | "bit">("blade")
 
   useEffect(() => {
     fetch(`${API}/events`)
@@ -59,55 +60,82 @@ export default function Leaderboard() {
           filtered = filtered.filter(e => new Date(e.endTime) >= cutoff)
         }
 
-        const bladeMap: Record<string, number> = {}
+        const partMap: Record<string, number> = {}
 
         filtered.forEach(event =>
           event.topCut?.forEach(player =>
             player.combos?.forEach(combo => {
-              const blade = combo.blade?.trim()
-              if (blade) {
-                bladeMap[blade] = (bladeMap[blade] || 0) + 1
+              const part = combo[partType]?.trim()
+              if (part) {
+                partMap[part] = (partMap[part] || 0) + 1
               }
             })
           )
         )
 
-        const sorted = Object.entries(bladeMap)
+        const sorted = Object.entries(partMap)
           .map(([name, count]) => ({ name, count }))
           .sort((a, b) => b.count - a.count)
           .slice(0, 10)
 
-        setBlades(sorted)
+        setParts(sorted)
       })
-  }, [timeframe])
+  }, [timeframe, partType])
+
+  const title = {
+    blade: "Top 10 Blades",
+    ratchet: "Top 10 Ratchets",
+    bit: "Top 10 Bits"
+  }[partType]
+
+  const detailPath = {
+    blade: "blades",
+    ratchet: "ratchets",
+    bit: "bits"
+  }[partType]
 
   return (
     <motion.div className="p-6 max-w-3xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      <h1 className="text-3xl font-bold mb-6">Top 10 Blades</h1>
+      <h1 className="text-3xl font-bold mb-6">{title}</h1>
 
-      <div className="mb-4 flex gap-4 items-center">
-        <label className="font-semibold mr-2">Timeframe:</label>
-        <select
-          className="select select-bordered"
-          value={timeframe}
-          onChange={e => setTimeframe(e.target.value)}
-        >
-          <option>All</option>
-          <option>Past Week</option>
-          <option>Past Month</option>
-          <option>Past Year</option>
-        </select>
+      <div className="mb-4 flex flex-wrap gap-4 items-center">
+        <div className="flex items-center gap-2">
+          <label className="font-semibold">Part:</label>
+          <select
+            className="select select-bordered"
+            value={partType}
+            onChange={e => setPartType(e.target.value as "blade" | "ratchet" | "bit")}
+          >
+            <option value="blade">Blade</option>
+            <option value="ratchet">Ratchet</option>
+            <option value="bit">Bit</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="font-semibold">Timeframe:</label>
+          <select
+            className="select select-bordered"
+            value={timeframe}
+            onChange={e => setTimeframe(e.target.value)}
+          >
+            <option>All</option>
+            <option>Past Week</option>
+            <option>Past Month</option>
+            <option>Past Year</option>
+          </select>
+        </div>
       </div>
 
       <div className="space-y-4">
-        {blades.map((b, idx) => (
+        {parts.map((p, idx) => (
           <Link
             key={idx}
-            to={`/blades/${encodeURIComponent(b.name)}`}
+            to={`/${detailPath}/${encodeURIComponent(p.name)}`}
             className="card bg-base-200 p-4 hover:shadow-lg transition"
           >
-            <p className="text-lg font-semibold">{b.name}</p>
-            <p className="text-sm text-neutral-content">{b.count} appearances</p>
+            <p className="text-lg font-semibold">{p.name}</p>
+            <p className="text-sm text-neutral-content">{p.count} appearances</p>
           </Link>
         ))}
       </div>
