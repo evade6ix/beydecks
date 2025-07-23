@@ -4,5 +4,20 @@
       "source": "/api/:path*",
       "destination": "https://beydecks-production.up.railway.app/api/:path*"
     }
+  ],
+  "builds": [
+    {
+      "src": "client/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/client/$1"
+    }
   ]
 }
