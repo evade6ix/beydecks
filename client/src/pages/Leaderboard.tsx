@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 
@@ -33,6 +33,12 @@ export default function Leaderboard() {
   const [parts, setParts] = useState<PartStats[]>([])
   const [timeframe, setTimeframe] = useState("All")
   const [partType, setPartType] = useState<"blade" | "ratchet" | "bit">("blade")
+  const [page, setPage] = useState(1)
+  const perPage = 10
+
+  useEffect(() => {
+    setPage(1) // Reset pagination on filter change
+  }, [timeframe, partType])
 
   useEffect(() => {
     fetch(`${API}/events`)
@@ -76,16 +82,15 @@ export default function Leaderboard() {
         const sorted = Object.entries(partMap)
           .map(([name, count]) => ({ name, count }))
           .sort((a, b) => b.count - a.count)
-          .slice(0, 10)
 
         setParts(sorted)
       })
   }, [timeframe, partType])
 
   const title = {
-    blade: "Top 10 Blades",
-    ratchet: "Top 10 Ratchets",
-    bit: "Top 10 Bits"
+    blade: "Blade Usage Leaderboard",
+    ratchet: "Ratchet Usage Leaderboard",
+    bit: "Bit Usage Leaderboard"
   }[partType]
 
   const detailPath = {
@@ -93,6 +98,9 @@ export default function Leaderboard() {
     ratchet: "ratchets",
     bit: "bits"
   }[partType]
+
+  const totalPages = Math.ceil(parts.length / perPage)
+  const paginatedParts = useMemo(() => parts.slice((page - 1) * perPage, page * perPage), [parts, page])
 
   return (
     <motion.div className="p-6 max-w-3xl mx-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -128,7 +136,7 @@ export default function Leaderboard() {
       </div>
 
       <div className="space-y-4">
-        {parts.map((p, idx) => (
+        {paginatedParts.map((p, idx) => (
           <Link
             key={idx}
             to={`/${detailPath}/${encodeURIComponent(p.name)}`}
@@ -138,7 +146,31 @@ export default function Leaderboard() {
             <p className="text-sm text-neutral-content">{p.count} appearances</p>
           </Link>
         ))}
+
+        {!paginatedParts.length && (
+          <p className="text-error text-sm">No data found for this selection.</p>
+        )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex justify-center items-center gap-3">
+          <button
+            className="btn btn-sm"
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            Prev
+          </button>
+          <span>Page {page} of {totalPages}</span>
+          <button
+            className="btn btn-sm"
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </motion.div>
   )
 }
