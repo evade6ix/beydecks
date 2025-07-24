@@ -4,7 +4,7 @@ import { Routes, Route } from "react-router-dom"
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 import ForumThread from "./pages/ForumThread"
-
+import Forum from "./pages/Forum"
 
 // ✅ Lazy load each route
 const Home = lazy(() => import("./pages/Home"))
@@ -36,26 +36,26 @@ const EditProduct = lazy(() => import("./pages/EditProduct"))
 const RatchetDetail = lazy(() => import("./pages/RatchetDetail"))
 const BitDetail = lazy(() => import("./pages/BitDetail"))
 
-
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
-  const { user, loading } = useAuth() // ✅ Grab user from context
+  const { user, loading } = useAuth()
 
   useEffect(() => {
     const loggedIn = sessionStorage.getItem("admin") === "true"
     setIsAdmin(loggedIn)
-    document.documentElement.setAttribute("data-theme", "dark") // 🚨 Force dark mode
+    document.documentElement.setAttribute("data-theme", "dark")
   }, [])
 
   return (
     <>
-      <Navbar isAdmin={isAdmin} user={user} loading={loading} /> {/* ✅ pass user to Navbar */}
+      <Navbar isAdmin={isAdmin} user={user} loading={loading} />
       <Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/completed" element={<CompletedEvents />} />
           <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/forum" element={<Forum />} />
           <Route path="/forum/:id" element={<ForumThread />} />
           <Route path="/user-auth" element={<UserAuth />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
