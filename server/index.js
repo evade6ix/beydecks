@@ -6,7 +6,9 @@ import { fileURLToPath } from "url"
 import { existsSync, mkdirSync } from "fs"
 import { connectDB } from "./mongo.js"
 import authRoutes from "./routes/auth.js"
+import forumRoutes from "./routes/forum.js"
 import dotenv from "dotenv"
+
 dotenv.config()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -26,6 +28,7 @@ const startServer = async () => {
   const { users, products, events, stores, prepDecks } = await connectDB()
 
   app.use("/api/auth", authRoutes({ users }))
+  app.use("/api/forum", forumRoutes)
 
   // === API ROUTES ===
 
@@ -268,7 +271,6 @@ const startServer = async () => {
     res.json({ analysis: scoredCombos })
   })
 
-  // ✅ SITEMAP ROUTE — must come BEFORE static files
   app.get("/sitemap.xml", async (req, res) => {
     const baseUrl = "https://www.metabeys.com"
     const allEvents = await events.find().toArray()
@@ -308,7 +310,6 @@ ${allUrls.map(u => `  <url><loc>${baseUrl}${u.loc}</loc><priority>${u.priority}<
     res.send(xml)
   })
 
-  // Serve frontend (AFTER sitemap route)
   app.use(express.static(join(__dirname, "../client/dist")))
   app.get("*", (req, res) => {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))

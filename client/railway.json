@@ -1,0 +1,10 @@
+// client/railway.json
+{
+  "build": {
+    "env": {
+      "VITE_API_URL": "beydecks-production.up.railway.app"
+    },
+    "buildCommand": "npm run build",
+    "outputDirectory": "dist"
+  }
+}
