@@ -15,7 +15,7 @@ export const connectDB = async () => {
   if (!client) {
     client = new MongoClient(MONGODB_URI)
     await client.connect()
-    db = client.db() // ✅ uses `beyblade` from URI automatically
+    db = client.db() // Uses DB from URI automatically
     console.log("✅ Connected to MongoDB")
   }
 
@@ -26,4 +26,10 @@ export const connectDB = async () => {
     stores: db.collection("stores"),
     prepDecks: db.collection("prep_decks"),
   }
+}
+
+// Add this to allow direct db access from routes like forum.js
+export const getDb = () => {
+  if (!db) throw new Error("MongoDB not connected yet")
+  return db
 }
