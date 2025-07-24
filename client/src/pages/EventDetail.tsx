@@ -173,13 +173,8 @@ export default function EventDetail() {
             </div>
 
             {event.imageUrl && (
-  <img
-    src={event.imageUrl}
-    alt={event.title}
-    className="rounded-lg w-full max-w-[1280px] h-[720px] object-contain mx-auto"
-  />
-)}
-
+              <img src={event.imageUrl} alt={event.title} className="rounded-lg max-h-80 w-full object-cover" />
+            )}
 
             <p>
               <strong>Date:</strong>{" "}
