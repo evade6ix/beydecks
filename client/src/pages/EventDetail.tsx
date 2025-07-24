@@ -155,39 +155,49 @@ export default function EventDetail() {
             )}
 
             {event.topCut && (
-              <>
-                <div className="mt-6">
-                  <h2 className="text-xl font-semibold mb-2">Top Cut Combos</h2>
-                  <div className="space-y-4">
-                    {event.topCut.map((player, idx) => (
-                      <div key={idx} className="border rounded-lg p-3 bg-base-100">
-                        <p className="font-medium">{ordinal(idx + 1)} Place – {player.name}</p>
-                        {player.combos?.length ? (
-                          <ul className="list-disc list-inside text-sm text-neutral-content">
-                            {player.combos.map((combo, i) => (
-                              <li key={i}>
-                                {combo.blade} / {combo.ratchet} / {combo.bit}
-                                {combo.notes && (
-                                  <span className="text-xs italic text-gray-400 ml-1">
-                                    Note: ({combo.notes})
-                                  </span>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-sm text-error">No combos submitted.</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="mt-10">
-                  <BladeUsagePie players={event.topCut} />
-                </div>
-              </>
+  <>
+    <div className="mt-6">
+      <h2 className="text-xl font-semibold mb-2">Top Cut Combos</h2>
+      <div className="space-y-4">
+        {event.topCut.map((player, idx) => (
+          <div key={idx} className="border rounded-lg p-3 bg-base-100">
+            <p className="font-medium">{ordinal(idx + 1)} Place – {player.name}</p>
+            {player.combos?.length ? (
+              <ul className="list-disc list-inside text-sm text-neutral-content">
+                {player.combos.map((combo, i) => (
+                  <li key={i}>
+                    {combo.blade} / {combo.ratchet} / {combo.bit}
+                    {combo.notes && (
+                      <span className="text-xs italic text-gray-400 ml-1">
+                        Note: ({combo.notes})
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-error">No combos submitted.</p>
             )}
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="mt-10">
+      <BladeUsagePie players={event.topCut} />
+    </div>
+
+        <div className="mt-6 text-center">
+      <a
+        href={`/forum/${event.id}`}
+        className="btn btn-outline btn-sm"
+      >
+        Go to Forum Discussion
+      </a>
+    </div>
+  </>
+)}
+
           </div>
         </div>
       </motion.div>

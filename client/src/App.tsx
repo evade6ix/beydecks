@@ -2,7 +2,9 @@
 import { useEffect, useState, Suspense, lazy } from "react"
 import { Routes, Route } from "react-router-dom"
 import Navbar from "./components/Navbar"
-import { useAuth } from "./context/AuthContext" // ✅ IMPORT
+import { useAuth } from "./context/AuthContext"
+import ForumThread from "./pages/ForumThread"
+
 
 // ✅ Lazy load each route
 const Home = lazy(() => import("./pages/Home"))
@@ -54,6 +56,7 @@ export default function App() {
           <Route path="/events" element={<Events />} />
           <Route path="/events/completed" element={<CompletedEvents />} />
           <Route path="/events/:id" element={<EventDetail />} />
+          <Route path="/forum/:id" element={<ForumThread />} />
           <Route path="/user-auth" element={<UserAuth />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />

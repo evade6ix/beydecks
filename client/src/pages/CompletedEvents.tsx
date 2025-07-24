@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { motion } from "framer-motion"
 import Select from "react-select"
 
@@ -27,22 +27,32 @@ interface Event {
 }
 
 export default function CompletedEvents() {
+  const [searchParams, setSearchParams] = useSearchParams()
+
   const [events, setEvents] = useState<Event[]>([])
   const [filtered, setFiltered] = useState<Event[]>([])
   const [stores, setStores] = useState<string[]>([])
-  const [selectedStore, setSelectedStore] = useState("All")
-  const [timeframe, setTimeframe] = useState("All")
-
   const [countries, setCountries] = useState<string[]>([])
   const [regions, setRegions] = useState<string[]>([])
   const [cities, setCities] = useState<string[]>([])
 
-  const [selectedCountry, setSelectedCountry] = useState("All")
-  const [selectedRegion, setSelectedRegion] = useState("All")
-  const [selectedCity, setSelectedCity] = useState("All")
+  const [selectedStore, setSelectedStore] = useState(searchParams.get("store") || "All")
+  const [timeframe, setTimeframe] = useState(searchParams.get("timeframe") || "All")
+  const [selectedCountry, setSelectedCountry] = useState(searchParams.get("country") || "All")
+  const [selectedRegion, setSelectedRegion] = useState(searchParams.get("region") || "All")
+  const [selectedCity, setSelectedCity] = useState(searchParams.get("city") || "All")
+  const [currentPage, setCurrentPage] = useState(Number(searchParams.get("page")) || 1)
 
-  const [currentPage, setCurrentPage] = useState(1)
   const eventsPerPage = 9
+
+  const updateSearch = (key: string, value: string) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev)
+      newParams.set(key, value)
+      if (key !== "page") newParams.set("page", "1") // reset page if changing filters
+      return newParams
+    })
+  }
 
   useEffect(() => {
     fetch(`${API}/events`)
@@ -108,7 +118,6 @@ export default function CompletedEvents() {
 
     result.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
     setFiltered(result)
-    setCurrentPage(1)
   }, [events, selectedStore, selectedCountry, selectedRegion, selectedCity, timeframe])
 
   const indexOfLast = currentPage * eventsPerPage
@@ -141,18 +150,16 @@ export default function CompletedEvents() {
       color: "#f9fafb"
     }),
     menu: (base: any) => ({
-  ...base,
-  backgroundColor: "#1f2937",
-  maxHeight: 150,
-  overflowY: "auto",
-  scrollbarWidth: "thin", // optional: better appearance in Firefox
-  msOverflowStyle: "auto", // Edge support
-}),
-menuList: (base: any) => ({
-  ...base,
-  maxHeight: 150,
-  overflowY: "auto",
-}),
+      ...base,
+      backgroundColor: "#1f2937",
+      maxHeight: 150,
+      overflowY: "auto",
+    }),
+    menuList: (base: any) => ({
+      ...base,
+      maxHeight: 150,
+      overflowY: "auto",
+    }),
     option: (base: any, state: any) => ({
       ...base,
       backgroundColor: state.isFocused ? "#374151" : "#1f2937",
@@ -164,9 +171,8 @@ menuList: (base: any) => ({
   return (
     <motion.div className="p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <h1 className="text-3xl font-bold mb-4">
-  Completed Events <span className="text-sm font-normal text-gray-400">({filtered.length} total)</span>
-</h1>
-
+        Completed Events <span className="text-sm font-normal text-gray-400">({filtered.length} total)</span>
+      </h1>
 
       <div className="flex flex-wrap gap-4 mb-6">
         <div className="w-64">
@@ -174,7 +180,11 @@ menuList: (base: any) => ({
           <Select
             options={toOptions(stores)}
             value={{ label: selectedStore, value: selectedStore }}
-            onChange={opt => setSelectedStore(opt?.value || "All")}
+            onChange={opt => {
+              const val = opt?.value || "All"
+              setSelectedStore(val)
+              updateSearch("store", val)
+            }}
             theme={selectTheme}
             styles={selectStyles}
           />
@@ -185,7 +195,11 @@ menuList: (base: any) => ({
           <Select
             options={toOptions(countries)}
             value={{ label: selectedCountry, value: selectedCountry }}
-            onChange={opt => setSelectedCountry(opt?.value || "All")}
+            onChange={opt => {
+              const val = opt?.value || "All"
+              setSelectedCountry(val)
+              updateSearch("country", val)
+            }}
             theme={selectTheme}
             styles={selectStyles}
           />
@@ -199,7 +213,11 @@ menuList: (base: any) => ({
           <Select
             options={toOptions(regions)}
             value={{ label: selectedRegion, value: selectedRegion }}
-            onChange={opt => setSelectedRegion(opt?.value || "All")}
+            onChange={opt => {
+              const val = opt?.value || "All"
+              setSelectedRegion(val)
+              updateSearch("region", val)
+            }}
             isDisabled={selectedCountry === "All"}
             theme={selectTheme}
             styles={selectStyles}
@@ -214,7 +232,11 @@ menuList: (base: any) => ({
           <Select
             options={toOptions(cities)}
             value={{ label: selectedCity, value: selectedCity }}
-            onChange={opt => setSelectedCity(opt?.value || "All")}
+            onChange={opt => {
+              const val = opt?.value || "All"
+              setSelectedCity(val)
+              updateSearch("city", val)
+            }}
             isDisabled={selectedCountry === "All"}
             theme={selectTheme}
             styles={selectStyles}
@@ -226,7 +248,11 @@ menuList: (base: any) => ({
           <Select
             options={toOptions(["All", "This Year", "Last 30 Days"])}
             value={{ label: timeframe, value: timeframe }}
-            onChange={opt => setTimeframe(opt?.value || "All")}
+            onChange={opt => {
+              const val = opt?.value || "All"
+              setTimeframe(val)
+              updateSearch("timeframe", val)
+            }}
             theme={selectTheme}
             styles={selectStyles}
           />
@@ -240,19 +266,16 @@ menuList: (base: any) => ({
               <h2 className="card-title">{event.title}</h2>
               <p className="text-sm">{new Date(event.startTime).toLocaleDateString()}</p>
               <p className="text-sm">@ {event.store}</p>
-
               {(event.city || event.region || event.country) && (
                 <p className="text-sm text-neutral-content">
                   📍 {[event.city, event.region, event.country].filter(Boolean).join(", ")}
                 </p>
               )}
-
               {event.attendeeCount !== undefined && (
                 <p className="text-sm text-neutral-content">
                   {event.attendeeCount} players attended
                 </p>
               )}
-
               <div className="card-actions justify-end">
                 <Link to={`/events/${event.id}`} className="btn btn-secondary btn-sm">View</Link>
               </div>
@@ -266,7 +289,10 @@ menuList: (base: any) => ({
           <button
             className="btn btn-sm"
             disabled={currentPage === 1}
-            onClick={() => setCurrentPage(prev => prev - 1)}
+            onClick={() => {
+              setCurrentPage(prev => prev - 1)
+              updateSearch("page", String(currentPage - 1))
+            }}
           >
             ◀ Prev
           </button>
@@ -276,7 +302,10 @@ menuList: (base: any) => ({
           <button
             className="btn btn-sm"
             disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage(prev => prev + 1)}
+            onClick={() => {
+              setCurrentPage(prev => prev + 1)
+              updateSearch("page", String(currentPage + 1))
+            }}
           >
             Next ▶
           </button>

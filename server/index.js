@@ -7,6 +7,7 @@ import { existsSync, mkdirSync } from "fs"
 import { connectDB } from "./mongo.js"
 import authRoutes from "./routes/auth.js"
 import dotenv from "dotenv"
+import forumRoutes from "./routes/forum.js"
 dotenv.config()
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -23,9 +24,12 @@ const startServer = async () => {
   app.use(express.json({ limit: "10mb" }))
   app.use(fileUpload())
 
+
   const { users, products, events, stores, prepDecks } = await connectDB()
 
   app.use("/api/auth", authRoutes({ users }))
+
+  app.use("/api/forum", forumRoutes)
 
   // === API ROUTES ===
 
