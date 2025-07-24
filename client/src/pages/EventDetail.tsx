@@ -156,7 +156,7 @@ export default function EventDetail() {
       </Helmet>
 
       <motion.div
-        className="p-6 max-w-3xl mx-auto"
+        className="p-6 max-w-7xl mx-auto"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -253,7 +253,7 @@ export default function EventDetail() {
             )}
 
             {/* Forum Discussion Section */}
-            <div className="mt-10 max-w-3xl mx-auto bg-gray-900 p-6 rounded-lg shadow-lg text-gray-100">
+            <div className="mt-10 max-w-full bg-gray-900 p-6 rounded-lg shadow-lg text-gray-100">
               <h2 className="text-2xl font-bold mb-6 border-b border-gray-700 pb-3">Event Discussion</h2>
 
               {loadingPosts ? (
@@ -288,7 +288,7 @@ export default function EventDetail() {
                   You must <Link to="/user-auth" className="text-indigo-500 underline">log in</Link> to post.
                 </p>
               ) : (
-                <>
+                <section className="mt-4">
                   <textarea
                     className="w-full min-h-[100px] p-3 rounded-md bg-gray-800 text-gray-100 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
                     placeholder="Write your message here..."
@@ -307,7 +307,7 @@ export default function EventDetail() {
                   >
                     {submittingPost ? "Submitting..." : "Submit"}
                   </button>
-                </>
+                </section>
               )}
             </div>
           </div>
