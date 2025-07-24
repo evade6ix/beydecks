@@ -173,8 +173,16 @@ export default function EventDetail() {
             </div>
 
             {event.imageUrl && (
-              <img src={event.imageUrl} alt={event.title} className="rounded-lg max-h-80 w-full object-cover" />
+              <div className="relative w-full max-w-[1280px] mx-auto aspect-[16/9] rounded-lg overflow-hidden">
+                <img
+                  src={event.imageUrl}
+                  alt={event.title}
+                  className="absolute inset-0 w-full h-full object-cover"
+                  loading="lazy"
+                />
+              </div>
             )}
+
 
             <p>
               <strong>Date:</strong>{" "}
