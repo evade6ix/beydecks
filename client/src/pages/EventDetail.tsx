@@ -156,7 +156,7 @@ export default function EventDetail() {
       </Helmet>
 
       <motion.div
-        className="p-6 max-w-7xl mx-auto"
+        className="p-6 max-w-5xl mx-auto"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
