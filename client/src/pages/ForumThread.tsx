@@ -23,24 +23,40 @@ export default function ForumThread() {
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
-    setLoading(true)
-    fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`)
-      .then(async (res) => {
-        if (res.status === 404) {
-          setThread({
-            event_id: parseInt(id || ""),
-            title: `Discussion for Event ${id}`,
-            posts: [],
-          })
-          return
-        }
-        if (!res.ok) throw new Error("Failed to fetch thread")
-        const data = await res.json()
-        setThread(data)
-      })
-      .catch(() => setThread(null))
-      .finally(() => setLoading(false))
-  }, [id])
+  setLoading(true)
+  
+  const fetchData = async () => {
+    try {
+      // Try to fetch forum thread
+      const forumRes = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`)
+      
+      if (forumRes.status === 404) {
+        // If no forum thread, fetch event info
+        const eventRes = await fetch(`${import.meta.env.VITE_API_URL}/events/${id}`)
+        if (!eventRes.ok) throw new Error("Event not found")
+        const eventData = await eventRes.json()
+        
+        setThread({
+          event_id: parseInt(id || ""),
+          title: eventData.title || `Discussion for Event ${id}`,
+          posts: [],
+        })
+      } else if (!forumRes.ok) {
+        throw new Error("Failed to fetch forum thread")
+      } else {
+        const forumData = await forumRes.json()
+        setThread(forumData)
+      }
+    } catch {
+      setThread(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  fetchData()
+}, [id])
+
 
   const submitPost = async () => {
     if (!user) return
