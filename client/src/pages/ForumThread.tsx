@@ -62,29 +62,24 @@ export default function ForumThread() {
     if (!content.trim()) return
 
     setSubmitting(true)
+let imageBase64 = ""
+if (selectedImage) {
+  try {
+    const reader = new FileReader()
+    const fileAsBase64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(reader.result as string)
+      reader.onerror = reject
+      reader.readAsDataURL(selectedImage)
+    })
+    imageBase64 = fileAsBase64
+  } catch (err) {
+    console.error("Base64 encode failed:", err)
+    alert("Failed to read image.")
+    setSubmitting(false)
+    return
+  }
+}
 
-    let imageUrl = ""
-    if (selectedImage) {
-      try {
-        const formData = new FormData()
-        formData.append("file", selectedImage) // ✅ correct field name
-
-        const uploadRes = await fetch(`${import.meta.env.VITE_API_URL}/upload`, {
-          method: "POST",
-          body: formData,
-        })
-
-        if (!uploadRes.ok) throw new Error("Image upload failed")
-
-        const data = await uploadRes.json()
-        imageUrl = data.url
-      } catch (err) {
-        console.error("Image upload error:", err)
-        alert("Failed to upload image.")
-        setSubmitting(false)
-        return
-      }
-    }
 
     const res = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`, {
   method: "POST",
@@ -92,7 +87,7 @@ export default function ForumThread() {
   body: JSON.stringify({
     username: user.username || "Anonymous",
     content,
-    image: imageUrl || undefined,
+    image: imageBase64 || undefined,
   }),
 })
 
@@ -110,7 +105,7 @@ export default function ForumThread() {
             {
               username: user.username || "Anonymous",
               content,
-              image: imageUrl || undefined,
+              image: imageBase64 || undefined,
               timestamp: new Date().toISOString(),
             },
           ],
@@ -150,7 +145,7 @@ export default function ForumThread() {
               <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
               {post.image && (
                 <img
-                  src={`${import.meta.env.VITE_API_URL}${post.image}`}
+                  src={post.image}
                   alt="Attached"
                   className="rounded-lg mt-2 max-h-80 object-contain"
                 />

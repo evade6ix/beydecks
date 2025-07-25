@@ -311,8 +311,6 @@ ${allUrls.map(u => `  <url><loc>${baseUrl}${u.loc}</loc><priority>${u.priority}<
   })
 }
 
-app.use("/api/upload", uploadRoute)
-
 startServer().catch(err => {
   console.error("❌ Failed to start:", err)
   process.exit(1)
