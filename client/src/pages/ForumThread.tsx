@@ -62,34 +62,33 @@ export default function ForumThread() {
     if (!content.trim()) return
 
     setSubmitting(true)
-let imageBase64 = ""
-if (selectedImage) {
-  try {
-    const reader = new FileReader()
-    const fileAsBase64 = await new Promise<string>((resolve, reject) => {
-      reader.onload = () => resolve(reader.result as string)
-      reader.onerror = reject
-      reader.readAsDataURL(selectedImage)
-    })
-    imageBase64 = fileAsBase64
-  } catch (err) {
-    console.error("Base64 encode failed:", err)
-    alert("Failed to read image.")
-    setSubmitting(false)
-    return
-  }
-}
-
+    let imageBase64 = ""
+    if (selectedImage) {
+      try {
+        const reader = new FileReader()
+        const fileAsBase64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(selectedImage)
+        })
+        imageBase64 = fileAsBase64
+      } catch (err) {
+        console.error("Base64 encode failed:", err)
+        alert("Failed to read image.")
+        setSubmitting(false)
+        return
+      }
+    }
 
     const res = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    username: user.username || "Anonymous",
-    content,
-    image: imageBase64 || undefined,
-  }),
-})
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: user.username || "Anonymous",
+        content,
+        image: imageBase64 || undefined,
+      }),
+    })
 
     setSubmitting(false)
 
@@ -116,6 +115,34 @@ if (selectedImage) {
     }
   }
 
+  const deletePost = async (idx: number) => {
+    if (!user) return
+    if (!thread) return
+
+    const confirmDelete = window.confirm("Are you sure you want to delete this post?")
+    if (!confirmDelete) return
+
+    const res = await fetch(
+      `${import.meta.env.VITE_API_URL}/forum/${id}/post/${idx}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user.username }),
+      }
+    )
+
+    if (res.ok) {
+      setThread((prev) => {
+        if (!prev) return prev
+        const newPosts = [...prev.posts]
+        newPosts.splice(idx, 1)
+        return { ...prev, posts: newPosts }
+      })
+    } else {
+      alert("Failed to delete post.")
+    }
+  }
+
   if (loading || authLoading)
     return <p className="p-4 text-center text-gray-300">Loading...</p>
   if (!thread)
@@ -134,13 +161,23 @@ if (selectedImage) {
             >
               <header className="flex justify-between items-center mb-2">
                 <h3 className="font-semibold text-indigo-400">{post.username}</h3>
-                <time
-                  className="text-xs text-gray-400"
-                  dateTime={post.timestamp}
-                  title={new Date(post.timestamp).toLocaleString()}
-                >
-                  {new Date(post.timestamp).toLocaleDateString()}
-                </time>
+                <div className="flex items-center gap-2">
+                  <time
+                    className="text-xs text-gray-400"
+                    dateTime={post.timestamp}
+                    title={new Date(post.timestamp).toLocaleString()}
+                  >
+                    {new Date(post.timestamp).toLocaleDateString()}
+                  </time>
+                  {user?.username === post.username && (
+                    <button
+                      onClick={() => deletePost(idx)}
+                      className="text-xs text-red-500 underline hover:text-red-400"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </div>
               </header>
               <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
               {post.image && (
@@ -150,7 +187,6 @@ if (selectedImage) {
                   className="rounded-lg mt-2 max-h-80 object-contain"
                 />
               )}
-
             </article>
           ))
         ) : (

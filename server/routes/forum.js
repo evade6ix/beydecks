@@ -59,4 +59,29 @@ router.post("/:eventId", async (req, res) => {
   }
 })
 
+// 🧹 DELETE a specific post by its index (must match username)
+router.delete("/:eventId/post/:index", async (req, res) => {
+  const db = await getDb()
+  const { eventId, index } = req.params
+  const { username } = req.body
+
+  const thread = await db.collection("forum").findOne({ event_id: parseInt(eventId) })
+  if (!thread) return res.status(404).json({ message: "Thread not found" })
+
+  const post = thread.posts[parseInt(index)]
+  if (!post) return res.status(404).json({ message: "Post not found" })
+  if (post.username !== username) {
+    return res.status(403).json({ message: "Unauthorized – only author can delete this post" })
+  }
+
+  thread.posts.splice(index, 1)
+
+  await db.collection("forum").updateOne(
+    { event_id: parseInt(eventId) },
+    { $set: { posts: thread.posts } }
+  )
+
+  res.json({ message: "Post deleted" })
+})
+
 export default router
