@@ -6,6 +6,7 @@ interface Post {
   username: string
   content: string
   timestamp: string
+  image?: string
 }
 
 interface Thread {
@@ -21,64 +22,97 @@ export default function ForumThread() {
   const [content, setContent] = useState("")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
 
   useEffect(() => {
-  setLoading(true)
-  
-  const fetchData = async () => {
-    try {
-      // Try to fetch forum thread
-      const forumRes = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`)
-      
-      if (forumRes.status === 404) {
-        // If no forum thread, fetch event info
-        const eventRes = await fetch(`${import.meta.env.VITE_API_URL}/events/${id}`)
-        if (!eventRes.ok) throw new Error("Event not found")
-        const eventData = await eventRes.json()
-        
-        setThread({
-          event_id: parseInt(id || ""),
-          title: eventData.title || `Discussion for Event ${id}`,
-          posts: [],
-        })
-      } else if (!forumRes.ok) {
-        throw new Error("Failed to fetch forum thread")
-      } else {
-        const forumData = await forumRes.json()
-        setThread(forumData)
-      }
-    } catch {
-      setThread(null)
-    } finally {
-      setLoading(false)
-    }
-  }
-  
-  fetchData()
-}, [id])
+    setLoading(true)
 
+    const fetchData = async () => {
+      try {
+        const forumRes = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`)
+
+        if (forumRes.status === 404) {
+          const eventRes = await fetch(`${import.meta.env.VITE_API_URL}/events/${id}`)
+          if (!eventRes.ok) throw new Error("Event not found")
+          const eventData = await eventRes.json()
+
+          setThread({
+            event_id: parseInt(id || ""),
+            title: eventData.title || `Discussion for Event ${id}`,
+            posts: [],
+          })
+        } else if (!forumRes.ok) {
+          throw new Error("Failed to fetch forum thread")
+        } else {
+          const forumData = await forumRes.json()
+          setThread(forumData)
+        }
+      } catch {
+        setThread(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [id])
 
   const submitPost = async () => {
     if (!user) return
     if (!content.trim()) return
 
     setSubmitting(true)
+
+    let imageUrl = ""
+    if (selectedImage) {
+      try {
+        const formData = new FormData()
+        formData.append("file", selectedImage)
+
+        const uploadRes = await fetch(`${import.meta.env.VITE_API_URL}/upload-image`, {
+          method: "POST",
+          body: formData,
+        })
+
+        if (!uploadRes.ok) throw new Error("Image upload failed")
+
+        const data = await uploadRes.json()
+        imageUrl = data.url
+      } catch (err) {
+        console.error("Image upload error:", err)
+        alert("Failed to upload image.")
+        setSubmitting(false)
+        return
+      }
+    }
+
     const res = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user.username || "Anonymous", content }),
+      body: JSON.stringify({
+        username: user.username || "Anonymous",
+        content,
+        image: imageUrl || undefined,
+      }),
     })
+
     setSubmitting(false)
 
     if (res.ok) {
       setContent("")
+      setSelectedImage(null)
       setThread((prev) => {
         if (!prev) return prev
         return {
           ...prev,
           posts: [
             ...prev.posts,
-            { username: user.username || "Anonymous", content, timestamp: new Date().toISOString() },
+            {
+              username: user.username || "Anonymous",
+              content,
+              image: imageUrl || undefined,
+              timestamp: new Date().toISOString(),
+            },
           ],
         }
       })
@@ -87,8 +121,10 @@ export default function ForumThread() {
     }
   }
 
-  if (loading || authLoading) return <p className="p-4 text-center text-gray-300">Loading...</p>
-  if (!thread) return <p className="p-4 text-center text-red-600">Thread not found.</p>
+  if (loading || authLoading)
+    return <p className="p-4 text-center text-gray-300">Loading...</p>
+  if (!thread)
+    return <p className="p-4 text-center text-red-600">Thread not found.</p>
 
   return (
     <div className="max-w-3xl mx-auto p-6 bg-gray-900 rounded-lg shadow-lg text-gray-100">
@@ -111,18 +147,30 @@ export default function ForumThread() {
                   {new Date(post.timestamp).toLocaleDateString()}
                 </time>
               </header>
-              <p className="whitespace-pre-wrap text-gray-200">{post.content}</p>
+              <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
+              {post.image && (
+                <img
+                  src={post.image}
+                  alt="Attached"
+                  className="rounded-lg mt-2 max-h-80 object-contain"
+                />
+              )}
             </article>
           ))
         ) : (
-          <p className="text-gray-500 italic text-center">No posts yet. Be the first to start the discussion!</p>
+          <p className="text-gray-500 italic text-center">
+            No posts yet. Be the first to start the discussion!
+          </p>
         )}
       </div>
 
       {!user ? (
         <p className="text-center text-red-600 font-semibold">
           You must{" "}
-          <Link to="/user-auth" className="text-indigo-500 underline hover:text-indigo-400 transition">
+          <Link
+            to="/user-auth"
+            className="text-indigo-500 underline hover:text-indigo-400 transition"
+          >
             log in
           </Link>{" "}
           to post.
@@ -137,6 +185,22 @@ export default function ForumThread() {
             onChange={(e) => setContent(e.target.value)}
             disabled={submitting}
           />
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              Attach Image (optional)
+            </label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  setSelectedImage(e.target.files[0])
+                }
+              }}
+              className="block w-full text-sm text-gray-300 file:bg-indigo-600 file:border-none file:px-4 file:py-2 file:rounded-md file:text-white file:cursor-pointer"
+            />
+          </div>
+
           <button
             onClick={submitPost}
             disabled={submitting || !content.trim()}
@@ -153,4 +217,3 @@ export default function ForumThread() {
     </div>
   )
 }
-
