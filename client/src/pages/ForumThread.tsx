@@ -67,8 +67,7 @@ export default function ForumThread() {
     if (selectedImage) {
       try {
         const formData = new FormData()
-        formData.append("image", selectedImage)
-
+        formData.append("file", selectedImage) // ✅ correct field name
 
         const uploadRes = await fetch(`${import.meta.env.VITE_API_URL}/upload`, {
           method: "POST",
