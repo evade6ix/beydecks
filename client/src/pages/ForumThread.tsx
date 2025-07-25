@@ -87,14 +87,14 @@ export default function ForumThread() {
     }
 
     const res = await fetch(`${import.meta.env.VITE_API_URL}/forum/${id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: user.username || "Anonymous",
-        content,
-        image: imageUrl || undefined,
-      }),
-    })
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    username: user.username || "Anonymous",
+    content,
+    image: imageUrl || undefined,
+  }),
+})
 
     setSubmitting(false)
 
@@ -150,11 +150,12 @@ export default function ForumThread() {
               <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
               {post.image && (
                 <img
-                  src={post.image}
+                  src={`${import.meta.env.VITE_API_URL}${post.image}`}
                   alt="Attached"
                   className="rounded-lg mt-2 max-h-80 object-contain"
                 />
               )}
+
             </article>
           ))
         ) : (

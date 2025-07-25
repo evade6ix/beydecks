@@ -8,6 +8,7 @@ import { connectDB } from "./mongo.js"
 import authRoutes from "./routes/auth.js"
 import forumRoutes from "./routes/forum.js"
 import dotenv from "dotenv"
+import uploadRoute from "./routes/upload.js"
 
 dotenv.config()
 
@@ -129,16 +130,6 @@ const startServer = async () => {
     const result = await products.deleteOne({ id: parseInt(req.params.id) })
     if (result.deletedCount === 0) return res.status(404).send("Product not found")
     res.status(204).send()
-  })
-
-  app.post("/api/upload", (req, res) => {
-    const file = req.files?.image
-    if (!file) return res.status(400).send("No file uploaded")
-    const savePath = join(uploadDir, file.name)
-    file.mv(savePath, err => {
-      if (err) return res.status(500).send("Upload failed")
-      res.json({ path: `/uploads/${file.name}` })
-    })
   })
 
   app.post("/users/:id/combos", async (req, res) => {
@@ -319,6 +310,8 @@ ${allUrls.map(u => `  <url><loc>${baseUrl}${u.loc}</loc><priority>${u.priority}<
     console.log("✅ Backend + frontend running at: http://localhost:" + port)
   })
 }
+
+app.use("/api/upload", uploadRoute)
 
 startServer().catch(err => {
   console.error("❌ Failed to start:", err)
