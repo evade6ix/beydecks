@@ -5,7 +5,7 @@ import { CalendarPlus } from "lucide-react"
 import { toast } from "react-hot-toast"
 import { Helmet } from "react-helmet-async"
 import BladeUsagePie from "../components/BladeUsagePie"
-import { useAuth } from "../context/AuthContext" // Adjust if needed
+import { useAuth } from "../context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -34,6 +34,7 @@ interface Post {
   username: string
   content: string
   timestamp: string
+  image?: string
 }
 
 function ordinal(n: number) {
@@ -50,6 +51,7 @@ export default function EventDetail() {
   const [postContent, setPostContent] = useState("")
   const [loadingPosts, setLoadingPosts] = useState(true)
   const [submittingPost, setSubmittingPost] = useState(false)
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
 
   useEffect(() => {
     fetch(`${API}/events/${id}`)
@@ -85,21 +87,72 @@ export default function EventDetail() {
     if (!user || !postContent.trim()) return
 
     setSubmittingPost(true)
+
+    let imageBase64 = ""
+    if (selectedImage) {
+      try {
+        const reader = new FileReader()
+        imageBase64 = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(selectedImage)
+        })
+      } catch (err) {
+        console.error("Base64 encode failed:", err)
+        alert("Failed to read image.")
+        setSubmittingPost(false)
+        return
+      }
+    }
+
     const res = await fetch(`${API}/forum/${event?.id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username: user.username || "Anonymous", content: postContent }),
+      body: JSON.stringify({
+        username: user.username || "Anonymous",
+        content: postContent,
+        image: imageBase64 || undefined,
+      }),
     })
     setSubmittingPost(false)
 
     if (res.ok) {
       setPostContent("")
+      setSelectedImage(null)
       setPosts((prev) => [
         ...prev,
-        { username: user.username || "Anonymous", content: postContent, timestamp: new Date().toISOString() },
+        {
+          username: user.username || "Anonymous",
+          content: postContent,
+          image: imageBase64 || undefined,
+          timestamp: new Date().toISOString(),
+        },
       ])
     } else {
       alert("Failed to submit post. Please try again.")
+    }
+  }
+
+  const deletePost = async (idx: number) => {
+    if (!user || !event) return
+
+    const confirmDelete = window.confirm("Are you sure you want to delete this post?")
+    if (!confirmDelete) return
+
+    const res = await fetch(`${API}/forum/${event.id}/post/${idx}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: user.username }),
+    })
+
+    if (res.ok) {
+      setPosts((prev) => {
+        const newPosts = [...prev]
+        newPosts.splice(idx, 1)
+        return newPosts
+      })
+    } else {
+      alert("Failed to delete post.")
     }
   }
 
@@ -182,7 +235,6 @@ export default function EventDetail() {
                 />
               </div>
             )}
-
 
             <p>
               <strong>Date:</strong>{" "}
@@ -275,17 +327,34 @@ export default function EventDetail() {
                       key={i}
                       className="bg-gray-800 p-4 rounded-lg shadow-md hover:bg-gray-700 transition"
                     >
-                      <header className="flex justify-between mb-1">
+                      <header className="flex justify-between items-center mb-1">
                         <span className="font-semibold text-indigo-400">{post.username}</span>
-                        <time
-                          className="text-xs text-gray-400"
-                          dateTime={post.timestamp}
-                          title={new Date(post.timestamp).toLocaleString()}
-                        >
-                          {new Date(post.timestamp).toLocaleDateString()}
-                        </time>
+                        <div className="flex items-center gap-2">
+                          <time
+                            className="text-xs text-gray-400"
+                            dateTime={post.timestamp}
+                            title={new Date(post.timestamp).toLocaleString()}
+                          >
+                            {new Date(post.timestamp).toLocaleDateString()}
+                          </time>
+                          {user?.username === post.username && (
+                            <button
+                              onClick={() => deletePost(i)}
+                              className="text-xs text-red-500 underline hover:text-red-400"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </header>
-                      <p className="whitespace-pre-wrap text-gray-200">{post.content}</p>
+                      <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
+                      {post.image && (
+                        <img
+                          src={post.image}
+                          alt="Attached"
+                          className="rounded-lg mt-2 max-h-80 object-contain"
+                        />
+                      )}
                     </article>
                   ))}
                 </div>
@@ -297,6 +366,16 @@ export default function EventDetail() {
                 </p>
               ) : (
                 <section className="mt-4">
+                  <label className="block text-sm font-medium mb-1">Attach Image (optional)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) setSelectedImage(e.target.files[0])
+                    }}
+                    className="block w-full text-sm text-gray-300 file:bg-indigo-600 file:border-none file:px-4 file:py-2 file:rounded-md file:text-white file:cursor-pointer mb-4"
+                  />
+
                   <textarea
                     className="w-full min-h-[100px] p-3 rounded-md bg-gray-800 text-gray-100 border border-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
                     placeholder="Write your message here..."
