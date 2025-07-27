@@ -1,4 +1,3 @@
-// File: src/pages/Home.tsx
 import { useEffect, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
@@ -210,10 +209,8 @@ export default function Home() {
         </div>
 
         <div className="mt-12 text-center space-y-2 opacity-60">
-  <img src="/game3-logo.png" alt="Game 3 Logo" className="mx-auto h-12" />
-  <p className="text-sm font-medium">Meta Beys is a Game 3 Company</p>
-</div>
-
+          <p className="text-sm font-medium">Metabeys is owned by @Aysus and @Karl6ix</p>
+        </div>
       </motion.div>
     </>
   )
