@@ -134,6 +134,7 @@ if (res.ok) {
 } else {
   alert("Failed to submit post. Please try again.")
 }
+}
 
 
   const deletePost = async (idx: number) => {
@@ -413,5 +414,4 @@ if (res.ok) {
       </motion.div>
     </>
   )
-}
 }
