@@ -117,22 +117,24 @@ export default function EventDetail() {
     })
     setSubmittingPost(false)
 
-    if (res.ok) {
-      setPostContent("")
-      setSelectedImage(null)
-      setPosts((prev) => [
-        ...prev,
-        {
-          username: user.username || "Anonymous",
-          content: postContent,
-          image: imageBase64 || undefined,
-          timestamp: new Date().toISOString(),
-        },
-      ])
-    } else {
-      alert("Failed to submit post. Please try again.")
-    }
-  }
+    setSubmittingPost(false)
+
+if (res.ok) {
+  setPostContent("")
+  setSelectedImage(null)
+
+  // Re-fetch posts so your own badge is included
+  fetch(`${API}/forum/${event?.id}`)
+    .then(async (res) => {
+      if (res.ok) {
+        const data = await res.json()
+        setPosts(data.posts || [])
+      }
+    })
+} else {
+  alert("Failed to submit post. Please try again.")
+}
+
 
   const deletePost = async (idx: number) => {
     if (!user || !event) return
@@ -411,4 +413,5 @@ export default function EventDetail() {
       </motion.div>
     </>
   )
+}
 }
