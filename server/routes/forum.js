@@ -20,7 +20,18 @@ router.get("/:eventId", async (req, res) => {
   const db = await getDb()
   const thread = await db.collection("forum").findOne({ event_id: parseInt(req.params.eventId) })
   if (!thread) return res.status(404).json({ message: "Thread not found" })
-  res.json(thread)
+
+  const usersCollection = db.collection("users")
+
+  const enrichedPosts = await Promise.all(
+    (thread.posts || []).map(async (post) => {
+      const user = await usersCollection.findOne({ username: post.username })
+      const badge = user?.badge || null
+      return { ...post, badge }
+    })
+  )
+
+  res.json({ ...thread, posts: enrichedPosts })
 })
 
 router.post("/:eventId", async (req, res) => {

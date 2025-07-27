@@ -35,6 +35,7 @@ interface Post {
   content: string
   timestamp: string
   image?: string
+  badge?: string
 }
 
 function ordinal(n: number) {
@@ -328,25 +329,33 @@ export default function EventDetail() {
                       className="bg-gray-800 p-4 rounded-lg shadow-md hover:bg-gray-700 transition"
                     >
                       <header className="flex justify-between items-center mb-1">
-                        <span className="font-semibold text-indigo-400">{post.username}</span>
-                        <div className="flex items-center gap-2">
-                          <time
-                            className="text-xs text-gray-400"
-                            dateTime={post.timestamp}
-                            title={new Date(post.timestamp).toLocaleString()}
-                          >
-                            {new Date(post.timestamp).toLocaleDateString()}
-                          </time>
-                          {user?.username === post.username && (
-                            <button
-                              onClick={() => deletePost(i)}
-                              className="text-xs text-red-500 underline hover:text-red-400"
-                            >
-                              Delete
-                            </button>
-                          )}
-                        </div>
-                      </header>
+  <div className="flex items-center gap-2 flex-wrap">
+    <span className="font-semibold text-indigo-400">{post.username}</span>
+    {post.badge && (
+      <span className="text-xs text-yellow-400 bg-yellow-900 px-2 py-0.5 rounded-full">
+        {post.badge}
+      </span>
+    )}
+  </div>
+  <div className="flex items-center gap-2">
+    <time
+      className="text-xs text-gray-400"
+      dateTime={post.timestamp}
+      title={new Date(post.timestamp).toLocaleString()}
+    >
+      {new Date(post.timestamp).toLocaleDateString()}
+    </time>
+    {user?.username === post.username && (
+      <button
+        onClick={() => deletePost(i)}
+        className="text-xs text-red-500 underline hover:text-red-400"
+      >
+        Delete
+      </button>
+    )}
+  </div>
+</header>
+
                       <p className="whitespace-pre-wrap text-gray-200 mb-2">{post.content}</p>
                       {post.image && (
                         <img
