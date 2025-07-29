@@ -49,14 +49,14 @@ let assistBlade: string | undefined = undefined
 let ratchet = ""
 let bit = ""
 
-// 4-part combo (blade + assistBlade + ratchet + bit)
-if (parts.length >= 5) {
+// 4-part combo only if user came from AssistBlade page
+if (isFromAssist && parts.length >= 5) {
   bit = normalize(parts[parts.length - 1])
   ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
   assistBlade = normalize(parts[parts.length - 4])
   blade = normalize(parts.slice(0, parts.length - 4).join("-"))
 } else {
-  // 3-part combo
+  // 3-part combo (no assist)
   bit = normalize(parts[parts.length - 1])
   ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
   blade = normalize(parts.slice(0, parts.length - 3).join("-"))
