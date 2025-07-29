@@ -29,6 +29,7 @@ interface Player {
 
 interface Combo {
   blade: string
+  assistBlade?: string
   ratchet: string
   bit: string
   notes?: string
@@ -255,13 +256,16 @@ export default function Admin() {
             <div key={i} className="space-y-2 border rounded p-2">
               <input className="input input-sm w-full" placeholder="Player Name" value={p.name} onChange={e => updatePlayerName(i, e.target.value)} />
               {p.combos.map((c, j) => (
-                <div key={j} className="grid md:grid-cols-4 gap-2">
+                <div key={j} className="grid md:grid-cols-5 gap-2">
                   <input className="input input-sm" placeholder="Blade" value={c.blade} onChange={e => updateTopCutCombo(i, j, "blade", e.target.value)} />
+                  <input className="input input-sm" placeholder="Assist Blade (optional)" value={c.assistBlade ?? ""} onChange={e => updateTopCutCombo(i, j, "assistBlade", e.target.value)} />
                   <input className="input input-sm" placeholder="Ratchet" value={c.ratchet} onChange={e => updateTopCutCombo(i, j, "ratchet", e.target.value)} />
                   <input className="input input-sm" placeholder="Bit" value={c.bit} onChange={e => updateTopCutCombo(i, j, "bit", e.target.value)} />
                   <input className="input input-sm" placeholder="Notes" value={c.notes ?? ""} onChange={e => updateTopCutCombo(i, j, "notes", e.target.value)} />
                 </div>
               ))}
+
+
               <button className="btn btn-outline btn-xs" onClick={() => addCombo(i)}>Add Combo</button>
               <button className="btn btn-error btn-xs" onClick={() => removeTopCutPlayer(i)}>Remove Player</button>
             </div>

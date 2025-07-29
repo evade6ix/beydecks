@@ -27,7 +27,7 @@ interface Event {
 
 interface Player {
   name: string
-  combos: { blade: string; ratchet: string; bit: string; notes?: string }[]
+  combos: { blade: string; assistBlade?: string, ratchet: string; bit: string; notes?: string }[]
 }
 
 interface Post {
@@ -297,10 +297,16 @@ if (res.ok) {
                           <ul className="list-disc list-inside text-sm text-neutral-content">
                             {player.combos.map((combo, i) => (
                               <li key={i}>
-                                {combo.blade} / {combo.ratchet} / {combo.bit}
-                                {combo.notes && <span className="text-xs italic text-gray-400 ml-1">Note: ({combo.notes})</span>}
+                                {combo.blade}
+                                {combo.assistBlade && ` / ${combo.assistBlade}`}
+                                {` / ${combo.ratchet} / ${combo.bit}`}
+                                {combo.notes && (
+                                  <span className="text-xs italic text-gray-400 ml-1">Note: ({combo.notes})</span>
+                                )}
                               </li>
+
                             ))}
+
                           </ul>
                         ) : (
                           <p className="text-sm text-error">No combos submitted.</p>
