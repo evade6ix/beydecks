@@ -1,5 +1,6 @@
+// File: src/pages/AssistDetail.tsx
 import { useParams, Link } from "react-router-dom"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Helmet } from "react-helmet-async"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -17,7 +18,7 @@ interface Player {
 }
 
 interface Event {
-  id: number | string
+  id: number
   title: string
   startTime: string
   endTime: string
@@ -34,6 +35,8 @@ export default function AssistDetail() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [timeframe, setTimeframe] = useState("All")
+
+  const normName = normalize(name || "")
 
   useEffect(() => {
     fetch(`${API}/events`)
@@ -61,42 +64,40 @@ export default function AssistDetail() {
           filtered = filtered.filter(e => new Date(e.endTime) >= cutoff)
         }
 
-        const matched = filtered.filter(event =>
+        const matching = filtered.filter(event =>
           event.topCut?.some(player =>
-            player.combos?.some(combo => normalize(combo.assistBlade || "") === name)
+            player.combos?.some(combo =>
+              normalize(combo.assistBlade || "") === normName
+            )
           )
         )
 
-        setEvents(matched)
+        setEvents(matching)
         setLoading(false)
       })
   }, [name, timeframe])
 
   const paginatedEvents = useMemo(() => {
-    const start = (page - 1) * 10
-    return events.slice(start, start + 10)
+    const perPage = 10
+    return events.slice((page - 1) * perPage, page * perPage)
   }, [events, page])
 
-  const totalPages = Math.ceil(events.length / 10)
-
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-3xl mx-auto">
       <Helmet>
-        <title>{name?.replace(/-/g, " ")} - Assist Blade Usage</title>
+        <title>{name} Assist Blade - Usage</title>
       </Helmet>
 
-      <h1 className="text-3xl font-bold mb-6 capitalize">
-        Assist Blade: {name?.replace(/-/g, " ")}
-      </h1>
+      <h1 className="text-3xl font-bold mb-4">Assist Blade: {name}</h1>
 
-      <div className="mb-4 flex gap-2">
-        <label className="font-semibold">Timeframe:</label>
+      <div className="mb-4">
+        <label className="mr-2 font-semibold">Timeframe:</label>
         <select
           className="select select-bordered"
           value={timeframe}
           onChange={e => {
-            setPage(1)
             setTimeframe(e.target.value)
+            setPage(1)
           }}
         >
           <option>All</option>
@@ -107,38 +108,40 @@ export default function AssistDetail() {
       </div>
 
       {loading ? (
-        <p>Loading events...</p>
-      ) : paginatedEvents.length === 0 ? (
+        <p>Loading...</p>
+      ) : !paginatedEvents.length ? (
         <p className="text-error">No events found using this assist blade.</p>
       ) : (
         <div className="space-y-4">
-          {paginatedEvents.map(event => (
+          {paginatedEvents.map((event, idx) => (
             <Link
-              key={event.id}
               to={`/events/${event.id}`}
-              className="card bg-base-200 p-4 hover:shadow transition block"
+              key={idx}
+              className="block p-4 border border-base-300 rounded-lg hover:shadow-md transition"
             >
-              <h2 className="text-xl font-semibold mb-1">{event.title}</h2>
-              <p className="text-sm text-neutral-content">{new Date(event.endTime).toLocaleDateString()} @ {event.store}</p>
+              <p className="text-lg font-bold">{event.title}</p>
+              <p className="text-sm text-neutral-content">
+                {new Date(event.endTime).toLocaleDateString()} — {event.store}
+              </p>
             </Link>
           ))}
         </div>
       )}
 
-      {totalPages > 1 && (
-        <div className="mt-6 flex justify-center gap-3 items-center">
+      {events.length > 10 && (
+        <div className="mt-6 flex justify-center items-center gap-3">
           <button
             className="btn btn-sm"
-            disabled={page === 1}
             onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
           >
             Prev
           </button>
-          <span>Page {page} of {totalPages}</span>
+          <span>Page {page}</span>
           <button
             className="btn btn-sm"
-            disabled={page === totalPages}
-            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            onClick={() => setPage(p => p + 1)}
+            disabled={page * 10 >= events.length}
           >
             Next
           </button>
