@@ -133,7 +133,7 @@ export default function Landing() {
         <section className="bg-base-100 text-base-content py-20 px-6">
           <div className="max-w-6xl mx-auto text-center mb-10">
             <h2 className="text-4xl font-bold">Top Performing Meta Combos</h2>
-            <p className="text-neutral-600 mt-2">These unique combos have dominated the most tournaments</p>
+            <p className="text-neutral-600 mt-2">Top team to run right now — proven by real tournament data. You're welcome</p>
             <div className="text-sm text-neutral-600 mt-4">
               <label htmlFor="timeframe" className="mr-2 font-medium">View:</label>
               <select
