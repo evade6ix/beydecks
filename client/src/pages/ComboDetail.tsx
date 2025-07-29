@@ -6,7 +6,6 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
 interface Combo {
   blade: string
-  assistBlade?: string
   ratchet: string
   bit: string
 }
@@ -36,41 +35,27 @@ export default function ComboDetail() {
   const [timeframe, setTimeframe] = useState("All")
   const perPage = 5
 
-  const [matchedCombo, setMatchedCombo] = useState<Combo | null>(null)
+  if (!slug) return <div>No combo found</div>
+
+  const parts = decodeURIComponent(slug).toLowerCase().split("-")
+  const bit = normalize(parts[parts.length - 1])
+  const ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
+  const blade = normalize(parts.slice(0, parts.length - 3).join("-"))
 
   useEffect(() => {
     fetch(`${API}/events`)
       .then(res => res.json())
-      .then(data => {
-        setEvents(data)
-
-        for (const event of data) {
-          for (const player of event.topCut || []) {
-            for (const combo of player.combos) {
-              const generatedSlug = [
-                normalize(combo.blade),
-                combo.assistBlade ? normalize(combo.assistBlade) : null,
-                normalize(combo.ratchet),
-                normalize(combo.bit),
-              ]
-                .filter(Boolean)
-                .join("-")
-
-              if (generatedSlug === slug) {
-                setMatchedCombo(combo)
-                return
-              }
-            }
-          }
-        }
-      })
+      .then(setEvents)
       .catch(err => console.error("❌ Failed to fetch events:", err))
       .finally(() => setLoading(false))
-  }, [slug])
+  }, [])
+
+  const matchesCombo = (combo: Combo) =>
+    normalize(combo.blade) === blade &&
+    normalize(combo.ratchet) === ratchet &&
+    normalize(combo.bit) === bit
 
   const groupedResults = useMemo(() => {
-    if (!matchedCombo) return []
-
     const now = new Date()
     let filteredEvents = [...events]
 
@@ -105,16 +90,7 @@ export default function ComboDetail() {
       let count = 0
       for (const player of event.topCut) {
         for (const combo of player.combos) {
-          const comboSlug = [
-            normalize(combo.blade),
-            combo.assistBlade ? normalize(combo.assistBlade) : null,
-            normalize(combo.ratchet),
-            normalize(combo.bit),
-          ]
-            .filter(Boolean)
-            .join("-")
-
-          if (comboSlug === slug) {
+          if (matchesCombo(combo)) {
             count++
           }
         }
@@ -126,22 +102,21 @@ export default function ComboDetail() {
           eventTitle: event.title,
           date: event.startTime,
           store: event.store,
-          count,
+          count
         })
       }
     }
 
     return grouped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [events, slug, timeframe, matchedCombo])
+  }, [events, blade, ratchet, bit, timeframe])
 
   const totalPages = Math.ceil(groupedResults.length / perPage)
   const paginated = groupedResults.slice((page - 1) * perPage, page * perPage)
 
   const readable = {
-    blade: matchedCombo?.blade || "",
-    assistBlade: matchedCombo?.assistBlade || "",
-    ratchet: matchedCombo?.ratchet || "",
-    bit: matchedCombo?.bit || "",
+    blade: blade.replace(/-/g, " "),
+    ratchet: ratchet.replace(/-/g, " "),
+    bit: bit.replace(/-/g, " ")
   }
 
   return (
@@ -152,14 +127,19 @@ export default function ComboDetail() {
           name="description"
           content={`Explore tournament appearances and event data for the ${readable.blade} / ${readable.ratchet} / ${readable.bit} Beyblade X combo.`}
         />
+        <meta property="og:title" content={`${readable.blade} / ${readable.ratchet} / ${readable.bit} — Meta Beys`} />
+        <meta
+          property="og:description"
+          content={`View how the ${readable.blade}, ${readable.ratchet}, and ${readable.bit} combo performs in competitive Beyblade X tournaments.`}
+        />
+        <meta property="og:url" content={`https://www.metabeys.com/combo/${slug}`} />
+        <meta name="robots" content="index, follow" />
       </Helmet>
 
       <div className="p-6 max-w-4xl mx-auto space-y-6">
         <div>
+          <h1 className="text-3xl font-bold mb-2">Combo Details</h1>
           <p><strong>Blade:</strong> {readable.blade}</p>
-          {matchedCombo?.assistBlade && (
-            <p><strong>Assist Blade:</strong> {readable.assistBlade}</p>
-          )}
           <p><strong>Ratchet:</strong> {readable.ratchet}</p>
           <p><strong>Bit:</strong> {readable.bit}</p>
         </div>
