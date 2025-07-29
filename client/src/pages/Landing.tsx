@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import { Trophy, CalendarCheck, PieChart, ShoppingCart, MapPin } from "lucide-react"
 import { Helmet } from "react-helmet-async"
+import { Typewriter } from "react-simple-typewriter"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -92,7 +93,20 @@ export default function Landing() {
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.2 }}
           >
-            Track the <span className="text-accent">Meta</span> of Beyblade X
+            Track the{" "}
+            <span className="text-accent">
+              <Typewriter
+                words={["Meta", "Stats", "Parts", "Comps", "Decks"]}
+                loop={true}
+                cursor
+                cursorStyle="|"
+                typeSpeed={80}
+                deleteSpeed={40}
+                delaySpeed={1200}
+            />
+
+            </span>{" "}
+            of Beyblade X
           </motion.h1>
           <motion.p
             className="text-lg text-neutral-300 max-w-2xl mx-auto"
@@ -112,6 +126,7 @@ export default function Landing() {
             <Link to="/user-auth" className="btn btn-outline btn-lg">Join Today</Link>
           </motion.div>
         </section>
+
 
         {/* FEATURES */}
         <section className="bg-base-100 text-base-content py-20 px-6">
