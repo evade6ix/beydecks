@@ -1,4 +1,5 @@
 import { useParams, Link } from "react-router-dom"
+import { useLocation } from "react-router-dom"
 import { useEffect, useMemo, useState } from "react"
 import { Helmet } from "react-helmet-async"
 
@@ -31,6 +32,8 @@ const normalize = (str: string) =>
 
 export default function ComboDetail() {
   const { slug } = useParams()
+  const location = useLocation()
+  const isFromAssist = new URLSearchParams(location.search).get("source") === "assist"
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -180,10 +183,15 @@ if (parts.length >= 5) {
       <div className="p-6 max-w-4xl mx-auto space-y-6">
   <div>
     <h1 className="text-3xl font-bold mb-2">Combo Details</h1>
+    {isFromAssist ? (
+  <>
     <p><strong>Blade:</strong> {readable.blade}</p>
-    {readable.assistBlade && (
-      <p><strong>Assist Blade:</strong> {readable.assistBlade}</p>
-    )}
+    {readable.assistBlade && <p><strong>Assist Blade:</strong> {readable.assistBlade}</p>}
+  </>
+) : (
+  <p><strong>Blade:</strong> {readable.assistBlade ? `${readable.blade} ${readable.assistBlade}` : readable.blade}</p>
+)}
+
     <p><strong>Ratchet:</strong> {readable.ratchet}</p>
     <p><strong>Bit:</strong> {readable.bit}</p>
   </div>
