@@ -4,6 +4,12 @@ import { motion } from "framer-motion"
 import { Trophy, CalendarCheck, PieChart, ShoppingCart, MapPin } from "lucide-react"
 import { Helmet } from "react-helmet-async"
 import { Typewriter } from "react-simple-typewriter"
+import { Swiper, SwiperSlide } from "swiper/react"
+import { Pagination, Autoplay } from "swiper/modules"
+import "swiper/css"
+import "swiper/css/pagination"
+
+
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -17,7 +23,7 @@ export default function Landing() {
   useEffect(() => {
     fetch(`${API}/events`)
       .then(res => res.json())
-      .then((data: { topCut?: { combos?: { blade: string; ratchet: string; bit: string }[] }[], startTime?: string, date?: string }[]) => {
+      .then((data: any[]) => {
         const now = new Date()
         const filteredEvents = data.filter(event => {
           const eventDate = new Date(event.startTime || event.date || 0)
@@ -33,8 +39,8 @@ export default function Landing() {
         let totalCombos = 0
 
         filteredEvents.forEach(event => {
-          event.topCut?.forEach(player => {
-            player.combos?.forEach(combo => {
+          (event.topCut || []).forEach((player: { combos?: { blade: string; ratchet: string; bit: string }[] }) => {
+            (player.combos || []).forEach((combo: { blade: string; ratchet: string; bit: string }) => {
               const key = `${combo.blade}|||${combo.ratchet}|||${combo.bit}`
               if (comboMap.has(key)) {
                 comboMap.get(key)!.count++
@@ -79,54 +85,24 @@ export default function Landing() {
         <meta property="og:image" content="/favicon.png" />
       </Helmet>
 
-      <motion.div
-        className="min-h-screen bg-gradient-to-br from-[#0f172a] to-[#1e293b] text-white"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-      >
+      <motion.div className="min-h-screen bg-gradient-to-br from-[#0f172a] to-[#1e293b] text-white" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         {/* HERO */}
         <section className="px-6 py-20 max-w-6xl mx-auto text-center space-y-6">
-          <motion.h1
-            className="text-5xl sm:text-6xl font-extrabold tracking-tight"
-            initial={{ y: -20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.2 }}
-          >
+          <motion.h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight" initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             Track the{" "}
             <span className="text-accent">
-              <Typewriter
-                words={["Meta", "Stats", "Parts", "Comps", "Decks"]}
-                loop={true}
-                cursor
-                cursorStyle="|"
-                typeSpeed={80}
-                deleteSpeed={40}
-                delaySpeed={1200}
-            />
-
+              <Typewriter words={["Meta", "Stats", "Parts", "Comps", "Decks"]} loop cursor cursorStyle="|" typeSpeed={80} deleteSpeed={40} delaySpeed={1200} />
             </span>{" "}
             of Beyblade X
           </motion.h1>
-          <motion.p
-            className="text-lg text-neutral-300 max-w-2xl mx-auto"
-            initial={{ y: -10, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.4 }}
-          >
+          <motion.p className="text-lg text-neutral-300 max-w-2xl mx-auto" initial={{ y: -10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
             Discover top-performing combos, upcoming tournaments, and buy from verified vendors — all in one platform.
           </motion.p>
-          <motion.div
-            className="flex justify-center gap-4 mt-6"
-            initial={{ y: 10, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 0.6 }}
-          >
+          <motion.div className="flex justify-center gap-4 mt-6" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6 }}>
             <Link to="/home" className="btn btn-primary btn-lg">Enter MetaBeys</Link>
             <Link to="/user-auth" className="btn btn-outline btn-lg">Join Today</Link>
           </motion.div>
         </section>
-
 
         {/* FEATURES */}
         <section className="bg-base-100 text-base-content py-20 px-6">
@@ -192,6 +168,67 @@ export default function Landing() {
                 <motion.span initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>{storeCount}+</motion.span><br />
                 <span className="text-base text-neutral-300 text-sm font-medium">Stores Listed</span>
               </div>
+            </div>
+          </div>
+        </section>
+
+         {/* REVIEWS */}
+        <section className="bg-white text-gray-900 py-20 px-6">
+          <div className="max-w-6xl mx-auto text-center mb-16">
+            <h2 className="text-4xl font-bold">What Players & Stores Are Saying</h2>
+            <p className="text-gray-600 mt-2">Real feedback from real members of the community</p>
+          </div>
+          <div className="max-w-3xl mx-auto">
+            <Swiper
+              modules={[Autoplay, Pagination]}
+              autoplay={{ delay: 5000 }}
+              pagination={{ clickable: true }}
+              loop={true}
+              spaceBetween={30}
+            >
+              <SwiperSlide>
+                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
+                  <p className="text-lg font-medium mb-2">“I used MetaBeys to make my deck & won my first tournament!”</p>
+                  <span className="text-sm text-gray-500">– Competitive Player</span>
+                </blockquote>
+              </SwiperSlide>
+              <SwiperSlide>
+                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
+                  <p className="text-lg font-medium mb-2">“Filtering by location is insanely helpful for locals & meta building.”</p>
+                  <span className="text-sm text-gray-500">– Regional Champion</span>
+                </blockquote>
+              </SwiperSlide>
+              <SwiperSlide>
+                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
+                  <p className="text-lg font-medium mb-2">“Our store uses MetaBeys to upload every event. It’s streamlined & professional.”</p>
+                  <span className="text-sm text-gray-500">– Store Owner</span>
+                </blockquote>
+              </SwiperSlide>
+              <SwiperSlide>
+                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
+                  <p className="text-lg font-medium mb-2">“It's helped me teach newer players by showing them top cut history visually.”</p>
+                  <span className="text-sm text-gray-500">– Event Organizer</span>
+                </blockquote>
+              </SwiperSlide>
+            </Swiper>
+          </div>
+        </section>
+
+        {/* STORE ONBOARDING */}
+        <section className="bg-base-100 text-base-content py-20 px-6">
+          <div className="max-w-5xl mx-auto text-center space-y-6">
+            <h2 className="text-4xl font-bold">Partner With MetaBeys</h2>
+            <p className="text-neutral-600">We’re actively onboarding stores. All features are <strong>100% free</strong> during beta.</p>
+
+            <div className="bg-white text-left p-8 rounded-xl shadow-md space-y-6">
+              <h3 className="text-2xl font-semibold text-black">Free Plan (Beta Access)</h3>
+              <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                <li>Your store will be listed with logo, location, and Google Maps.</li>
+                <li>Your products will link to relevant top combos.</li>
+                <li>Events will show up in the global calendar & completed results.</li>
+                <li>Submit: Event Name, Date, Buy Link, Top Cut Decklists.</li>
+              </ul>
+              <p className="text-gray-800 font-medium">Interested? Email us at <a href="mailto:info@game3.ca" className="text-accent underline">info@game3.ca</a></p>
             </div>
           </div>
         </section>
