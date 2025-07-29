@@ -9,8 +9,6 @@ import { Pagination, Autoplay } from "swiper/modules"
 import "swiper/css"
 import "swiper/css/pagination"
 
-
-
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
 export default function Landing() {
@@ -88,6 +86,15 @@ export default function Landing() {
       <motion.div className="min-h-screen bg-gradient-to-br from-[#0f172a] to-[#1e293b] text-white" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
         {/* HERO */}
         <section className="px-6 py-20 max-w-6xl mx-auto text-center space-y-6">
+          <motion.img
+            src="/logos/logoclear.png"
+            alt="MetaBeys Logo"
+            className="h-28 mx-auto drop-shadow-xl" // ← updated from h-20
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          />
+
           <motion.h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight" initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
             Track the{" "}
             <span className="text-accent">
@@ -95,14 +102,17 @@ export default function Landing() {
             </span>{" "}
             of Beyblade X
           </motion.h1>
+
           <motion.p className="text-lg text-neutral-300 max-w-2xl mx-auto" initial={{ y: -10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
             Discover top-performing combos, upcoming tournaments, and buy from verified vendors — all in one platform.
           </motion.p>
+
           <motion.div className="flex justify-center gap-4 mt-6" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6 }}>
             <Link to="/home" className="btn btn-primary btn-lg">Enter MetaBeys</Link>
             <Link to="/user-auth" className="btn btn-outline btn-lg">Join Today</Link>
           </motion.div>
         </section>
+
 
         {/* FEATURES */}
         <section className="bg-base-100 text-base-content py-20 px-6">
