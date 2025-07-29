@@ -41,7 +41,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
 
           {dropdownOpen && (
             <ul className="absolute left-0 mt-2 z-50 p-4 bg-base-200 rounded-box w-64 space-y-2 shadow-lg">
-              <li className="py-2"><Link to="/" onClick={closeMenu}>Home</Link></li>
+              <li className="py-2"><Link to="/home" onClick={closeMenu}>Home</Link></li>
               <li className="py-2"><Link to={accountLinkPath} onClick={closeMenu}>{accountLinkText}</Link></li>
               <li className="py-2"><Link to="/Contact" onClick={closeMenu}>Contact</Link></li>
               <li className="py-2"><Link to="/Shop" onClick={closeMenu}>Shop</Link></li>
@@ -61,7 +61,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
 
         {/* ✅ LOGO + DISCORD ICON */}
         <div className="flex items-center space-x-3 overflow-hidden shrink-0 z-10 relative">
-          <Link to="/">
+          <Link to="/home">
             <img
               src="/newhoriz.png"
               alt="Meta Beys Logo"
@@ -85,7 +85,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
 
       <div className="navbar-center hidden lg:flex">
         <ul className="menu menu-horizontal px-1 gap-2">
-          <li><Link to="/">Home</Link></li>
+          <li><Link to="/home">Home</Link></li>
           <li><Link to={accountLinkPath}>{accountLinkText}</Link></li>
           <li><Link to="/Contact">Contact</Link></li>
           <li><Link to="/Shop">Shop</Link></li>
