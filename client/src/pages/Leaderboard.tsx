@@ -6,6 +6,7 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
 interface Combo {
   blade: string
+  assistBlade?: string
   ratchet: string
   bit: string
 }
@@ -32,7 +33,7 @@ interface PartStats {
 export default function Leaderboard() {
   const [parts, setParts] = useState<PartStats[]>([])
   const [timeframe, setTimeframe] = useState("All")
-  const [partType, setPartType] = useState<"blade" | "ratchet" | "bit">("blade")
+  const [partType, setPartType] = useState<"blade" | "assistBlade" | "ratchet" | "bit">("blade")
   const [page, setPage] = useState(1)
   const perPage = 10
 
@@ -89,12 +90,14 @@ export default function Leaderboard() {
 
   const title = {
     blade: "Blade Usage Leaderboard",
+    assistBlade: "Assist Blade Usage Leaderboard",
     ratchet: "Ratchet Usage Leaderboard",
     bit: "Bit Usage Leaderboard"
   }[partType]
 
   const detailPath = {
     blade: "blades",
+    assistBlade: "assist-blades",
     ratchet: "ratchets",
     bit: "bits"
   }[partType]
@@ -112,12 +115,14 @@ export default function Leaderboard() {
           <select
             className="select select-bordered"
             value={partType}
-            onChange={e => setPartType(e.target.value as "blade" | "ratchet" | "bit")}
+            onChange={e => setPartType(e.target.value as "blade" | "assistBlade" | "ratchet" | "bit")}
           >
             <option value="blade">Blade</option>
+            <option value="assistBlade">Assist Blade</option>
             <option value="ratchet">Ratchet</option>
             <option value="bit">Bit</option>
           </select>
+
         </div>
 
         <div className="flex items-center gap-2">
