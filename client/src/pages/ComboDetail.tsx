@@ -143,19 +143,39 @@ if (parts.length >= 5) {
   return (
     <>
       <Helmet>
-        <title>{`${readable.blade} / ${readable.ratchet} / ${readable.bit} — Combo Stats | Meta Beys`}</title>
-        <meta
-          name="description"
-          content={`Explore tournament appearances and event data for the ${readable.blade} / ${readable.ratchet} / ${readable.bit} Beyblade X combo.`}
-        />
-        <meta property="og:title" content={`${readable.blade} / ${readable.ratchet} / ${readable.bit} — Meta Beys`} />
-        <meta
-          property="og:description"
-          content={`View how the ${readable.blade}, ${readable.ratchet}, and ${readable.bit} combo performs in competitive Beyblade X tournaments.`}
-        />
-        <meta property="og:url" content={`https://www.metabeys.com/combo/${slug}`} />
-        <meta name="robots" content="index, follow" />
-      </Helmet>
+  <title>
+    {assistBlade
+      ? `${readable.blade} + ${readable.assistBlade} / ${readable.ratchet} / ${readable.bit} — Combo Stats | Meta Beys`
+      : `${readable.blade} / ${readable.ratchet} / ${readable.bit} — Combo Stats | Meta Beys`}
+  </title>
+  <meta
+    name="description"
+    content={
+      assistBlade
+        ? `Explore tournament appearances and event data for the ${readable.blade} + ${readable.assistBlade} / ${readable.ratchet} / ${readable.bit} Beyblade X combo.`
+        : `Explore tournament appearances and event data for the ${readable.blade} / ${readable.ratchet} / ${readable.bit} Beyblade X combo.`
+    }
+  />
+  <meta
+    property="og:title"
+    content={
+      assistBlade
+        ? `${readable.blade} + ${readable.assistBlade} / ${readable.ratchet} / ${readable.bit} — Meta Beys`
+        : `${readable.blade} / ${readable.ratchet} / ${readable.bit} — Meta Beys`
+    }
+  />
+  <meta
+    property="og:description"
+    content={
+      assistBlade
+        ? `View how the ${readable.blade}, ${readable.assistBlade}, ${readable.ratchet}, and ${readable.bit} combo performs in competitive Beyblade X tournaments.`
+        : `View how the ${readable.blade}, ${readable.ratchet}, and ${readable.bit} combo performs in competitive Beyblade X tournaments.`
+    }
+  />
+  <meta property="og:url" content={`https://www.metabeys.com/combo/${slug}`} />
+  <meta name="robots" content="index, follow" />
+</Helmet>
+
 
       <div className="p-6 max-w-4xl mx-auto space-y-6">
   <div>
