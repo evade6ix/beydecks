@@ -8,7 +8,9 @@ interface Combo {
   blade: string
   ratchet: string
   bit: string
+  assistBlade?: string
 }
+
 
 interface Player {
   name: string
@@ -37,10 +39,26 @@ export default function ComboDetail() {
 
   if (!slug) return <div>No combo found</div>
 
-  const parts = decodeURIComponent(slug).toLowerCase().split("-")
-  const bit = normalize(parts[parts.length - 1])
-  const ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
-  const blade = normalize(parts.slice(0, parts.length - 3).join("-"))
+ const parts = decodeURIComponent(slug).toLowerCase().split("-")
+
+let blade = ""
+let assistBlade: string | undefined = undefined
+let ratchet = ""
+let bit = ""
+
+// 4-part combo (blade + assistBlade + ratchet + bit)
+if (parts.length >= 5) {
+  bit = normalize(parts[parts.length - 1])
+  ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
+  assistBlade = normalize(parts[parts.length - 4])
+  blade = normalize(parts.slice(0, parts.length - 4).join("-"))
+} else {
+  // 3-part combo
+  bit = normalize(parts[parts.length - 1])
+  ratchet = normalize(parts.slice(parts.length - 3, parts.length - 1).join("-"))
+  blade = normalize(parts.slice(0, parts.length - 3).join("-"))
+}
+
 
   useEffect(() => {
     fetch(`${API}/events`)
@@ -53,7 +71,9 @@ export default function ComboDetail() {
   const matchesCombo = (combo: Combo) =>
     normalize(combo.blade) === blade &&
     normalize(combo.ratchet) === ratchet &&
-    normalize(combo.bit) === bit
+    normalize(combo.bit) === bit &&
+    (assistBlade ? normalize(combo.assistBlade || "") === assistBlade : !combo.assistBlade)
+
 
   const groupedResults = useMemo(() => {
     const now = new Date()
@@ -115,9 +135,10 @@ export default function ComboDetail() {
 
   const readable = {
     blade: blade.replace(/-/g, " "),
+    assistBlade: assistBlade?.replace(/-/g, " "),
     ratchet: ratchet.replace(/-/g, " "),
     bit: bit.replace(/-/g, " ")
-  }
+}
 
   return (
     <>
@@ -137,12 +158,16 @@ export default function ComboDetail() {
       </Helmet>
 
       <div className="p-6 max-w-4xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Combo Details</h1>
-          <p><strong>Blade:</strong> {readable.blade}</p>
-          <p><strong>Ratchet:</strong> {readable.ratchet}</p>
-          <p><strong>Bit:</strong> {readable.bit}</p>
-        </div>
+  <div>
+    <h1 className="text-3xl font-bold mb-2">Combo Details</h1>
+    <p><strong>Blade:</strong> {readable.blade}</p>
+    {readable.assistBlade && (
+      <p><strong>Assist Blade:</strong> {readable.assistBlade}</p>
+    )}
+    <p><strong>Ratchet:</strong> {readable.ratchet}</p>
+    <p><strong>Bit:</strong> {readable.bit}</p>
+  </div>
+
 
         <div>
           <h2 className="text-2xl font-semibold mt-6 mb-2">Used In Events</h2>
