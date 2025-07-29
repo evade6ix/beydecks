@@ -36,6 +36,8 @@ const ProductDetail = lazy(() => import("./pages/ProductDetail"))
 const EditProduct = lazy(() => import("./pages/EditProduct"))
 const RatchetDetail = lazy(() => import("./pages/RatchetDetail"))
 const BitDetail = lazy(() => import("./pages/BitDetail"))
+const AssistDetail = lazy(() => import("./pages/AssistDetail"))
+
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -87,6 +89,7 @@ export default function App() {
           <Route path="/add-product" element={<AddProduct />} />
           <Route path="/ratchets/:name" element={<RatchetDetail />} />
           <Route path="/bits/:name" element={<BitDetail />} />
+          <Route path="/assist-blades/:name" element={<AssistDetail />} />
           {isAdmin && <Route path="/admin" element={<Admin />} />}
         </Routes>
       </Suspense>
