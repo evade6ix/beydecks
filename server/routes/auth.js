@@ -54,7 +54,18 @@ export default (collections) => {
     const match = await bcrypt.compare(password, user.passwordHash)
     if (!match) return res.status(401).json({ error: "Invalid credentials" })
 
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: "7d" })
+    const token = jwt.sign(
+  {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    badge: user.badge || null,
+    storeAccess: user.storeAccess || null,
+  },
+  JWT_SECRET,
+  { expiresIn: "7d" }
+)
+
     res.json({ token })
   })
 

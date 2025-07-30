@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 import ForumThread from "./pages/ForumThread"
 import Forum from "./pages/Forum"
+import StoreAdmin from "./pages/StoreAdmin"
 
 // ✅ Lazy load each route
 const Home = lazy(() => import("./pages/Home"))
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/stores" element={<StoreFinder />} />
+          <Route path="/store-admin" element={<StoreAdmin />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/stores/:id" element={<StoreDetail />} />
           <Route path="/blades/:name" element={<BladeDetail />} />

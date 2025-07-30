@@ -16,7 +16,9 @@ interface User {
   username: string
   email: string
   profileImage?: string
-  tournamentsPlayed: Tournament[] // ✅ correct type here now
+  badge?: string              
+  storeAccess?: string            
+  tournamentsPlayed: Tournament[]
   matchupHistory: {
     myCombo: {
       blade: string

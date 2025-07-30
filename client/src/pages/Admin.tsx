@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
+import { useAuth } from "../context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -51,6 +52,7 @@ interface Store {
 export default function Admin() {
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
+  const { user } = useAuth()
   const [title, setTitle] = useState("")
   const [buyLink, setBuyLink] = useState("")
   const [imageUrl, setImageUrl] = useState("")
@@ -77,6 +79,17 @@ export default function Admin() {
     fetch(`${API}/stores`).then(res => res.json()).then(setStores)
   }, [])
 
+    useEffect(() => {
+    if (user?.storeAccess) {
+      const parts = user.storeAccess.split("||")
+      setStore(parts[0] || "")
+      setCountry(parts[1] || "")
+      setRegion(parts[2] || "")
+      setCity(parts[3] || "")
+    }
+  }, [user])
+
+
   const resetForm = () => {
     setEditingId(null)
     setTitle("")
@@ -94,7 +107,7 @@ export default function Admin() {
   }
 
   const addOrUpdateEvent = () => {
-    const payload = { title, startTime, endTime, store, topCut, buyLink, imageUrl, capacity, attendeeCount, country, region, city }
+    const payload = { title, startTime, endTime, store, topCut, buyLink, imageUrl, capacity, attendeeCount, country, region, city,   pendingApproval: !!user?.storeAccess }
     const method = editingId ? "PUT" : "POST"
     const url = editingId ? `${API}/events/${editingId}` : `${API}/events`
     fetch(url, {
@@ -185,6 +198,21 @@ export default function Admin() {
     })
   }
 
+  const approveEvent = async (id: number) => {
+  const res = await fetch(`${API}/events/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pendingApproval: false }),
+  })
+  if (res.ok) {
+    toast.success("✅ Event approved!")
+    fetch(`${API}/events`).then(res => res.json()).then(setEvents)
+  } else {
+    toast.error("❌ Failed to approve event.")
+  }
+}
+
+
   const editEvent = (e: Event) => {
     setEditingId(e.id)
     setTitle(e.title)
@@ -215,7 +243,13 @@ export default function Admin() {
           <input className="input input-bordered" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
           <input className="input input-bordered" type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />
           <input className="input input-bordered" type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
-          <input className="input input-bordered" placeholder="Store" value={store} onChange={e => setStore(e.target.value)} />
+          <input
+          className="input input-bordered"
+          placeholder="Store"
+          value={store}
+          onChange={e => setStore(e.target.value)}
+          readOnly={!!user?.storeAccess}
+        />
         </div>
         <input className="input input-bordered" placeholder="Buy Ticket URL" value={buyLink} onChange={e => setBuyLink(e.target.value)} />
         <div className="space-y-2">
@@ -372,6 +406,36 @@ export default function Admin() {
           ))}
         </div>
       </details>
+
+      {/* Pending Approval Events */}
+<details className="bg-base-200 p-4 rounded-lg">
+  <summary className="text-xl font-bold cursor-pointer">Pending Approval Events</summary>
+  <div className="max-h-96 overflow-y-auto space-y-2 mt-4">
+    {events.filter(e => (e as any).pendingApproval).map(e => (
+      <div key={e.id} className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <p className="font-semibold">{e.title}</p>
+          <p className="text-sm text-neutral-content">
+            {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @ {e.store}
+          </p>
+          {e.buyLink && (
+            <a href={e.buyLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline">
+              Buy Ticket Link
+            </a>
+          )}
+        </div>
+        <div className="flex gap-2">
+  <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">View</Link>
+  <button className="btn btn-success btn-sm" onClick={() => approveEvent(e.id)}>Approve</button>
+  <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>Edit</button>
+  <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>Delete</button>
+</div>
+
+      </div>
+    ))}
+  </div>
+</details>
+
 
       {/* Stores List */}
       <details className="bg-base-200 p-4 rounded-lg">
