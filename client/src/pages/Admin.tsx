@@ -3,9 +3,6 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
-import { useAuth } from "../context/AuthContext"
-import type { User } from "../context/AuthContext"
-
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -50,11 +47,7 @@ interface Store {
   city?: string
 }
 
-
 export default function Admin() {
-  const { user } = useAuth() as { user: User | null }
-  const isStoreAdmin: boolean = user?.role === "storeAdmin" && !!user.storeAccess
-
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
   const [title, setTitle] = useState("")
@@ -115,15 +108,15 @@ export default function Admin() {
   }
 
   const addCombo = (playerIndex: number) => {
-    setTopCut(prev => {
-      const updated = [...prev]
-      updated[playerIndex] = {
-        ...updated[playerIndex],
-        combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
-      }
-      return updated
-    })
-  }
+  setTopCut(prev => {
+    const updated = [...prev]
+    updated[playerIndex] = {
+      ...updated[playerIndex],
+      combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
+    }
+    return updated
+  })
+}
 
   const updateTopCutCombo = (p: number, c: number, f: keyof Combo, val: string) => {
     setTopCut(prev => {
@@ -214,10 +207,9 @@ export default function Admin() {
     <motion.div className="p-6 max-w-5xl mx-auto space-y-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <h1 className="text-3xl font-bold">Admin Panel</h1>
 
-      {isStoreAdmin && (
-  <div className="card bg-base-200 p-4 space-y-4">
-    <h2 className="text-xl font-bold">Create or Edit Event</h2>
-
+      {/* Event Form */}
+      <div className="card bg-base-200 p-4 space-y-4">
+        <h2 className="text-xl font-bold">Create or Edit Event</h2>
         <div className="grid md:grid-cols-3 gap-4">
           <input className="input input-bordered" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
           <input className="input input-bordered" type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />
@@ -282,7 +274,8 @@ export default function Admin() {
           {editingId && <button className="btn btn-ghost" onClick={resetForm}>Cancel</button>}
         </div>
       </div>
-      )}
+
+      {/* Store Form */}
       <div className="card bg-base-200 p-4 space-y-4">
         <h2 className="text-xl font-bold">Add or Edit Store</h2>
         <div className="grid md:grid-cols-2 gap-4">
