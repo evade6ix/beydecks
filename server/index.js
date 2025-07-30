@@ -9,6 +9,8 @@ import authRoutes from "./routes/auth.js"
 import forumRoutes from "./routes/forum.js"
 import dotenv from "dotenv"
 import uploadRoute from "./routes/upload.js"
+import eventsRouter from "./routes/events.js"
+
 
 dotenv.config()
 
@@ -30,6 +32,7 @@ const startServer = async () => {
 
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
+  app.use("/api/events", eventsRouter)
 
   // === API ROUTES ===
 

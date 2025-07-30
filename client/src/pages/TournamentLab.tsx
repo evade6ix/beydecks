@@ -6,27 +6,6 @@ const API = import.meta.env.VITE_API_URL
 export default function TournamentLab() {
   const { user, isAuthenticated, loading: authLoading } = useAuth()
 
-  if (authLoading) {
-    return <div className="p-6 text-white">Checking login status...</div>
-  }
-
-  if (!isAuthenticated) {
-    return (
-      <div className="p-6 text-white text-center max-w-xl mx-auto mt-12 space-y-4">
-        <h1 className="text-2xl font-bold">🔒 Tournament Lab Locked</h1>
-        <p className="text-sm text-gray-400">
-          You must be logged in to use Tournament Lab and analyze your combos.
-        </p>
-        <a
-          href="/user-auth"
-          className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded"
-        >
-          Log In to Continue
-        </a>
-      </div>
-    )
-  }
-
   const [combos, setCombos] = useState([
     { blade: "", ratchet: "", bit: "" },
     { blade: "", ratchet: "", bit: "" },
@@ -36,6 +15,9 @@ export default function TournamentLab() {
   const [results, setResults] = useState<any[]>([])
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
   const [previousPrep, setPreviousPrep] = useState<any | null>(null)
+  const [blades, setBlades] = useState<string[]>([])
+  const [ratchets, setRatchets] = useState<string[]>([])
+  const [bits, setBits] = useState<string[]>([])
   const resultsRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -47,6 +29,31 @@ export default function TournamentLab() {
       })
       .catch(() => null)
   }, [user])
+
+  useEffect(() => {
+    fetch(`${API}/events`)
+      .then(res => res.json())
+      .then(data => {
+        const bladeSet = new Set<string>()
+        const ratchetSet = new Set<string>()
+        const bitSet = new Set<string>()
+
+        data.forEach((event: any) => {
+          event.topCut?.forEach((player: any) => {
+            player.combos?.forEach((combo: any) => {
+              if (combo.blade) bladeSet.add(combo.blade)
+              if (combo.ratchet) ratchetSet.add(combo.ratchet)
+              if (combo.bit) bitSet.add(combo.bit)
+            })
+          })
+        })
+
+        setBlades([...bladeSet].sort())
+        setRatchets([...ratchetSet].sort())
+        setBits([...bitSet].sort())
+      })
+      .catch(err => console.error("Failed to load parts", err))
+  }, [])
 
   useEffect(() => {
     if (results.length > 0 && resultsRef.current) {
@@ -98,6 +105,27 @@ export default function TournamentLab() {
     }
   }
 
+  if (authLoading) {
+    return <div className="p-6 text-white">Checking login status...</div>
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="p-6 text-white text-center max-w-xl mx-auto mt-12 space-y-4">
+        <h1 className="text-2xl font-bold">🔒 Tournament Lab Locked</h1>
+        <p className="text-sm text-gray-400">
+          You must be logged in to use Tournament Lab and analyze your combos.
+        </p>
+        <a
+          href="/user-auth"
+          className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded"
+        >
+          Log In to Continue
+        </a>
+      </div>
+    )
+  }
+
   return (
     <div className="p-6 text-white max-w-3xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">Tournament Lab</h1>
@@ -117,28 +145,24 @@ export default function TournamentLab() {
       {combos.slice(0, visibleCombos).map((combo, i) => (
         <div key={i} className="space-y-2 border border-gray-700 p-4 rounded-lg">
           <h2 className="font-semibold">Combo {i + 1}</h2>
-          <input
-            type="text"
-            className="w-full p-2 bg-black border border-gray-600 rounded"
-            placeholder="Blade"
+          <AutoCompleteInput
+            label="Blade"
             value={combo.blade}
-            onChange={e => updateCombo(i, "blade", e.target.value)}
+            options={blades}
+            onChange={(val) => updateCombo(i, "blade", val)}
           />
-          <input
-            type="text"
-            className="w-full p-2 bg-black border border-gray-600 rounded"
-            placeholder="Ratchet"
+          <AutoCompleteInput
+            label="Ratchet"
             value={combo.ratchet}
-            onChange={e => updateCombo(i, "ratchet", e.target.value)}
+            options={ratchets}
+            onChange={(val) => updateCombo(i, "ratchet", val)}
           />
-          <input
-            type="text"
-            className="w-full p-2 bg-black border border-gray-600 rounded"
-            placeholder="Bit"
+          <AutoCompleteInput
+            label="Bit"
             value={combo.bit}
-            onChange={e => updateCombo(i, "bit", e.target.value)}
+            options={bits}
+            onChange={(val) => updateCombo(i, "bit", val)}
           />
-
           {visibleCombos > 1 && i === visibleCombos - 1 && (
             <button
               onClick={removeCombo}
@@ -186,5 +210,67 @@ export default function TournamentLab() {
         </div>
       )}
     </div>
+  )
+}
+
+function AutoCompleteInput({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (val: string) => void
+}) {
+  const [showDropdown, setShowDropdown] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const matches = options.filter(
+    (opt) => value && opt.toLowerCase().includes(value.toLowerCase())
+  )
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder={label}
+        className="w-full p-2 bg-black border border-gray-600 rounded"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 100)}
+      />
+      {showDropdown && matches.length > 0 && (
+        <ul className="absolute z-10 bg-white text-black w-full mt-1 rounded shadow max-h-48 overflow-y-auto">
+          {matches.map((opt, idx) => (
+            <li
+              key={idx}
+              className="px-3 py-1 hover:bg-blue-100 cursor-pointer"
+              onMouseDown={() => {
+                onChange(opt)
+                setShowDropdown(false)
+              }}
+            >
+              {highlightMatch(opt, value)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function highlightMatch(text: string, input: string) {
+  const i = text.toLowerCase().indexOf(input.toLowerCase())
+  if (i === -1) return text
+  return (
+    <>
+      {text.slice(0, i)}
+      <strong>{text.slice(i, i + input.length)}</strong>
+      {text.slice(i + input.length)}
+    </>
   )
 }

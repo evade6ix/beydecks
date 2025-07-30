@@ -11,22 +11,12 @@ interface Tournament {
   placement: string
 }
 
-export interface User {
-
+interface User {
   id: string
   username: string
   email: string
   profileImage?: string
-  badge?: string
-  role: "admin" | "storeAdmin"
-  storeAccess?: {
-    storeId: string
-    storeName: string
-    country: string
-    region: string
-    city: string
-  }   
-  tournamentsPlayed: Tournament[]
+  tournamentsPlayed: Tournament[] // ✅ correct type here now
   matchupHistory: {
     myCombo: {
       blade: string

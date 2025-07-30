@@ -31,7 +31,6 @@ interface Tournament {
 
 export default function Profile() {
   const { isAuthenticated, user, logout } = useAuth()
-  
 
   if (!isAuthenticated || !user) return <Navigate to="/user-auth" />
 
@@ -160,23 +159,6 @@ const topCutCount = tournaments.filter((t) =>
             logout
           </button>
       </div>
-
-      {user.badge === "Admin" && (
-  <Link to="/admin">
-    <button className="mt-2 bg-yellow-500 text-black px-4 py-2 rounded hover:bg-yellow-600">
-      Go to Admin Panel
-    </button>
-  </Link>
-)}
-
-{user.storeAccess && (
-  <Link to="/store-admin">
-    <button className="mt-2 bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
-      Manage Your Store Events
-    </button>
-  </Link>
-)}
-
 
       <div className="bg-gray-800 p-4 rounded shadow">
         <h3 className="text-lg font-semibold text-white mb-2">Your Stats</h3>
@@ -484,11 +466,11 @@ user.topCutCount = placementStats.topCutCount
                 .slice((tournamentPage - 1) * tournamentsPerPage, tournamentPage * tournamentsPerPage)
                 .map((tournament, idx) => (
                   <li key={idx} className="bg-gray-800 p-4 rounded shadow text-gray-200">
-                    <p><strong>🏪 Store:</strong> {tournament.storeName}</p>
-                    <p><strong>📅 Date:</strong> {new Date(tournament.date).toLocaleDateString()}</p>
-                    <p><strong>👥 Total Players:</strong> {tournament.totalPlayers}</p>
-                    <p><strong>🆖 Record:</strong> {tournament.roundWins} Wins / {tournament.roundLosses} Losses</p>
-                    <p><strong>🏫 Placement:</strong> {tournament.placement}</p>
+                    <p><strong>Store:</strong> {tournament.storeName}</p>
+                    <p><strong>Date:</strong> {new Date(tournament.date).toLocaleDateString()}</p>
+                    <p><strong>Total Players:</strong> {tournament.totalPlayers}</p>
+                    <p><strong>Record:</strong> {tournament.roundWins} Wins / {tournament.roundLosses} Losses</p>
+                    <p><strong>Placement:</strong> {tournament.placement}</p>
                     <button
                     type = "button"
   onClick={() => handleDeleteTournament((tournamentPage - 1) * tournamentsPerPage + idx)}
