@@ -16,8 +16,15 @@ interface User {
   username: string
   email: string
   profileImage?: string
-  badge?: string              
-  storeAccess?: string            
+  badge?: string
+  role: "admin" | "storeAdmin"
+  storeAccess?: {
+    storeId: string
+    storeName: string
+    country: string
+    region: string
+    city: string
+  }   
   tournamentsPlayed: Tournament[]
   matchupHistory: {
     myCombo: {

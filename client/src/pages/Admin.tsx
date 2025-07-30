@@ -4,6 +4,8 @@ import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
 import { useAuth } from "../context/AuthContext"
+import type { User } from "../context/AuthContext"
+
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -30,7 +32,6 @@ interface Player {
 
 interface Combo {
   blade: string
-  assistBlade?: string
   ratchet: string
   bit: string
   notes?: string
@@ -49,10 +50,13 @@ interface Store {
   city?: string
 }
 
+
 export default function Admin() {
+  const { user } = useAuth() as { user: User | null }
+  const isStoreAdmin: boolean = user?.role === "storeAdmin" && !!user.storeAccess
+
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
-  const { user } = useAuth()
   const [title, setTitle] = useState("")
   const [buyLink, setBuyLink] = useState("")
   const [imageUrl, setImageUrl] = useState("")
@@ -79,17 +83,6 @@ export default function Admin() {
     fetch(`${API}/stores`).then(res => res.json()).then(setStores)
   }, [])
 
-    useEffect(() => {
-    if (user?.storeAccess) {
-      const parts = user.storeAccess.split("||")
-      setStore(parts[0] || "")
-      setCountry(parts[1] || "")
-      setRegion(parts[2] || "")
-      setCity(parts[3] || "")
-    }
-  }, [user])
-
-
   const resetForm = () => {
     setEditingId(null)
     setTitle("")
@@ -107,7 +100,7 @@ export default function Admin() {
   }
 
   const addOrUpdateEvent = () => {
-    const payload = { title, startTime, endTime, store, topCut, buyLink, imageUrl, capacity, attendeeCount, country, region, city,   pendingApproval: !!user?.storeAccess }
+    const payload = { title, startTime, endTime, store, topCut, buyLink, imageUrl, capacity, attendeeCount, country, region, city }
     const method = editingId ? "PUT" : "POST"
     const url = editingId ? `${API}/events/${editingId}` : `${API}/events`
     fetch(url, {
@@ -122,15 +115,15 @@ export default function Admin() {
   }
 
   const addCombo = (playerIndex: number) => {
-  setTopCut(prev => {
-    const updated = [...prev]
-    updated[playerIndex] = {
-      ...updated[playerIndex],
-      combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
-    }
-    return updated
-  })
-}
+    setTopCut(prev => {
+      const updated = [...prev]
+      updated[playerIndex] = {
+        ...updated[playerIndex],
+        combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
+      }
+      return updated
+    })
+  }
 
   const updateTopCutCombo = (p: number, c: number, f: keyof Combo, val: string) => {
     setTopCut(prev => {
@@ -198,21 +191,6 @@ export default function Admin() {
     })
   }
 
-  const approveEvent = async (id: number) => {
-  const res = await fetch(`${API}/events/${id}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pendingApproval: false }),
-  })
-  if (res.ok) {
-    toast.success("✅ Event approved!")
-    fetch(`${API}/events`).then(res => res.json()).then(setEvents)
-  } else {
-    toast.error("❌ Failed to approve event.")
-  }
-}
-
-
   const editEvent = (e: Event) => {
     setEditingId(e.id)
     setTitle(e.title)
@@ -236,20 +214,15 @@ export default function Admin() {
     <motion.div className="p-6 max-w-5xl mx-auto space-y-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <h1 className="text-3xl font-bold">Admin Panel</h1>
 
-      {/* Event Form */}
-      <div className="card bg-base-200 p-4 space-y-4">
-        <h2 className="text-xl font-bold">Create or Edit Event</h2>
+      {isStoreAdmin && (
+  <div className="card bg-base-200 p-4 space-y-4">
+    <h2 className="text-xl font-bold">Create or Edit Event</h2>
+
         <div className="grid md:grid-cols-3 gap-4">
           <input className="input input-bordered" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
           <input className="input input-bordered" type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />
           <input className="input input-bordered" type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
-          <input
-          className="input input-bordered"
-          placeholder="Store"
-          value={store}
-          onChange={e => setStore(e.target.value)}
-          readOnly={!!user?.storeAccess}
-        />
+          <input className="input input-bordered" placeholder="Store" value={store} onChange={e => setStore(e.target.value)} />
         </div>
         <input className="input input-bordered" placeholder="Buy Ticket URL" value={buyLink} onChange={e => setBuyLink(e.target.value)} />
         <div className="space-y-2">
@@ -290,16 +263,13 @@ export default function Admin() {
             <div key={i} className="space-y-2 border rounded p-2">
               <input className="input input-sm w-full" placeholder="Player Name" value={p.name} onChange={e => updatePlayerName(i, e.target.value)} />
               {p.combos.map((c, j) => (
-                <div key={j} className="grid md:grid-cols-5 gap-2">
+                <div key={j} className="grid md:grid-cols-4 gap-2">
                   <input className="input input-sm" placeholder="Blade" value={c.blade} onChange={e => updateTopCutCombo(i, j, "blade", e.target.value)} />
-                  <input className="input input-sm" placeholder="Assist Blade (optional)" value={c.assistBlade ?? ""} onChange={e => updateTopCutCombo(i, j, "assistBlade", e.target.value)} />
                   <input className="input input-sm" placeholder="Ratchet" value={c.ratchet} onChange={e => updateTopCutCombo(i, j, "ratchet", e.target.value)} />
                   <input className="input input-sm" placeholder="Bit" value={c.bit} onChange={e => updateTopCutCombo(i, j, "bit", e.target.value)} />
                   <input className="input input-sm" placeholder="Notes" value={c.notes ?? ""} onChange={e => updateTopCutCombo(i, j, "notes", e.target.value)} />
                 </div>
               ))}
-
-
               <button className="btn btn-outline btn-xs" onClick={() => addCombo(i)}>Add Combo</button>
               <button className="btn btn-error btn-xs" onClick={() => removeTopCutPlayer(i)}>Remove Player</button>
             </div>
@@ -312,8 +282,7 @@ export default function Admin() {
           {editingId && <button className="btn btn-ghost" onClick={resetForm}>Cancel</button>}
         </div>
       </div>
-
-      {/* Store Form */}
+      )}
       <div className="card bg-base-200 p-4 space-y-4">
         <h2 className="text-xl font-bold">Add or Edit Store</h2>
         <div className="grid md:grid-cols-2 gap-4">
@@ -406,36 +375,6 @@ export default function Admin() {
           ))}
         </div>
       </details>
-
-      {/* Pending Approval Events */}
-<details className="bg-base-200 p-4 rounded-lg">
-  <summary className="text-xl font-bold cursor-pointer">Pending Approval Events</summary>
-  <div className="max-h-96 overflow-y-auto space-y-2 mt-4">
-    {events.filter(e => (e as any).pendingApproval).map(e => (
-      <div key={e.id} className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <p className="font-semibold">{e.title}</p>
-          <p className="text-sm text-neutral-content">
-            {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @ {e.store}
-          </p>
-          {e.buyLink && (
-            <a href={e.buyLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline">
-              Buy Ticket Link
-            </a>
-          )}
-        </div>
-        <div className="flex gap-2">
-  <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">View</Link>
-  <button className="btn btn-success btn-sm" onClick={() => approveEvent(e.id)}>Approve</button>
-  <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>Edit</button>
-  <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>Delete</button>
-</div>
-
-      </div>
-    ))}
-  </div>
-</details>
-
 
       {/* Stores List */}
       <details className="bg-base-200 p-4 rounded-lg">
