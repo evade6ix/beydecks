@@ -1,76 +1,258 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-import { motion } from "framer-motion"
-import { Trophy, CalendarCheck, PieChart, ShoppingCart, MapPin } from "lucide-react"
+import { motion, useScroll, useTransform } from "framer-motion"
 import { Helmet } from "react-helmet-async"
-import { Typewriter } from "react-simple-typewriter"
 import { Swiper, SwiperSlide } from "swiper/react"
 import { Pagination, Autoplay } from "swiper/modules"
+import CountUp from "react-countup"
+import Marquee from "react-fast-marquee"
+import Tilt from "react-parallax-tilt"
+import {
+  Trophy,
+  CalendarCheck,
+  PieChart,
+  ShoppingCart,
+  MapPin,
+  Swords,
+  Sparkles,
+  ArrowRight,
+} from "lucide-react"
 import "swiper/css"
 import "swiper/css/pagination"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-export default function Landing() {
-  const [comboCount, setComboCount] = useState(0)
-  const [eventCount, setEventCount] = useState(0)
-  const [storeCount, setStoreCount] = useState(0)
-  const [topCombos, setTopCombos] = useState<{ blade: string; ratchet: string; bit: string; count: number }[]>([])
-  const [timeframe, setTimeframe] = useState<"all" | "year" | "month" | "week">("all")
+type Timeframe = "all" | "year" | "month" | "week"
+
+interface Combo {
+  blade: string
+  assistBlade?: string
+  ratchet: string
+  bit: string
+}
+interface Player { name: string; combos: Combo[] }
+interface EventItem {
+  id: number | string
+  title: string
+  store?: string
+  startTime?: string
+  endTime?: string
+  date?: string
+  city?: string
+  region?: string
+  country?: string
+  topCut?: Player[]
+  imageUrl?: string
+  buyLink?: string
+}
+interface Store { id: number | string; name: string; city?: string; region?: string; country?: string; logo?: string }
+
+const norm = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ")
+
+/* =========================
+   Constellation Background
+   ========================= */
+function ConstellationBG({
+  dotColor = "rgba(199,210,254,0.8)",    // indigo-200
+  linkColor = "rgba(56,189,248,0.35)",  // cyan-400
+  maxDist = 135,
+  density = 0.00008,
+  speed = 0.08,
+}: {
+  dotColor?: string
+  linkColor?: string
+  maxDist?: number
+  density?: number
+  speed?: number
+}) {
+  const ref = useRef<HTMLCanvasElement | null>(null)
+  const raf = useRef<number | null>(null)
 
   useEffect(() => {
-    fetch(`${API}/events`)
-      .then(res => res.json())
-      .then((data: any[]) => {
+    const canvas = ref.current!
+    const ctx = canvas.getContext("2d")!
+    let w = 0, h = 0, dpr = Math.max(1, window.devicePixelRatio || 1)
+    let particles: { x:number; y:number; vx:number; vy:number }[] = []
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+    function resize() {
+      const parent = canvas.parentElement || document.body
+      w = parent.clientWidth
+      h = parent.clientHeight
+      canvas.width = Math.floor(w * dpr)
+      canvas.height = Math.floor(h * dpr)
+      canvas.style.width = w + "px"
+      canvas.style.height = h + "px"
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+
+      const area = w * h
+      const target = Math.floor(area * density)
+      if (particles.length > target) particles.length = target
+      while (particles.length < target) {
+        particles.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          vx: (Math.random() * 2 - 1) * speed,
+          vy: (Math.random() * 2 - 1) * speed,
+        })
+      }
+    }
+
+    function step() {
+      ctx.clearRect(0, 0, w, h)
+
+      // move
+      for (const p of particles) {
+        p.x += p.vx; p.y += p.vy
+        if (p.x < -20) p.x = w + 20
+        if (p.x > w + 20) p.x = -20
+        if (p.y < -20) p.y = h + 20
+        if (p.y > h + 20) p.y = -20
+      }
+
+      // links
+      ctx.lineWidth = 1
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]
+        for (let j = i + 1; j < particles.length; j++) {
+          const q = particles[j]
+          const dx = p.x - q.x, dy = p.y - q.y
+          const dist = Math.hypot(dx, dy)
+          if (dist < maxDist) {
+            const alpha = 1 - dist / maxDist
+            ctx.strokeStyle = linkColor.replace(/[\d.]+\)$/, alpha.toFixed(3) + ")")
+            ctx.beginPath()
+            ctx.moveTo(p.x, p.y)
+            ctx.lineTo(q.x, q.y)
+            ctx.stroke()
+          }
+        }
+      }
+
+      // dots
+      ctx.fillStyle = dotColor
+      for (const p of particles) {
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 1.6, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      raf.current = requestAnimationFrame(step)
+    }
+
+    resize()
+    if (!reduced) raf.current = requestAnimationFrame(step)
+    const onResize = () => resize()
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("resize", onResize)
+      if (raf.current) cancelAnimationFrame(raf.current)
+    }
+  }, [density, linkColor, dotColor, maxDist, speed])
+
+  return (
+    <canvas
+      ref={ref}
+      aria-hidden
+      className="absolute inset-0 pointer-events-none mix-blend-screen opacity-60"
+      style={{ filter: "drop-shadow(0 0 2px rgba(56,189,248,0.15))" }}
+    />
+  )
+}
+
+// ---------- PAGE ----------
+export default function Landing() {
+  const [comboCount, setComboCount] = useState(0) // now "top-cut appearances"
+  const [eventCount, setEventCount] = useState(0)
+  const [storeCount, setStoreCount] = useState(0)
+  const [topCombos, setTopCombos] = useState<Array<Combo & { appearances: number; eventCount: number }>>([])
+  const [upcoming, setUpcoming] = useState<EventItem[]>([])
+  const [stores, setStores] = useState<Store[]>([])
+  const [timeframe, setTimeframe] = useState<Timeframe>("all")
+
+  // Parallax for background blobs
+  const { scrollY } = useScroll()
+  const y1 = useTransform(scrollY, [0, 600], [0, 120])
+  const y2 = useTransform(scrollY, [0, 600], [0, -80])
+
+  useEffect(() => {
+    let mounted = true
+    Promise.all([
+      fetch(`${API}/events`).then(r => r.json()),
+      fetch(`${API}/stores`).then(r => r.json()),
+    ])
+      .then(([eventsData, storesData]: [EventItem[], Store[]]) => {
+        if (!mounted) return
         const now = new Date()
-        const filteredEvents = data.filter(event => {
-          const eventDate = new Date(event.startTime || event.date || 0)
-          if (timeframe === "year") return eventDate >= new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
-          if (timeframe === "month") return eventDate >= new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
-          if (timeframe === "week") return eventDate >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
-          return true
+        const windowStart = (() => {
+          if (timeframe === "year") return new Date(now.getFullYear() - 1, now.getMonth(), now.getDate())
+          if (timeframe === "month") return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+          if (timeframe === "week") return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
+          return new Date(0)
+        })()
+
+        // Filter events by timeframe
+        const filtered = (eventsData || []).filter(e => {
+          const d = new Date(e.startTime || e.date || 0)
+          return d >= windowStart
         })
 
-        setEventCount(filteredEvents.length)
+        setEventCount(filtered.length)
+        setStores(storesData || [])
+        setStoreCount((storesData || []).length)
 
-        const comboMap = new Map<string, { blade: string; ratchet: string; bit: string; count: number }>()
-        let totalCombos = 0
+        // Upcoming (next 30 days)
+        const upcomingList = (eventsData || [])
+          .filter(e => new Date(e.startTime || e.date || 0) >= now)
+          .sort((a, b) => new Date(a.startTime || a.date || 0).getTime() - new Date(b.startTime || b.date || 0).getTime())
+          .slice(0, 20)
+        setUpcoming(upcomingList)
 
-        filteredEvents.forEach(event => {
-          (event.topCut || []).forEach((player: { combos?: { blade: string; ratchet: string; bit: string }[] }) => {
-            (player.combos || []).forEach((combo: { blade: string; ratchet: string; bit: string }) => {
-              const key = `${combo.blade}|||${combo.ratchet}|||${combo.bit}`
-              if (comboMap.has(key)) {
-                comboMap.get(key)!.count++
+        // ----- Top combos aggregation (appearances + unique events) -----
+        type ComboStat = Combo & { appearances: number; eventIds: Set<string | number> }
+
+        const map = new Map<string, ComboStat>()
+        let totalAppearances = 0
+
+        filtered.forEach(ev => {
+          const evId = ev.id ?? `${ev.title}-${ev.startTime || ev.date || ""}`
+          ;(ev.topCut || []).forEach(player => {
+            ;(player?.combos || []).forEach(c => {
+              const key = `${norm(c.blade)}|||${norm(c.ratchet)}|||${norm(c.bit)}`
+              const stat = map.get(key)
+              if (stat) {
+                stat.appearances += 1
+                stat.eventIds.add(evId)
               } else {
-                comboMap.set(key, { ...combo, count: 1 })
+                map.set(key, { ...c, appearances: 1, eventIds: new Set([evId]) })
               }
-              totalCombos++
+              totalAppearances += 1
             })
           })
         })
 
-        const sortedCombos = [...comboMap.values()].sort((a, b) => b.count - a.count)
-        const uniqueCombos: typeof sortedCombos = []
-        const usedParts = new Set<string>()
+        const sorted = [...map.values()].sort((a, b) => b.appearances - a.appearances)
 
-        for (const combo of sortedCombos) {
-          const parts = [combo.blade, combo.ratchet, combo.bit]
-          if (parts.every(part => !usedParts.has(part))) {
-            uniqueCombos.push(combo)
-            parts.forEach(p => usedParts.add(p))
+        // Ensure no part overlaps between featured trio
+        const used = new Set<string>()
+        const uniqueTop: Array<Combo & { appearances: number; eventCount: number }> = []
+        for (const c of sorted) {
+          const parts = [c.blade, c.ratchet, c.bit]
+          if (parts.every(p => !used.has(norm(p)))) {
+            uniqueTop.push({ ...c, appearances: c.appearances, eventCount: c.eventIds.size })
+            parts.forEach(p => used.add(norm(p)))
+            if (uniqueTop.length === 3) break
           }
-          if (uniqueCombos.length === 3) break
         }
 
-        setTopCombos(uniqueCombos)
-        setComboCount(totalCombos)
+        setTopCombos(uniqueTop)
+        setComboCount(totalAppearances) // big stat = total top-cut appearances in timeframe
       })
-
-    fetch(`${API}/stores`)
-      .then(res => res.json())
-      .then((data: any[]) => setStoreCount(data.length))
+      .catch(() => {})
+    return () => { mounted = false }
   }, [timeframe])
+
+  const storeNames = useMemo(() => (stores || []).map(s => s.name).filter(Boolean).slice(0, 30), [stores])
 
   return (
     <>
@@ -83,181 +265,302 @@ export default function Landing() {
         <meta property="og:image" content="/favicon.png" />
       </Helmet>
 
-      <motion.div className="min-h-screen bg-gradient-to-br from-[#0f172a] to-[#1e293b] text-white" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        {/* HERO */}
-        <section className="px-6 py-20 max-w-6xl mx-auto text-center space-y-6">
-          <motion.img
-            src="/logos/logoclear.png"
-            alt="MetaBeys Logo"
-            className="h-28 mx-auto drop-shadow-xl" // ← updated from h-20
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-          />
+      {/* PAGE WRAPPER */}
+      <div className="min-h-screen bg-[#0b1020] text-white relative overflow-hidden">
+        {/* Constellation network */}
+        <ConstellationBG />
 
-          <motion.h1 className="text-5xl sm:text-6xl font-extrabold tracking-tight" initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2 }}>
-            Track the{" "}
-            <span className="text-accent">
-              <Typewriter words={["Meta", "Stats", "Parts", "Comps", "Decks"]} loop cursor cursorStyle="|" typeSpeed={80} deleteSpeed={40} delaySpeed={1200} />
-            </span>{" "}
-            of Beyblade X
-          </motion.h1>
+        {/* Aurora blobs with parallax */}
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute -top-40 -left-40 w-[55rem] h-[55rem] rounded-full blur-3xl opacity-25"
+          style={{ y: y1, background: "radial-gradient(closest-side, #5b9cff 0%, transparent 60%)" }}
+          animate={{ x: [0, 40, -30, 0], y: [0, -20, 10, 0], scale: [1, 1.05, 0.98, 1] }}
+          transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-52 -right-48 w-[60rem] h-[60rem] rounded-full blur-3xl opacity-25"
+          style={{ y: y2, background: "radial-gradient(closest-side, #8b5cf6 0%, transparent 60%)" }}
+          animate={{ x: [0, -50, 30, 0], y: [0, 25, -15, 0], scale: [1, 0.97, 1.03, 1] }}
+          transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+        />
+        <motion.div
+          aria-hidden
+          className="absolute inset-0 opacity-[0.08]"
+          style={{
+            background:
+              "radial-gradient(60% 60% at 50% 45%, rgba(91,156,255,0.35) 0%, transparent 55%), radial-gradient(50% 50% at 70% 60%, rgba(139,92,246,0.35) 0%, transparent 60%)",
+          }}
+          animate={{ rotate: [0, 360] }}
+          transition={{ duration: 120, repeat: Infinity, ease: "linear" }}
+        />
+        <div aria-hidden className="absolute inset-0 mix-blend-soft-light opacity-[0.08] pointer-events-none"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='table' tableValues='0 0.35'/></feComponentTransfer></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+          }}
+        />
 
-          <motion.p className="text-lg text-neutral-300 max-w-2xl mx-auto" initial={{ y: -10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.4 }}>
-            Discover top-performing combos, upcoming tournaments, and buy from verified vendors — all in one platform.
-          </motion.p>
-
-          <motion.div className="flex justify-center gap-4 mt-6" initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.6 }}>
-            <Link to="/home" className="btn btn-primary btn-lg">Enter MetaBeys</Link>
-            <Link to="/user-auth" className="btn btn-outline btn-lg">Join Today</Link>
-          </motion.div>
-        </section>
-
-
-        {/* FEATURES */}
-        <section className="bg-base-100 text-base-content py-20 px-6">
-          <div className="max-w-6xl mx-auto text-center mb-16">
-            <h2 className="text-4xl font-bold">What You Can Do</h2>
-            <p className="text-neutral-600 mt-2">Competitive features built for serious bladers</p>
+        {/* NAV CTA RIBBON */}
+        <div className="sticky top-0 z-30 backdrop-blur supports-[backdrop-filter]:bg-white/5 bg-white/0 border-b border-white/10">
+          <div className="max-w-7xl mx-auto px-6 py-2 text-xs sm:text-sm flex items-center gap-2 justify-center">
+            <Sparkles className="w-4 h-4" />
+            <span className="opacity-90">Open Beta</span>
+            <span className="opacity-60">·</span>
+            <span className="opacity-90">Stores onboard free</span>
+            <Link to="/contact" className="ml-3 underline text-accent">Contact Us</Link>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            <Feature icon={<Trophy className="w-8 h-8" />} title="Meta Leaderboard" desc="Live rankings of the top Blades, Ratchets, and Bits based on real tournament results." />
-            <Feature icon={<CalendarCheck className="w-8 h-8" />} title="Tournaments" desc="Find upcoming events across North America. Filter by city, store, or date." />
-            <Feature icon={<PieChart className="w-8 h-8" />} title="Combo Analytics" desc="Analyze top cut trends, matchup patterns, and combo effectiveness." />
-            <Feature icon={<ShoppingCart className="w-8 h-8" />} title="Shop Integration" desc="See verified stores with links to buy the exact parts used in top combos." />
-            <Feature icon={<MapPin className="w-8 h-8" />} title="Store Finder" desc="Browse a curated list of stores hosting Beyblade events in your region." />
-            <Feature icon={<Trophy className="w-8 h-8" />} title="Tournament Lab" desc="Simulate how your combo would rank based on real meta history." />
-          </div>
-        </section>
+        </div>
 
-        {/* MOST OPTIMAL COMBOS */}
-        <section className="bg-base-100 text-base-content py-20 px-6">
-          <div className="max-w-6xl mx-auto text-center mb-10">
-            <h2 className="text-4xl font-bold">Top Performing Meta Combos</h2>
-            <p className="text-neutral-600 mt-2">Top team to run right now — proven by real tournament data. You're welcome</p>
-            <div className="text-sm text-neutral-600 mt-4">
-              <label htmlFor="timeframe" className="mr-2 font-medium">View:</label>
-              <select
-                id="timeframe"
-                value={timeframe}
-                onChange={(e) => setTimeframe(e.target.value as any)}
-                className="border border-gray-300 rounded px-3 py-1 bg-white text-black"
-              >
-                <option value="all">All Time</option>
-                <option value="year">Past Year</option>
-                <option value="month">Past Month</option>
-                <option value="week">Past Week</option>
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {topCombos.map((combo, index) => (
-              <div key={index} className="p-6 rounded-xl bg-white shadow text-center hover:shadow-lg transition">
-                <p className="text-xl font-bold text-accent">{combo.blade}</p>
-                <p className="text-sm text-black">{combo.ratchet} • {combo.bit}</p>
-                <p className="mt-2 text-sm text-black">Used in {combo.count} events</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {/* HERO (CENTERED) */}
+        <section className="relative px-6 pt-20 pb-16 sm:pb-24">
+          <div className="max-w-4xl mx-auto text-center">
+            <motion.img
+              src="/logos/logoclear.png"
+              alt="MetaBeys Logo"
+              className="h-20 sm:h-24 md:h-28 mx-auto drop-shadow-xl"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+            />
 
-        {/* STATS */}
-        <section className="py-20 bg-gradient-to-r from-[#1e293b] to-[#0f172a] text-white px-6">
-          <div className="max-w-5xl mx-auto text-center space-y-4">
-            <h2 className="text-3xl font-bold">MetaBeys in Numbers</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-8 mt-8 text-3xl font-semibold">
-              <div>
-                <motion.span initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>{comboCount}+</motion.span><br />
-                <span className="text-base text-neutral-300 text-sm font-medium">Combos Tracked</span>
-              </div>
-              <div>
-                <motion.span initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>{eventCount}+</motion.span><br />
-                <span className="text-base text-neutral-300 text-sm font-medium">Events Logged</span>
-              </div>
-              <div>
-                <motion.span initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}>{storeCount}+</motion.span><br />
-                <span className="text-base text-neutral-300 text-sm font-medium">Stores Listed</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-         {/* REVIEWS */}
-        <section className="bg-white text-gray-900 py-20 px-6">
-          <div className="max-w-6xl mx-auto text-center mb-16">
-            <h2 className="text-4xl font-bold">What Players & Stores Are Saying</h2>
-            <p className="text-gray-600 mt-2">Real feedback from real members of the community</p>
-          </div>
-          <div className="max-w-3xl mx-auto">
-            <Swiper
-              modules={[Autoplay, Pagination]}
-              autoplay={{ delay: 5000 }}
-              pagination={{ clickable: true }}
-              loop={true}
-              spaceBetween={30}
+            <motion.h1
+              className="mt-6 leading-tight font-extrabold text-4xl sm:text-5xl md:text-6xl"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
             >
-              <SwiperSlide>
-                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
-                  <p className="text-lg font-medium mb-2">“I used MetaBeys to make my deck & won my first tournament!”</p>
-                  <span className="text-sm text-gray-500">– Competitive Player</span>
-                </blockquote>
-              </SwiperSlide>
-              <SwiperSlide>
-                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
-                  <p className="text-lg font-medium mb-2">“Filtering by location is insanely helpful for locals & meta building.”</p>
-                  <span className="text-sm text-gray-500">– Regional Champion</span>
-                </blockquote>
-              </SwiperSlide>
-              <SwiperSlide>
-                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
-                  <p className="text-lg font-medium mb-2">“Our store uses MetaBeys to upload every event. It’s streamlined & professional.”</p>
-                  <span className="text-sm text-gray-500">– Store Owner</span>
-                </blockquote>
-              </SwiperSlide>
-              <SwiperSlide>
-                <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
-                  <p className="text-lg font-medium mb-2">“It's helped me teach newer players by showing them top cut history visually.”</p>
-                  <span className="text-sm text-gray-500">– Event Organizer</span>
-                </blockquote>
-              </SwiperSlide>
-            </Swiper>
+              The analytics home of
+              <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-sky-300 to-cyan-300">
+                Beyblade X Tournaments
+              </span>
+            </motion.h1>
+
+            <motion.p
+              className="mt-4 text-neutral-200 max-w-2xl mx-auto text-base sm:text-lg"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.3 }}
+            >
+              Track events, dissect meta trends, and shop the exact parts top players use. Built for serious bladers and event organizers.
+            </motion.p>
+
+            <motion.div
+              className="mt-8 flex flex-col sm:flex-row gap-3 justify-center"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.4 }}
+            >
+              <Link to="/home" className="btn btn-primary btn-lg gap-2">
+                Enter MetaBeys <ArrowRight className="w-5 h-5" />
+              </Link>
+              <Link to="/user-auth" className="btn btn-outline btn-lg">
+                Create free account
+              </Link>
+            </motion.div>
+
+            {/* Upcoming events ticker */}
+            {upcoming.length > 0 && (
+              <div className="mt-10 rounded-xl border border-white/10 bg-white/5">
+                <div className="px-4 py-2 text-xs uppercase tracking-wider text-neutral-300 border-b border-white/10 flex items-center justify-center gap-2">
+                  <CalendarCheck className="w-4 h-4" />
+                  Upcoming events
+                </div>
+                <Marquee pauseOnHover gradient={false} speed={36} className="py-3">
+                  {upcoming.map((e, idx) => (
+                    <div key={String(e.id) + idx} className="mx-6 flex items-center gap-3 opacity-90">
+                      <span className="text-indigo-300 text-xs">{new Date(e.startTime || e.date || 0).toLocaleDateString()}</span>
+                      <span className="font-medium">{e.title}</span>
+                      <span className="text-neutral-300 text-sm">{[e.city, e.region].filter(Boolean).join(", ")}</span>
+                      <Link to="/events" className="text-accent underline underline-offset-2">View</Link>
+                    </div>
+                  ))}
+                </Marquee>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* STORE ONBOARDING */}
-        <section className="bg-base-100 text-base-content py-20 px-6">
-          <div className="max-w-5xl mx-auto text-center space-y-6">
-            <h2 className="text-4xl font-bold">Partner With MetaBeys</h2>
-            <p className="text-neutral-600">We’re actively onboarding stores. All features are <strong>100% free</strong> during beta.</p>
+        {/* TRUST BAR */}
+        <section className="px-6 pb-14">
+          <div className="max-w-7xl mx-auto rounded-xl border border-white/10 bg-white/5 p-4">
+            <div className="text-center text-sm text-neutral-200 mb-2">Trusted by stores and organizers across North America</div>
+            <Marquee pauseOnHover gradient={false} speed={36}>
+              {storeNames.length === 0 ? (
+                <div className="text-neutral-300">Loading partners…</div>
+              ) : (
+                storeNames.map((n, i) => (
+                  <div key={i} className="mx-6 opacity-90 hover:opacity-100 transition-opacity">{n}</div>
+                ))
+              )}
+            </Marquee>
+          </div>
+        </section>
 
-            <div className="bg-white text-left p-8 rounded-xl shadow-md space-y-6">
-              <h3 className="text-2xl font-semibold text-black">Free Plan (Beta Access)</h3>
-              <ul className="list-disc pl-5 text-gray-700 space-y-2">
-                <li>Your store will be listed with logo, location, and Google Maps.</li>
-                <li>Your products will link to relevant top combos.</li>
-                <li>Events will show up in the global calendar & completed results.</li>
-                <li>Submit: Event Name, Date, Buy Link, Top Cut Decklists.</li>
-              </ul>
-              <p className="text-gray-800 font-medium">Interested? Email us at <a href="mailto:info@game3.ca" className="text-accent underline">info@game3.ca</a></p>
+        {/* FEATURE GRID */}
+        <section className="py-16 px-6">
+          <div className="max-w-7xl mx-auto">
+            <SectionTitle title="What you can do" subtitle="Competitive features built for serious bladers" />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-10">
+              <FeatureCard icon={<Trophy className="w-6 h-6" />} title="Meta Leaderboard" desc="Live rankings of top Blades, Ratchets, and Bits from real events." />
+              <FeatureCard icon={<CalendarCheck className="w-6 h-6" />} title="Tournaments" desc="Find upcoming locals & regionals. Filter by city, store, or date." />
+              <FeatureCard icon={<PieChart className="w-6 h-6" />} title="Combo Analytics" desc="Analyze top-cut trends, matchup patterns, and combo prevalence." />
+              <FeatureCard icon={<ShoppingCart className="w-6 h-6" />} title="Shop Integration (Coming Soon)" desc="Buy the exact parts used in top decks from verified vendors." />
+              <FeatureCard icon={<MapPin className="w-6 h-6" />} title="Store Finder" desc="Browse curated stores hosting Beyblade events in your region." />
+              <FeatureCard icon={<Swords className="w-6 h-6" />} title="Tournament Lab" desc="Simulate how your build would stack up based on meta history." />
+            </div>
+          </div>
+        </section>
+
+        {/* TOP COMBOS with timeframe filter */}
+        <section className="py-16 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+              <SectionTitle title="Top Performing Meta Combos" subtitle="Proven by real tournament data" />
+              <TimeframeSelect value={timeframe} onChange={setTimeframe} />
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {topCombos.length === 0 ? (
+                <SkeletonCard repeat={3} />
+              ) : (
+                topCombos.map((c, i) => (
+                  <Tilt key={i} tiltMaxAngleX={6} tiltMaxAngleY={6} className="bg-white rounded-xl shadow p-6 text-center">
+                    <div className="text-xs uppercase tracking-wide text-indigo-700 font-semibold">#{i + 1} Meta Pick</div>
+                    <div className="mt-1 text-2xl font-extrabold text-gray-900">{c.blade}</div>
+                    <div className="text-gray-700">{c.ratchet} • {c.bit}</div>
+                    <div className="mt-2 text-sm text-gray-700">
+                      {c.appearances} top-cut appearances
+                      <span className="text-gray-500"> · {c.eventCount} events</span>
+                    </div>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <Link to={`/leaderboard?blade=${encodeURIComponent(c.blade)}`} className="btn btn-sm btn-primary">
+                        See usage
+                      </Link>
+                      <Link to="/tournament-lab" className="btn btn-sm bg-gray-900 text-white hover:bg-gray-800 border-gray-900">
+                        Test in Lab
+                      </Link>
+                    </div>
+                  </Tilt>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* METRICS */}
+        <section className="py-16 bg-gradient-to-r from-[#1e293b] to-[#0f172a] text-white px-6">
+          <div className="max-w-7xl mx-auto">
+            <SectionTitle title="MetaBeys in numbers" subtitle="Growing with the community" invert />
+            <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-6">
+              <StatCard label="Top-cut appearances" value={comboCount} suffix="+" />
+              <StatCard label="Events logged" value={eventCount} suffix="+" />
+              <StatCard label="Stores listed" value={storeCount} suffix="+" />
+            </div>
+          </div>
+        </section>
+
+        {/* TESTIMONIALS */}
+        <section className="bg-white text-gray-900 py-20 px-6">
+          <div className="max-w-7xl mx-auto">
+            <SectionTitle title="Loved by players & stores" subtitle="Real feedback from the community" centerOnLight />
+            <div className="max-w-3xl mx-auto mt-8">
+              <Swiper modules={[Autoplay, Pagination]} autoplay={{ delay: 5000 }} pagination={{ clickable: true }} loop spaceBetween={24}>
+                {[
+                  { q: "I used MetaBeys to build and won my first tournament.", a: "Competitive Player" },
+                  { q: "Filtering by location is insanely helpful for locals & meta building.", a: "Regional Champion" },
+                  { q: "Our store uploads every event here. It’s streamlined and professional.", a: "Store Owner" },
+                  { q: "Great for teaching new players using real Top Cut history.", a: "Event Organizer" },
+                ].map((t, i) => (
+                  <SwiperSlide key={i}>
+                    <blockquote className="bg-gray-100 p-6 rounded-xl shadow text-left">
+                      <p className="text-lg font-medium mb-2">“{t.q}”</p>
+                      <span className="text-sm text-gray-600">– {t.a}</span>
+                    </blockquote>
+                  </SwiperSlide>
+                ))}
+              </Swiper>
             </div>
           </div>
         </section>
 
         {/* FOOTER */}
-        <footer className="text-center py-10 text-neutral-400 text-sm">
+        <footer className="text-center py-10 text-neutral-300 text-sm">
           © {new Date().getFullYear()} MetaBeys. Built by @Aysus & @Karl6ix.
         </footer>
-      </motion.div>
+      </div>
     </>
   )
 }
 
-function Feature({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+/* ---------- Subcomponents ---------- */
+
+function SectionTitle({
+  title, subtitle, invert, centerOnLight,
+}: { title: string; subtitle?: string; invert?: boolean; centerOnLight?: boolean }) {
+  const titleCls = invert
+    ? "text-white"
+    : centerOnLight
+    ? "text-gray-900"
+    : "text-white"
+  const subCls = invert
+    ? "text-white/80"
+    : centerOnLight
+    ? "text-gray-600"
+    : "text-neutral-200"
   return (
-    <div className="p-6 rounded-xl bg-white shadow text-center hover:shadow-lg transition">
-      <div className="flex justify-center text-accent mb-3">{icon}</div>
-      <h3 className="text-lg font-bold text-black mb-1">{title}</h3>
-      <p className="text-sm text-gray-700">{desc}</p>
+    <div className={(centerOnLight ? "mx-auto text-center " : "") + "max-w-3xl"}>
+      <h2 className={`${titleCls} text-3xl sm:text-4xl font-extrabold`}>{title}</h2>
+      {subtitle && <p className={`${subCls} mt-2`}>{subtitle}</p>}
     </div>
+  )
+}
+
+function FeatureCard({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <Tilt tiltMaxAngleX={4} tiltMaxAngleY={4} className="p-[1px] rounded-2xl bg-gradient-to-br from-indigo-500/40 to-cyan-500/30">
+      <div className="p-5 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-md transition text-left">
+        <div className="flex items-center gap-3 text-indigo-700 font-semibold">{icon}<span>{title}</span></div>
+        <p className="mt-2 text-gray-700 text-sm leading-relaxed">{desc}</p>
+      </div>
+    </Tilt>
+  )
+}
+
+function StatCard({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
+  return (
+    <div className="rounded-2xl p-6 border border-white/15 bg-white/5">
+      <div className="text-4xl font-extrabold"><CountUp end={value || 0} duration={1.2} separator="," />{suffix}</div>
+      <div className="text-sm text-neutral-200 mt-1">{label}</div>
+    </div>
+  )
+}
+
+function TimeframeSelect({ value, onChange }: { value: Timeframe; onChange: (v: Timeframe) => void }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-neutral-200">View</span>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value as Timeframe)}
+        className="select select-sm select-bordered bg-white text-gray-900"
+      >
+        <option value="all">All Time</option>
+        <option value="year">Past Year</option>
+        <option value="month">Past Month</option>
+        <option value="week">Past Week</option>
+      </select>
+    </div>
+  )
+}
+
+function SkeletonCard({ repeat = 1 }: { repeat?: number }) {
+  return (
+    <>
+      {Array.from({ length: repeat }).map((_, i) => (
+        <div key={i} className="animate-pulse rounded-xl border border-white/10 bg-white/5 p-6 min-h-[120px]" />
+      ))}
+    </>
   )
 }
