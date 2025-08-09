@@ -331,7 +331,7 @@ export default function Landing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
             >
-              The analytics home of
+              The Analytics Home of
               <span className="block text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-sky-300 to-cyan-300">
                 Beyblade X Tournaments
               </span>
