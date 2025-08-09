@@ -5,6 +5,7 @@ import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 import ForumThread from "./pages/ForumThread"
 import Forum from "./pages/Forum"
+import BuildFromMyParts from "./pages/BuildFromMyParts"
 
 // ✅ Lazy load each route
 const Home = lazy(() => import("./pages/Home"))
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/user-auth" element={<UserAuth />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/build-from-my-parts" element={<BuildFromMyParts />} />
           <Route path="/stores" element={<StoreFinder />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/stores/:id" element={<StoreDetail />} />

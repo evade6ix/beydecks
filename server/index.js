@@ -11,6 +11,21 @@ import dotenv from "dotenv"
 import uploadRoute from "./routes/upload.js"
 import eventsRouter from "./routes/events.js"
 
+function getUserIdFromAuth(req) {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+  if (scheme !== "Bearer" || !token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(payloadB64, "base64").toString("utf8");
+    const payload = JSON.parse(json);
+    return payload.sub || payload.id || payload.userId || payload.user?.id || null;
+  } catch {
+    return null;
+  }
+}
 
 dotenv.config()
 
@@ -29,6 +44,59 @@ const startServer = async () => {
   app.use(fileUpload())
 
   const { users, products, events, stores, prepDecks } = await connectDB()
+
+ app.get("/api/me/parts", async (req, res) => {
+  const userId = getUserIdFromAuth(req);
+  if (!userId) return res.status(401).json({ error: "Not logged in" });
+
+  const idNum = Number(userId);
+  const query = Number.isFinite(idNum)
+    ? { $or: [{ id: idNum }, { id: String(userId) }] }
+    : { id: String(userId) };
+
+  const user = await users.findOne(query);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  res.json({
+    blades: user.blades || [],
+    ratchets: user.ratchets || [],
+    bits: user.bits || [],
+    partsUpdatedAt: user.partsUpdatedAt || null,
+  });
+});
+app.put("/api/me/parts", async (req, res) => {
+  try {
+    const userId = getUserIdFromAuth(req);
+    if (!userId) return res.status(401).json({ error: "Not logged in" });
+
+    const idNum = Number(userId);
+    const query = Number.isFinite(idNum)
+      ? { $or: [{ id: idNum }, { id: String(userId) }] }
+      : { id: String(userId) };
+
+    const { blades = [], ratchets = [], bits = [] } = req.body || {};
+    const clean = (xs) =>
+      Array.isArray(xs)
+        ? [...new Set(xs.map((x) => String(x || "").trim()))].filter(Boolean).slice(0, 300)
+        : [];
+
+    const update = {
+      blades: clean(blades),
+      ratchets: clean(ratchets),
+      bits: clean(bits),
+      partsUpdatedAt: new Date(),
+    };
+
+    const result = await users.findOneAndUpdate(query, { $set: update }, { returnDocument: "after" });
+    if (!result.value) return res.status(404).json({ error: "User not found" });
+
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to save parts" });
+  }
+});
+
 
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
