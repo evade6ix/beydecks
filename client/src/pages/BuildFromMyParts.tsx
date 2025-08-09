@@ -192,8 +192,10 @@ export default function BuildFromMyParts() {
     ;(async () => {
       try {
         const res = await fetch(`${API}/me/parts`, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        })
+  headers: { Authorization: `Bearer ${authToken}` },
+  cache: "no-store",
+})
+
 
         if (!res.ok) return
         const data = await res.json()
@@ -208,31 +210,38 @@ export default function BuildFromMyParts() {
     return () => { aborted = true }
   }, [isLoggedIn, authToken])
 
-  /* Save helpers */
-  const saveOwnedParts = async () => {
-    if (!isLoggedIn) return
-    try {
-      setSaveState("saving")
-      const res = await fetch(`${API}/me/parts`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          blades: ownedBlades,
-          ratchets: ownedRatchets,
-          bits: ownedBits,
-        }),
-      })
-      if (!res.ok) throw new Error("save failed")
-      setSaveState("saved")
-      setTimeout(() => setSaveState("idle"), 1000)
-    } catch {
-      setSaveState("error")
-      setTimeout(() => setSaveState("idle"), 1500)
-    }
+ const saveOwnedParts = async () => {
+  if (!isLoggedIn) return
+  try {
+    setSaveState("saving")
+    const res = await fetch(`${API}/me/parts`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({
+        blades: ownedBlades,
+        ratchets: ownedRatchets,
+        bits: ownedBits,
+      }),
+      cache: "no-store",
+    })
+    if (!res.ok) throw new Error("save failed")
+
+    const updated = await res.json()
+    setOwnedBlades(Array.isArray(updated?.blades) ? updated.blades : [])
+    setOwnedRatchets(Array.isArray(updated?.ratchets) ? updated.ratchets : [])
+    setOwnedBits(Array.isArray(updated?.bits) ? updated.bits : [])
+
+    setSaveState("saved")
+    setTimeout(() => setSaveState("idle"), 1000)
+  } catch {
+    setSaveState("error")
+    setTimeout(() => setSaveState("idle"), 1500)
   }
+}
+
 
   const queueSave = () => {
     if (!isLoggedIn) return
