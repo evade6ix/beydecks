@@ -86,7 +86,7 @@ export default function BuildFromMyParts() {
         setLoading(true)
         setError(null)
 
-        const res = await fetch(`${API}/api/events`)
+        const res = await fetch(`${API}/events`)
         const data = await res.json()
 
         // part sets + frequencies
@@ -191,7 +191,7 @@ export default function BuildFromMyParts() {
     let aborted = false
     ;(async () => {
       try {
-        const res = await fetch(`${API}/api/me/parts`, {
+        const res = await fetch(`${API}/me/parts`, {
           headers: { Authorization: `Bearer ${authToken}` },
         })
 
@@ -213,7 +213,7 @@ export default function BuildFromMyParts() {
     if (!isLoggedIn) return
     try {
       setSaveState("saving")
-      const res = await fetch(`${API}/api/me/parts`, {
+      const res = await fetch(`${API}/me/parts`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
