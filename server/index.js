@@ -8,26 +8,11 @@ import { existsSync, mkdirSync } from "fs"
 import { connectDB } from "./mongo.js"
 import authRoutes from "./routes/auth.js"
 import forumRoutes from "./routes/forum.js"
-import dotenv from "dotenv"
 import eventsRouter from "./routes/events.js"
+import userPartsRoutes from "./routes/userParts.js"
+import dotenv from "dotenv"
 
 dotenv.config()
-
-function getUserIdFromAuth(req) {
-  const header = req.headers.authorization || ""
-  const [scheme, token] = header.split(" ")
-  if (scheme !== "Bearer" || !token) return null
-  try {
-    const parts = token.split(".")
-    if (parts.length < 2) return null
-    const payloadB64 = parts[1].replace(/-/g, "+").replace(/_/g, "/")
-    const json = Buffer.from(payloadB64, "base64").toString("utf8")
-    const payload = JSON.parse(json)
-    return payload.sub || payload.id || payload.userId || payload.user?.id || null
-  } catch {
-    return null
-  }
-}
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -45,74 +30,19 @@ const startServer = async () => {
 
   const { users, products, events, stores, prepDecks } = await connectDB()
 
-  // ---------- /me/parts (both with and without /api) ----------
-  const getMeParts = async (req, res) => {
-    const userId = getUserIdFromAuth(req)
-    if (!userId) return res.status(401).json({ error: "Not logged in" })
-
-    const idNum = Number(userId)
-    const query = Number.isFinite(idNum)
-      ? { $or: [{ id: idNum }, { id: String(userId) }] }
-      : { id: String(userId) }
-
-    const user = await users.findOne(query)
-    if (!user) return res.status(404).json({ error: "User not found" })
-
-    res.json({
-      blades: user.blades || [],
-      ratchets: user.ratchets || [],
-      bits: user.bits || [],
-      partsUpdatedAt: user.partsUpdatedAt || null,
-    })
-  }
-
-  const putMeParts = async (req, res) => {
-    try {
-      const userId = getUserIdFromAuth(req)
-      if (!userId) return res.status(401).json({ error: "Not logged in" })
-
-      const idNum = Number(userId)
-      const query = Number.isFinite(idNum)
-        ? { $or: [{ id: idNum }, { id: String(userId) }] }
-        : { id: String(userId) }
-
-      const { blades = [], ratchets = [], bits = [] } = req.body || {}
-      const clean = (xs) =>
-        Array.isArray(xs)
-          ? [...new Set(xs.map((x) => String(x || "").trim()))].filter(Boolean).slice(0, 300)
-          : []
-
-      const update = {
-        blades: clean(blades),
-        ratchets: clean(ratchets),
-        bits: clean(bits),
-        partsUpdatedAt: new Date(),
-      }
-
-      const result = await users.findOneAndUpdate(query, { $set: update }, { returnDocument: "after" })
-      if (!result.value) return res.status(404).json({ error: "User not found" })
-
-      res.status(204).send()
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ error: "Failed to save parts" })
-    }
-  }
-
-  app.get("/api/me/parts", getMeParts)
-  app.put("/api/me/parts", putMeParts)
-  app.get("/me/parts", getMeParts)   // alias (no /api)
-  app.put("/me/parts", putMeParts)   // alias (no /api)
-
-  // ---------- Auth & Forum routers ----------
+  // ---------- Auth, Forum ----------
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
 
-  // ---------- Events router (mount on both /api/events and /events) ----------
+  // ---------- Me/Parts (mount on both prefixes) ----------
+  app.use("/api/me", userPartsRoutes)
+  app.use("/me", userPartsRoutes)
+
+  // ---------- Events router (PUT /:id), mount on both ----------
   app.use("/api/events", eventsRouter)
   app.use("/events", eventsRouter)
 
-  // ---------- EVENTS CRUD (duplicate on both paths so old/new clients work) ----------
+  // ---------- EVENTS CRUD (both /api and non-/api) ----------
   const listEvents = async (_, res) => {
     const data = await events.find().toArray()
     res.json(data)
@@ -148,11 +78,11 @@ const startServer = async () => {
   app.put("/api/events/:id", updateEvent)
   app.delete("/api/events/:id", deleteEvent)
 
-  app.get("/events", listEvents)            // alias (no /api)
-  app.get("/events/:id", getEvent)          // alias (no /api)
-  app.post("/events", createEvent)          // alias (no /api)
-  app.put("/events/:id", updateEvent)       // alias (no /api)
-  app.delete("/events/:id", deleteEvent)    // alias (no /api)
+  app.get("/events", listEvents)
+  app.get("/events/:id", getEvent)
+  app.post("/events", createEvent)
+  app.put("/events/:id", updateEvent)
+  app.delete("/events/:id", deleteEvent)
 
   // ---------- STORES CRUD (both /api and non-/api) ----------
   const listStores = async (_, res) => res.json(await stores.find().toArray())
@@ -187,11 +117,11 @@ const startServer = async () => {
   app.put("/api/stores/:id", updateStore)
   app.delete("/api/stores/:id", deleteStore)
 
-  app.get("/stores", listStores)              // alias (no /api)
-  app.get("/stores/:id", getStore)            // alias (no /api)
-  app.post("/stores", createStore)            // alias (no /api)
-  app.put("/stores/:id", updateStore)         // alias (no /api)
-  app.delete("/stores/:id", deleteStore)      // alias (no /api)
+  app.get("/stores", listStores)
+  app.get("/stores/:id", getStore)
+  app.post("/stores", createStore)
+  app.put("/stores/:id", updateStore)
+  app.delete("/stores/:id", deleteStore)
 
   // ---------- PRODUCTS CRUD (both /api and non-/api) ----------
   const listProducts = async (_, res) => res.json(await products.find().toArray())
@@ -226,13 +156,13 @@ const startServer = async () => {
   app.put("/api/products/:id", updateProduct)
   app.delete("/api/products/:id", deleteProduct)
 
-  app.get("/products", listProducts)              // alias (no /api)
-  app.get("/products/:id", getProduct)            // alias (no /api)
-  app.post("/products", createProduct)            // alias (no /api)
-  app.put("/products/:id", updateProduct)         // alias (no /api)
-  app.delete("/products/:id", deleteProduct)      // alias (no /api)
+  app.get("/products", listProducts)
+  app.get("/products/:id", getProduct)
+  app.post("/products", createProduct)
+  app.put("/products/:id", updateProduct)
+  app.delete("/products/:id", deleteProduct)
 
-  // ---------- Combos & matchups (legacy routes, leave as-is) ----------
+  // ---------- Combos & matchups (legacy) ----------
   app.post("/users/:id/combos", async (req, res) => {
     const user = await users.findOne({ id: req.params.id })
     if (!user) return res.status(404).send("User not found")
@@ -302,8 +232,8 @@ const startServer = async () => {
     const recentEvents = allEvents.filter((event) => !isNaN(new Date(event.startTime)))
     const topCutCombos = []
     for (const event of recentEvents) {
-      for (const player of event.topCut || []) {
-        for (const combo of player.combos || []) {
+      for (const player of (event.topCut || [])) {
+        for (const combo of (player.combos || [])) {
           topCutCombos.push({
             combo,
             eventTitle: event.title,

@@ -1,21 +1,38 @@
-// server/routes/userParts.js
 import express from "express"
+import jwt from "jsonwebtoken"
 import { getDb } from "../mongo.js"
-import { requireAuth } from "../middleware/auth.js" // must set req.user.id (string)
 
 const router = express.Router()
+const JWT_SECRET = process.env.JWT_SECRET
 
-// GET /api/me/parts → fetch saved parts for current user
+// tiny inline auth guard: sets req.user = { id }
+function requireAuth(req, res, next) {
+  const auth = req.headers.authorization || ""
+  const [scheme, token] = auth.split(" ")
+  if (scheme !== "Bearer" || !token) return res.status(401).json({ error: "Unauthorized" })
+  try {
+    const payload = jwt.verify(token, JWT_SECRET)
+    if (!payload?.id) return res.status(401).json({ error: "Invalid token" })
+    req.user = { id: String(payload.id) }
+    next()
+  } catch {
+    return res.status(401).json({ error: "Invalid token" })
+  }
+}
+
+// GET /me/parts (after mount) → fetch saved parts from users collection
 router.get("/parts", requireAuth, async (req, res) => {
   try {
     const db = await getDb()
-    const uid = req.user.id // ensure your auth middleware sets this
-    const doc = await db.collection("user_parts").findOne({ userId: uid })
+    const users = db.collection("users")
+    const user = await users.findOne({ id: req.user.id })
+    if (!user) return res.status(404).json({ error: "User not found" })
+
     res.json({
-      blades: doc?.blades ?? [],
-      ratchets: doc?.ratchets ?? [],
-      bits: doc?.bits ?? [],
-      updatedAt: doc?.updatedAt ?? null,
+      blades: user.blades || [],
+      ratchets: user.ratchets || [],
+      bits: user.bits || [],
+      updatedAt: user.partsUpdatedAt || null,
     })
   } catch (err) {
     console.error(err)
@@ -23,26 +40,31 @@ router.get("/parts", requireAuth, async (req, res) => {
   }
 })
 
-// PUT /api/me/parts → save/replace parts for current user
+// PUT /me/parts → save parts to users collection
 router.put("/parts", requireAuth, async (req, res) => {
   try {
     const db = await getDb()
-    const uid = req.user.id
+    const users = db.collection("users")
     const { blades = [], ratchets = [], bits = [] } = req.body || {}
 
-    await db.collection("user_parts").updateOne(
-      { userId: uid },
-      {
-        $set: {
-          userId: uid,
-          blades: Array.isArray(blades) ? blades : [],
-          ratchets: Array.isArray(ratchets) ? ratchets : [],
-          bits: Array.isArray(bits) ? bits : [],
-          updatedAt: new Date(),
-        },
-      },
-      { upsert: true }
+    const clean = (xs) =>
+      Array.isArray(xs)
+        ? [...new Set(xs.map((x) => String(x || "").trim()))].filter(Boolean).slice(0, 300)
+        : []
+
+    const update = {
+      blades: clean(blades),
+      ratchets: clean(ratchets),
+      bits: clean(bits),
+      partsUpdatedAt: new Date(),
+    }
+
+    const result = await users.findOneAndUpdate(
+      { id: req.user.id },
+      { $set: update },
+      { returnDocument: "after" }
     )
+    if (!result.value) return res.status(404).json({ error: "User not found" })
 
     res.status(204).end()
   } catch (err) {
@@ -51,32 +73,10 @@ router.put("/parts", requireAuth, async (req, res) => {
   }
 })
 
-// (optional) accept POST too, to avoid “Cannot POST /api/me/parts” from any older client
+// (compat) POST /me/parts → behave like PUT for older clients
 router.post("/parts", requireAuth, async (req, res) => {
-  try {
-    const db = await getDb()
-    const uid = req.user.id
-    const { blades = [], ratchets = [], bits = [] } = req.body || {}
-
-    await db.collection("user_parts").updateOne(
-      { userId: uid },
-      {
-        $set: {
-          userId: uid,
-          blades: Array.isArray(blades) ? blades : [],
-          ratchets: Array.isArray(ratchets) ? ratchets : [],
-          bits: Array.isArray(bits) ? bits : [],
-          updatedAt: new Date(),
-        },
-      },
-      { upsert: true }
-    )
-
-    res.status(204).end()
-  } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: "Failed to save parts" })
-  }
+  // just delegate to PUT handler
+  return router.handle({ ...req, method: "PUT" }, res)
 })
 
 export default router
