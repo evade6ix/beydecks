@@ -24,13 +24,23 @@ const startServer = async () => {
   const uploadDir = join(__dirname, "../client/public/uploads")
   if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true })
 
-  app.use(cors())
+  // --- CORS (allow preflight + auth header) ---
+  app.use(
+    cors({
+      origin: true, // or set to your domains array
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization"],
+      credentials: true,
+    })
+  )
+  app.options("*", cors()) // handle all preflights
+
   app.use(express.json({ limit: "10mb" }))
   app.use(fileUpload())
 
   const { users, products, events, stores, prepDecks } = await connectDB()
 
-  // ---------- Auth, Forum ----------
+  // ---------- Auth & Forum ----------
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
 
@@ -38,7 +48,7 @@ const startServer = async () => {
   app.use("/api/me", userPartsRoutes)
   app.use("/me", userPartsRoutes)
 
-  // ---------- Events router (PUT /:id), mount on both ----------
+  // ---------- Events router (PUT /:id) on both ----------
   app.use("/api/events", eventsRouter)
   app.use("/events", eventsRouter)
 
@@ -232,8 +242,8 @@ const startServer = async () => {
     const recentEvents = allEvents.filter((event) => !isNaN(new Date(event.startTime)))
     const topCutCombos = []
     for (const event of recentEvents) {
-      for (const player of (event.topCut || [])) {
-        for (const combo of (player.combos || [])) {
+      for (const player of event.topCut || []) {
+        for (const combo of player.combos || []) {
           topCutCombos.push({
             combo,
             eventTitle: event.title,
