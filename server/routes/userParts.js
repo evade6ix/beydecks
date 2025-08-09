@@ -1,3 +1,4 @@
+// server/routes/userParts.js
 import express from "express"
 import jwt from "jsonwebtoken"
 import { getDb } from "../mongo.js"
@@ -5,7 +6,6 @@ import { getDb } from "../mongo.js"
 const router = express.Router()
 const JWT_SECRET = process.env.JWT_SECRET
 
-// tiny inline auth guard: sets req.user = { id }
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization || ""
   const [scheme, token] = auth.split(" ")
@@ -20,14 +20,13 @@ function requireAuth(req, res, next) {
   }
 }
 
-// GET /me/parts (after mount) → fetch saved parts from users collection
+// GET /me/parts
 router.get("/parts", requireAuth, async (req, res) => {
   try {
     const db = await getDb()
     const users = db.collection("users")
     const user = await users.findOne({ id: req.user.id })
     if (!user) return res.status(404).json({ error: "User not found" })
-
     res.json({
       blades: user.blades || [],
       ratchets: user.ratchets || [],
@@ -40,8 +39,8 @@ router.get("/parts", requireAuth, async (req, res) => {
   }
 })
 
-// PUT /me/parts → save parts to users collection
-router.put("/parts", requireAuth, async (req, res) => {
+// shared save handler
+async function saveParts(req, res) {
   try {
     const db = await getDb()
     const users = db.collection("users")
@@ -65,18 +64,15 @@ router.put("/parts", requireAuth, async (req, res) => {
       { returnDocument: "after" }
     )
     if (!result.value) return res.status(404).json({ error: "User not found" })
-
     res.status(204).end()
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: "Failed to save parts" })
   }
-})
+}
 
-// (compat) POST /me/parts → behave like PUT for older clients
-router.post("/parts", requireAuth, async (req, res) => {
-  // just delegate to PUT handler
-  return router.handle({ ...req, method: "PUT" }, res)
-})
+// PUT and POST both supported
+router.put("/parts", requireAuth, saveParts)
+router.post("/parts", requireAuth, saveParts)
 
 export default router
