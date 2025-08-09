@@ -210,37 +210,49 @@ export default function BuildFromMyParts() {
     return () => { aborted = true }
   }, [isLoggedIn, authToken])
 
-  /* Save helpers */
-  const saveOwnedParts = async () => {
-    if (!isLoggedIn) return
-    try {
-      setSaveState("saving")
-      const res = await fetch(`${API}/me/parts`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-        body: JSON.stringify({
-          blades: ownedBlades,
-          ratchets: ownedRatchets,
-          bits: ownedBits,
-        }),
-      })
-      if (!res.ok) throw new Error("save failed")
-      setSaveState("saved")
-      setTimeout(() => setSaveState("idle"), 1000)
-    } catch {
-      setSaveState("error")
-      setTimeout(() => setSaveState("idle"), 1500)
-    }
+ // accept an optional payload so we can pass the *next* values
+const saveOwnedParts = async (
+  payload?: { blades: string[]; ratchets: string[]; bits: string[] }
+) => {
+  if (!isLoggedIn) return
+  try {
+    setSaveState("saving")
+    const body = payload ?? { blades: ownedBlades, ratchets: ownedRatchets, bits: ownedBits }
+    const res = await fetch(`${API}/me/parts`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error("save failed")
+    setSaveState("saved")
+    setTimeout(() => setSaveState("idle"), 1000)
+  } catch {
+    setSaveState("error")
+    setTimeout(() => setSaveState("idle"), 1500)
   }
+}
 
-  const queueSave = () => {
-    if (!isLoggedIn) return
-    if (saveTimer.current) window.clearTimeout(saveTimer.current)
-    saveTimer.current = window.setTimeout(saveOwnedParts, 500)
+
+  const queueSave = (next?: Partial<{ blades: string[]; ratchets: string[]; bits: string[] }>) => {
+  if (!isLoggedIn) return
+  const payload = {
+    blades: next?.blades ?? ownedBlades,
+    ratchets: next?.ratchets ?? ownedRatchets,
+    bits: next?.bits ?? ownedBits,
   }
+  if (saveTimer.current) window.clearTimeout(saveTimer.current)
+  saveTimer.current = window.setTimeout(() => saveOwnedParts(payload), 500)
+}
+useEffect(() => {
+    return () => {
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current)
+      }
+    }
+  }, [])
 
   const canGenerate =
     ownedBlades.length > 0 && ownedRatchets.length > 0 && ownedBits.length > 0
@@ -360,7 +372,7 @@ export default function BuildFromMyParts() {
                     value={ownedBlades}
                     onChange={(v) => {
                       setOwnedBlades(v)
-                      queueSave()
+                      queueSave({ blades:v})
                     }}
                   />
                 </div>
@@ -373,7 +385,7 @@ export default function BuildFromMyParts() {
                     value={ownedRatchets}
                     onChange={(v) => {
                       setOwnedRatchets(v)
-                      queueSave()
+                      queueSave({ratchets: v})
                     }}
                   />
                 </div>
@@ -386,7 +398,7 @@ export default function BuildFromMyParts() {
                     value={ownedBits}
                     onChange={(v) => {
                       setOwnedBits(v)
-                      queueSave()
+                      queueSave({ bits: v})
                     }}
                   />
                 </div>
