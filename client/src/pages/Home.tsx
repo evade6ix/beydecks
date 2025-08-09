@@ -111,7 +111,7 @@ export default function Home() {
         </div>
 
         <div className="card bg-base-200 p-6 text-center">
-          <h2 className="text-2xl font-bold mb-2">🔬 Tournament Lab</h2>
+          <h2 className="text-2xl font-bold mb-2">Tournament Lab</h2>
           <p className="text-sm text-neutral-content mb-4">
             Curious how your combo would perform in real events? Test it against actual tournament data to see how often it appears in top cut results.
           </p>
@@ -159,7 +159,7 @@ export default function Home() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
           <div className="card bg-base-200 p-4 text-center">
-            <h2 className="text-xl font-semibold mb-2">🧠 Top Meta Blades</h2>
+            <h2 className="text-xl font-semibold mb-2">Top Meta Blades</h2>
             <ul className="text-sm space-y-1">
               {topCombos.map((item, i) => (
                 <li key={i}>
@@ -170,7 +170,7 @@ export default function Home() {
           </div>
 
           <div className="card bg-base-200 p-4 text-center">
-            <h2 className="text-xl font-semibold mb-2">📅 Next Event</h2>
+            <h2 className="text-xl font-semibold mb-2">Next Event</h2>
             {upcoming ? (
               <>
                 <h3 className="text-lg font-bold">{upcoming.title}</h3>
