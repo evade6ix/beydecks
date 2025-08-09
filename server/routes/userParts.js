@@ -6,10 +6,13 @@ import { getDb } from "../mongo.js"
 const router = express.Router()
 const JWT_SECRET = process.env.JWT_SECRET
 
+// Simple auth guard: sets req.user = { id }
 function requireAuth(req, res, next) {
   const auth = req.headers.authorization || ""
   const [scheme, token] = auth.split(" ")
-  if (scheme !== "Bearer" || !token) return res.status(401).json({ error: "Unauthorized" })
+  if (scheme !== "Bearer" || !token) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
   try {
     const payload = jwt.verify(token, JWT_SECRET)
     if (!payload?.id) return res.status(401).json({ error: "Invalid token" })
@@ -25,7 +28,7 @@ router.get("/parts", requireAuth, async (req, res) => {
   try {
     const db = await getDb()
     const users = db.collection("users")
-    const user = await users.findOne({ id: req.user.id })
+    const user = await users.findOne({ id: String(req.user.id) })
     if (!user) return res.status(404).json({ error: "User not found" })
     res.json({
       blades: user.blades || [],
@@ -39,7 +42,7 @@ router.get("/parts", requireAuth, async (req, res) => {
   }
 })
 
-// shared save handler
+// Shared save handler for PUT/POST
 async function saveParts(req, res) {
   try {
     const db = await getDb()
@@ -48,30 +51,36 @@ async function saveParts(req, res) {
 
     const clean = (xs) =>
       Array.isArray(xs)
-        ? [...new Set(xs.map((x) => String(x || "").trim()))].filter(Boolean).slice(0, 300)
+        ? [...new Set(xs.map((x) => String(x || "").trim()))]
+            .filter(Boolean)
+            .slice(0, 300)
         : []
 
-    const update = {
-      blades: clean(blades),
-      ratchets: clean(ratchets),
-      bits: clean(bits),
-      partsUpdatedAt: new Date(),
+    const updateDoc = {
+      $set: {
+        blades: clean(blades),
+        ratchets: clean(ratchets),
+        bits: clean(bits),
+        partsUpdatedAt: new Date(),
+      },
     }
 
-    const result = await users.findOneAndUpdate(
-      { id: req.user.id },
-      { $set: update },
-      { returnDocument: "after" }
-    )
-    if (!result.value) return res.status(404).json({ error: "User not found" })
-    res.status(204).end()
+    // If you want to allow creating the record for an existing user
+    // who doesn't have parts yet, add { upsert: true } as the 3rd arg.
+    const r = await users.updateOne({ id: String(req.user.id) }, updateDoc /*, { upsert: true } */)
+
+    if (r.matchedCount === 0 /* && r.upsertedCount === 0 */) {
+      return res.status(404).json({ error: "User not found" })
+    }
+
+    return res.status(204).end()
   } catch (err) {
     console.error(err)
-    res.status(500).json({ error: "Failed to save parts" })
+    return res.status(500).json({ error: "Failed to save parts" })
   }
 }
 
-// PUT and POST both supported
+// PUT and (compat) POST
 router.put("/parts", requireAuth, saveParts)
 router.post("/parts", requireAuth, saveParts)
 
