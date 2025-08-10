@@ -1,17 +1,27 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import Select from "react-select"
+import {
+  MapPin,
+  Users,
+  Trophy,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Search as SearchIcon,
+} from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-interface Player {
-  name: string
-  combos: { blade: string; ratchet: string; bit: string }[]
-}
+/* --------------------------------
+   Types
+---------------------------------*/
+type Combo = { blade: string; ratchet: string; bit: string }
+type Player = { name: string; combos?: Combo[] }
 
-interface Event {
-  id: number
+type Event = {
+  id: number | string
   title: string
   startTime: string
   endTime: string
@@ -24,293 +34,402 @@ interface Event {
   city?: string
   region?: string
   country?: string
+
+  participants?: number | any[]
+  playerCount?: number
+  players?: number | any[]
+  attendees?: number | any[]
+  attendance?: number
+  participantIds?: any[]
+  attendeeIds?: any[]
+  participantList?: string
 }
 
+type SortBy = "Newest" | "Oldest" | "Most Players"
+type RSOption = { label: string; value: string }
+
+/* --------------------------------
+   Utils
+---------------------------------*/
+const fmtDate = (iso: string) =>
+  new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(
+    new Date(iso)
+  )
+
+const toOptions = (arr: readonly string[]): RSOption[] => arr.map((x) => ({ label: x, value: x }))
+
+const PAGE_SIZE = 9 // fixed per page
+
+function getAttendeeCount(e: Event): number | undefined {
+  const direct = typeof e.attendeeCount === "number" && e.attendeeCount > 0 ? e.attendeeCount : undefined
+  if (direct) return direct
+
+  const nums = [e.participants, e.playerCount, e.attendees, e.attendance, e.players].filter(
+    (v): v is number => typeof v === "number"
+  )
+  if (nums[0] && nums[0] > 0) return nums[0]
+
+  if (Array.isArray(e.players)) return e.players.length
+  if (Array.isArray(e.participants)) return e.participants.length
+  if (Array.isArray(e.attendeeIds)) return e.attendeeIds.length
+  if (Array.isArray(e.participantIds)) return e.participantIds.length
+  if (typeof e.participantList === "string") {
+    const c = e.participantList.split(",").map((s) => s.trim()).filter(Boolean).length
+    return c || undefined
+  }
+  return undefined
+}
+
+/* --------------------------------
+   react-select theme/styles (dark)
+---------------------------------*/
+const selectTheme = (theme: any) => ({
+  ...theme,
+  colors: {
+    ...theme.colors,
+    neutral0: "#111827",
+    neutral80: "#e5e7eb",
+    primary25: "#1f2937",
+    primary50: "#374151",
+    primary: "#6366f1",
+  },
+})
+const selectStyles = {
+  control: (base: any) => ({
+    ...base,
+    backgroundColor: "#111827",
+    borderColor: "#1f2937",
+    minHeight: 38,
+  }),
+  singleValue: (base: any) => ({ ...base, color: "#e5e7eb" }),
+  input: (base: any) => ({ ...base, color: "#e5e7eb" }),
+  menu: (base: any) => ({ ...base, backgroundColor: "#111827", zIndex: 30 }),
+  option: (base: any, state: any) => ({
+    ...base,
+    backgroundColor: state.isFocused ? "#1f2937" : "#111827",
+    color: "#e5e7eb",
+    cursor: "pointer",
+  }),
+}
+
+/* --------------------------------
+   Page
+---------------------------------*/
 export default function CompletedEvents() {
   const [searchParams, setSearchParams] = useSearchParams()
 
+  const [loading, setLoading] = useState(true)
   const [events, setEvents] = useState<Event[]>([])
-  const [filtered, setFiltered] = useState<Event[]>([])
   const [stores, setStores] = useState<string[]>([])
   const [countries, setCountries] = useState<string[]>([])
-  const [regions, setRegions] = useState<string[]>([])
-  const [cities, setCities] = useState<string[]>([])
 
-  const [selectedStore, setSelectedStore] = useState(searchParams.get("store") || "All")
-  const [timeframe, setTimeframe] = useState(searchParams.get("timeframe") || "All")
-  const [selectedCountry, setSelectedCountry] = useState(searchParams.get("country") || "All")
-  const [selectedRegion, setSelectedRegion] = useState(searchParams.get("region") || "All")
-  const [selectedCity, setSelectedCity] = useState(searchParams.get("city") || "All")
-  const [currentPage, setCurrentPage] = useState(Number(searchParams.get("page")) || 1)
+  // keep only: Store, Country, Sort
+  const [store, setStore] = useState<string>(searchParams.get("store") || "All")
+  const [country, setCountry] = useState<string>(searchParams.get("country") || "All")
+  const [sortBy, setSortBy] = useState<SortBy>((searchParams.get("sort") as SortBy) || "Newest")
+  const [query, setQuery] = useState<string>(searchParams.get("q") || "")
 
-  const eventsPerPage = 9
+  // pagination (fixed page size)
+  const [page, setPage] = useState<number>(Number(searchParams.get("page")) || 1)
 
-  const updateSearch = (key: string, value: string) => {
-    setSearchParams(prev => {
-      const newParams = new URLSearchParams(prev)
-      newParams.set(key, value)
-      if (key !== "page") newParams.set("page", "1") // reset page if changing filters
-      return newParams
+  // sync URL
+  const updateSearch = (next: Partial<Record<string, string>>) => {
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev)
+      Object.entries(next).forEach(([k, v]) => {
+        if (v === undefined || v === null || v === "") p.delete(k)
+        else p.set(k, v)
+      })
+      return p
     })
   }
 
+  // data load
   useEffect(() => {
-    fetch(`${API}/events`)
-      .then(res => res.json())
-      .then((data: Event[]) => {
-        const past = data.filter(e => new Date(e.endTime) < new Date())
+    const load = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`${API}/events`)
+        const data: Event[] = await res.json()
+
+        const past = data
+          .filter((e) => new Date(e.endTime) < new Date())
+          .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
+
         setEvents(past)
-
-        const storeList = Array.from(new Set(past.map(e => e.store.trim()))).sort()
-        setStores(["All", ...storeList])
-
-        const uniqueCountries = Array.from(
-          new Set(past.map(e => e.country?.trim()).filter((v): v is string => Boolean(v)))
-        ).sort()
-        setCountries(["All", ...uniqueCountries])
-      })
+        setStores(["All", ...Array.from(new Set(past.map((e) => e.store.trim()))).sort()])
+        const uniqCountries = Array.from(
+          new Set(past.map((e) => e.country?.trim()).filter(Boolean))
+        ).sort() as string[]
+        setCountries(["All", ...uniqCountries])
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
   }, [])
 
+  // filtered + searched + sorted list
+  const filtered = useMemo(() => {
+    let list = [...events]
+
+    if (store !== "All") list = list.filter((e) => e.store.trim() === store)
+    if (country !== "All") list = list.filter((e) => (e.country || "").trim() === country)
+
+    const q = query.trim().toLowerCase()
+    if (q) {
+      list = list.filter((e) =>
+        [e.title, e.store, e.city, e.region, e.country]
+          .filter(Boolean)
+          .some((s) => (s as string).toLowerCase().includes(q))
+      )
+    }
+
+    if (sortBy === "Newest")
+      list.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
+    if (sortBy === "Oldest")
+      list.sort((a, b) => new Date(a.endTime).getTime() - new Date(b.endTime).getTime())
+    if (sortBy === "Most Players")
+      list.sort((a, b) => (getAttendeeCount(b) || 0) - (getAttendeeCount(a) || 0))
+
+    return list
+  }, [events, store, country, sortBy, query])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const pageSafe = Math.min(page, totalPages)
+  const sliceStart = (pageSafe - 1) * PAGE_SIZE
+  const current = filtered.slice(sliceStart, sliceStart + PAGE_SIZE)
+
+  // keep URL in sync
   useEffect(() => {
-    const filteredEvents = selectedCountry === "All"
-      ? []
-      : events.filter(e => e.country?.trim().toLowerCase() === selectedCountry.toLowerCase())
-
-    const uniqueRegions = Array.from(
-      new Set(filteredEvents.map(e => e.region?.trim()).filter((v): v is string => Boolean(v)))
-    ).sort()
-    const uniqueCities = Array.from(
-      new Set(filteredEvents.map(e => e.city?.trim()).filter((v): v is string => Boolean(v)))
-    ).sort()
-
-    setRegions(["All", ...uniqueRegions])
-    setCities(["All", ...uniqueCities])
-    setSelectedRegion("All")
-    setSelectedCity("All")
-  }, [selectedCountry, events])
-
-  useEffect(() => {
-    let result = [...events]
-
-    if (selectedStore !== "All") {
-      result = result.filter(e => e.store.trim().toLowerCase() === selectedStore.toLowerCase())
-    }
-    if (selectedCountry !== "All") {
-      result = result.filter(e => e.country?.trim().toLowerCase() === selectedCountry.toLowerCase())
-    }
-    if (selectedRegion !== "All") {
-      result = result.filter(e => e.region?.trim().toLowerCase() === selectedRegion.toLowerCase())
-    }
-    if (selectedCity !== "All") {
-      result = result.filter(e => e.city?.trim().toLowerCase() === selectedCity.toLowerCase())
-    }
-
-    const now = new Date()
-    if (timeframe === "Last 30 Days") {
-      const cutoff = new Date()
-      cutoff.setDate(now.getDate() - 30)
-      result = result.filter(e => new Date(e.endTime) >= cutoff)
-    }
-    if (timeframe === "This Year") {
-      const yearStart = new Date(now.getFullYear(), 0, 1)
-      result = result.filter(e => new Date(e.endTime) >= yearStart)
-    }
-
-    result.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
-    setFiltered(result)
-  }, [events, selectedStore, selectedCountry, selectedRegion, selectedCity, timeframe])
-
-  const indexOfLast = currentPage * eventsPerPage
-  const indexOfFirst = indexOfLast - eventsPerPage
-  const currentEvents = filtered.slice(indexOfFirst, indexOfLast)
-  const totalPages = Math.ceil(filtered.length / eventsPerPage)
-
-  const toOptions = (arr: string[]) => arr.map(item => ({ label: item, value: item }))
-
-  const selectTheme = (theme: any) => ({
-    ...theme,
-    colors: {
-      ...theme.colors,
-      neutral0: "#1f2937",
-      neutral80: "#f9fafb",
-      primary25: "#374151",
-      primary: "#4f46e5",
-    }
-  })
-
-  const selectStyles = {
-    control: (base: any) => ({
-      ...base,
-      backgroundColor: "#1f2937",
-      borderColor: "#374151",
-      color: "#f9fafb"
-    }),
-    singleValue: (base: any) => ({
-      ...base,
-      color: "#f9fafb"
-    }),
-    menu: (base: any) => ({
-      ...base,
-      backgroundColor: "#1f2937",
-      maxHeight: 150,
-      overflowY: "auto",
-    }),
-    menuList: (base: any) => ({
-      ...base,
-      maxHeight: 150,
-      overflowY: "auto",
-    }),
-    option: (base: any, state: any) => ({
-      ...base,
-      backgroundColor: state.isFocused ? "#374151" : "#1f2937",
-      color: "#f9fafb",
-      cursor: "pointer"
+    updateSearch({
+      store,
+      country,
+      sort: sortBy,
+      q: query || "",
+      page: String(pageSafe),
     })
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store, country, sortBy, query, pageSafe])
 
+  /* -------------------- UI -------------------- */
   return (
-    <motion.div className="p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <h1 className="text-3xl font-bold mb-4">
-        Completed Events <span className="text-sm font-normal text-gray-400">({filtered.length} total)</span>
-      </h1>
+    <motion.div className="mx-auto max-w-7xl p-4 md:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {/* Title */}
+      <div className="mb-3 md:mb-4 flex items-end justify-between gap-3">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold">Completed Events</h1>
+          <p className="text-sm text-white/60 mt-1">
+            {filtered.length} result{filtered.length === 1 ? "" : "s"} · Page {pageSafe} of {totalPages}
+          </p>
+        </div>
+      </div>
 
-      <div className="flex flex-wrap gap-4 mb-6">
-        <div className="w-64">
-          <p className="font-semibold mb-1">Filter by Store:</p>
-          <Select
+      {/* Full-width search on top */}
+      <div className="mb-4">
+        <div className="relative">
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPage(1)
+            }}
+            placeholder="Search title, store, city, region, country…"
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-9 outline-none focus:border-indigo-500/50"
+          />
+          <SearchIcon className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
+        </div>
+      </div>
+
+      {/* Minimal filter row: Store, Country, Sort + Reset */}
+      <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_1fr_auto] items-end">
+        <Field label="Store">
+          <Select<RSOption, false>
             options={toOptions(stores)}
-            value={{ label: selectedStore, value: selectedStore }}
-            onChange={opt => {
-              const val = opt?.value || "All"
-              setSelectedStore(val)
-              updateSearch("store", val)
+            value={{ label: store, value: store }}
+            onChange={(opt) => {
+              setStore(opt?.value || "All")
+              setPage(1)
             }}
             theme={selectTheme}
             styles={selectStyles}
           />
-        </div>
+        </Field>
 
-        <div className="w-64">
-          <p className="font-semibold mb-1">Country:</p>
-          <Select
+        <Field label="Country">
+          <Select<RSOption, false>
             options={toOptions(countries)}
-            value={{ label: selectedCountry, value: selectedCountry }}
-            onChange={opt => {
-              const val = opt?.value || "All"
-              setSelectedCountry(val)
-              updateSearch("country", val)
+            value={{ label: country, value: country }}
+            onChange={(opt) => {
+              setCountry(opt?.value || "All")
+              setPage(1)
             }}
             theme={selectTheme}
             styles={selectStyles}
           />
-        </div>
+        </Field>
 
-        <div className="w-64">
-          <p className={`font-semibold mb-1 ${selectedCountry === "All" ? "text-gray-400" : ""}`}>
-            Province/State:
-            {selectedCountry === "All" && <span className="text-xs ml-1 italic">(select country first)</span>}
-          </p>
-          <Select
-            options={toOptions(regions)}
-            value={{ label: selectedRegion, value: selectedRegion }}
-            onChange={opt => {
-              const val = opt?.value || "All"
-              setSelectedRegion(val)
-              updateSearch("region", val)
-            }}
-            isDisabled={selectedCountry === "All"}
+        <Field label="Sort by">
+          <Select<RSOption, false>
+            options={toOptions(["Newest", "Oldest", "Most Players"])}
+            value={{ label: sortBy, value: sortBy }}
+            onChange={(opt) => setSortBy((opt?.value as SortBy) || "Newest")}
             theme={selectTheme}
             styles={selectStyles}
           />
-        </div>
+        </Field>
 
-        <div className="w-64">
-          <p className={`font-semibold mb-1 ${selectedCountry === "All" ? "text-gray-400" : ""}`}>
-            City:
-            {selectedCountry === "All" && <span className="text-xs ml-1 italic">(select country first)</span>}
-          </p>
-          <Select
-            options={toOptions(cities)}
-            value={{ label: selectedCity, value: selectedCity }}
-            onChange={opt => {
-              const val = opt?.value || "All"
-              setSelectedCity(val)
-              updateSearch("city", val)
-            }}
-            isDisabled={selectedCountry === "All"}
-            theme={selectTheme}
-            styles={selectStyles}
-          />
-        </div>
-
-        <div className="w-64">
-          <p className="font-semibold mb-1">Timeframe:</p>
-          <Select
-            options={toOptions(["All", "This Year", "Last 30 Days"])}
-            value={{ label: timeframe, value: timeframe }}
-            onChange={opt => {
-              const val = opt?.value || "All"
-              setTimeframe(val)
-              updateSearch("timeframe", val)
-            }}
-            theme={selectTheme}
-            styles={selectStyles}
-          />
-        </div>
+        <button
+          className="h-[38px] rounded-xl border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
+          onClick={() => {
+            setStore("All")
+            setCountry("All")
+            setSortBy("Newest")
+            setQuery("")
+            setPage(1)
+            updateSearch({
+              store: "All",
+              country: "All",
+              sort: "Newest",
+              q: "",
+              page: "1",
+            })
+          }}
+        >
+          Reset filters
+        </button>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
-        {currentEvents.map(event => (
-          <div key={event.id} className="card bg-base-200 shadow-md">
-            <div className="card-body">
-              <h2 className="card-title">{event.title}</h2>
-              <p className="text-sm">{new Date(event.startTime).toLocaleDateString()}</p>
-              <p className="text-sm">@ {event.store}</p>
-              {(event.city || event.region || event.country) && (
-                <p className="text-sm text-neutral-content">
-                  📍 {[event.city, event.region, event.country].filter(Boolean).join(", ")}
-                </p>
-              )}
-              {event.attendeeCount !== undefined && (
-                <p className="text-sm text-neutral-content">
-                  {event.attendeeCount} players attended
-                </p>
-              )}
-              <div className="card-actions justify-end">
-                <Link to={`/events/${event.id}`} className="btn btn-secondary btn-sm">View</Link>
-              </div>
-            </div>
-          </div>
-        ))}
+      {/* Results */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {loading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-44 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
+          ))
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {current.map((e) => {
+              const attendees = getAttendeeCount(e)
+              const top1 = e.topCut?.[0]?.name
+              return (
+                <motion.div
+                  key={e.id}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2 }}
+                  className="group isolate overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+                >
+                  {/* Header strip */}
+                  <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500/10 to-sky-500/10 border-b border-white/10">
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold leading-tight">{e.title}</h3>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-white/60">
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarDays className="h-3.5 w-3.5" />
+                          {fmtDate(e.endTime)}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-3.5 w-3.5" />
+                          {e.store}
+                        </span>
+                      </div>
+                    </div>
+                    <Link
+                      to={`/events/${e.id}`}
+                      className="shrink-0 rounded-xl bg-indigo-600/90 px-3 py-1.5 text-sm hover:bg-indigo-500"
+                    >
+                      View
+                    </Link>
+                  </div>
+
+                  {/* Body */}
+                  <div className="p-4">
+                    {(e.city || e.region || e.country) && (
+                      <div className="text-sm text-white/70">
+                        <MapPin className="mr-1 inline h-4 w-4 translate-y-[1px]" />
+                        {[e.city, e.region, e.country].filter(Boolean).join(", ")}
+                      </div>
+                    )}
+
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-white/80">
+                      {typeof attendees === "number" && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs">
+                          <Users className="h-3.5 w-3.5" /> {attendees} players attended
+                        </span>
+                      )}
+                      {top1 && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs">
+                          <Trophy className="h-3.5 w-3.5" /> Top: {top1}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Top 4 only */}
+                    {e.topCut?.length ? (
+                      <div className="mt-3">
+                        <div className="text-xs uppercase tracking-wide text-white/50 mb-1.5">
+                          Top cut (first 4)
+                        </div>
+                        <ul className="space-y-1.5">
+                          {e.topCut.slice(0, 4).map((p, i) => (
+                            <li
+                              key={p.name + i}
+                              className="flex items-center justify-between rounded-xl bg-white/5 px-2.5 py-1.5"
+                            >
+                              <span className="truncate text-sm">{p.name}</span>
+                              <span className="text-xs text-white/50">
+                                {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🏁"}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+        )}
       </div>
 
+      {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center mt-6 gap-2">
+        <div className="mt-8 flex items-center justify-center gap-2">
           <button
-            className="btn btn-sm"
-            disabled={currentPage === 1}
-            onClick={() => {
-              setCurrentPage(prev => prev - 1)
-              updateSearch("page", String(currentPage - 1))
-            }}
+            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
+            disabled={pageSafe === 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
-            ◀ Prev
+            <ChevronLeft className="h-4 w-4" />
+            Prev
           </button>
-          <span className="btn btn-sm btn-disabled">
-            Page {currentPage} of {totalPages}
+
+          <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+            Page {pageSafe} / {totalPages}
           </span>
+
           <button
-            className="btn btn-sm"
-            disabled={currentPage === totalPages}
-            onClick={() => {
-              setCurrentPage(prev => prev + 1)
-              updateSearch("page", String(currentPage + 1))
-            }}
+            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
+            disabled={pageSafe >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
           >
-            Next ▶
+            Next
+            <ChevronRight className="h-4 w-4" />
           </button>
         </div>
       )}
     </motion.div>
+  )
+}
+
+/* -------- small label helper -------- */
+function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <div className="mb-1 text-xs text-white/60">{label}</div>
+      {children}
+    </label>
   )
 }
