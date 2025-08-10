@@ -342,7 +342,7 @@ export default function Home() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <KPI label="Upcoming Events" value={stats.totalUpcoming} icon={<CalendarCheck className="h-4 w-4" />} hint="Across all stores" />
             <KPI label="Completed" value={stats.totalCompleted} icon={<List className="h-4 w-4" />} hint="Lifetime" />
-            <KPI label="This Month" value={stats.monthEvents} icon={<Flame className="h-4 w-4" />} hint="Compelted This Month" />
+            <KPI label="This Month" value={stats.monthEvents} icon={<Flame className="h-4 w-4" />} hint="Completed This Month" />
             <KPI label="Top Blade" value={topBladeName} icon={<Trophy className="h-4 w-4" />} hint="By top cut" />
           </div>
 
