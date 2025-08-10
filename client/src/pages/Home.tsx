@@ -1,12 +1,33 @@
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
-import { motion } from "framer-motion"
-import { Trophy, MapPin, CalendarCheck, List } from "lucide-react"
 import { Helmet } from "react-helmet-async"
+import { motion, AnimatePresence } from "framer-motion"
+import {
+  Trophy,
+  MapPin,
+  CalendarCheck,
+  List,
+  BarChart3,
+  Flame,
+  ShoppingBag,
+  Clock,
+  Star,
+  ChevronRight,
+  Filter,
+  FlaskConical,
+  Users,
+} from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-type Player = { name: string; combos?: { blade: string; assistBlade?: string; ratchet: string; bit: string }[] }
+/* --------------------------------
+   Types
+---------------------------------*/
+type Player = {
+  name: string
+  combos?: { blade: string; assistBlade?: string; ratchet: string; bit: string }[]
+}
+
 type EventItem = {
   id: number | string
   title: string
@@ -14,61 +35,141 @@ type EventItem = {
   endTime: string
   store: string
   topCut?: Player[]
+
+  // attendee signals (various shapes)
+  attendeeCount?: number
+  participants?: number | any[]
+  playerCount?: number
+  players?: number | any[]
+  attendees?: number | any[]
+  attendance?: number
+  participantIds?: any[]
+  attendeeIds?: any[]
+  participantList?: string
 }
+
 type ProductItem = { id: number | string; title: string; imageUrl?: string }
+type TimeRange = "all" | "24h" | "7d" | "30d" | "month" | "90d" | "year" | "lastYear"
 
-const trophyIcons = ["🥇", "🥈", "🥉"]
+/* --------------------------------
+   Small utils
+---------------------------------*/
+const cn = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ")
 
+const useCountdown = (date?: string | null) => {
+  const [now, setNow] = useState(() => new Date().getTime())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  if (!date) return { d: 0, h: 0, m: 0, s: 0, done: true }
+  const diff = Math.max(0, new Date(date).getTime() - now)
+  const d = Math.floor(diff / (1000 * 60 * 60 * 24))
+  const h = Math.floor((diff / (1000 * 60 * 60)) % 24)
+  const m = Math.floor((diff / (1000 * 60)) % 60)
+  const s = Math.floor((diff / 1000) % 60)
+  return { d, h, m, s, done: diff === 0 }
+}
+
+type PopularityRow = { name: string; count: number; pct: number }
+
+function cutoffFor(range: TimeRange) {
+  const now = new Date()
+  switch (range) {
+    case "24h": return new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    case "7d": return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    case "30d": return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    case "month": return new Date(now.getFullYear(), now.getMonth(), 1)
+    case "90d": return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    case "year": return new Date(now.getFullYear(), 0, 1)
+    case "lastYear": return new Date(now.getFullYear() - 1, 0, 1)
+    default: return null
+  }
+}
+
+/* --------------------------------
+   Page
+---------------------------------*/
 export default function Home() {
   const [upcoming, setUpcoming] = useState<EventItem | null>(null)
   const [recent, setRecent] = useState<EventItem[]>([])
-  const [topCombos, setTopCombos] = useState<{ blade: string; count: number }[]>([])
+  const [completed, setCompleted] = useState<EventItem[]>([])
   const [products, setProducts] = useState<ProductItem[]>([])
+  const [stats, setStats] = useState({ totalUpcoming: 0, totalCompleted: 0, monthEvents: 0 })
+  const [loading, setLoading] = useState(true)
+  const [timeRange, setTimeRange] = useState<TimeRange>("all")
   const navigate = useNavigate()
 
+  // KPI “Top Blade”
+  const [topBladeName, setTopBladeName] = useState<string>("—")
+
+  // Tournament Lab local state
+  const [tlBlade, setTlBlade] = useState<string>("")
+  const [tlRatchet, setTlRatchet] = useState<string>("")
+  const [tlBit, setTlBit] = useState<string>("")
+
+  // Part popularity
+  const [popularity, setPopularity] = useState<{
+    totalCombos: number
+    blades: PopularityRow[]
+    ratchets: PopularityRow[]
+    bits: PopularityRow[]
+  }>({ totalCombos: 0, blades: [], ratchets: [], bits: [] })
+
+  // load once
   useEffect(() => {
     const load = async () => {
       try {
+        setLoading(true)
         const [eventsRes, productsRes] = await Promise.all([
           fetch(`${API}/events`),
-          fetch(`${API}/products`)
+          fetch(`${API}/products`),
         ])
         const [eventsData, productsData] = await Promise.all([
           eventsRes.json(),
-          productsRes.json()
+          productsRes.json(),
         ])
 
         const now = new Date()
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-        const futureEvents: EventItem[] = (eventsData as EventItem[])
+        const events: EventItem[] = eventsData || []
+        const futureEvents = events
           .filter(e => new Date(e.startTime) > now)
           .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
 
-        const completedEvents: EventItem[] = (eventsData as EventItem[])
+        const completedEvents = events
           .filter(e => new Date(e.endTime) < now)
           .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
 
         setUpcoming(futureEvents[0] || null)
-        setRecent(completedEvents.slice(0, 3))
+        setRecent(completedEvents.slice(0, 5))
+        setCompleted(completedEvents)
+        setStats({
+          totalUpcoming: futureEvents.length,
+          totalCompleted: completedEvents.length,
+          monthEvents: events.filter(e => new Date(e.startTime) >= startOfMonth).length,
+        })
 
-        // Build top blades from completed events
+        // KPI: compute top blade name quickly
         const bladeMap: Record<string, number> = {}
         for (const event of completedEvents) {
           for (const player of event.topCut ?? []) {
             for (const combo of player.combos ?? []) {
-              if (combo.blade) bladeMap[combo.blade] = (bladeMap[combo.blade] || 0) + 1
+              const b = (combo.blade || "").trim()
+              if (!b) continue
+              bladeMap[b] = (bladeMap[b] || 0) + 1
             }
           }
         }
-        const sortedBlades = Object.entries(bladeMap)
-          .map(([blade, count]) => ({ blade, count }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 3)
+        const top = Object.entries(bladeMap).sort((a, b) => b[1] - a[1])[0]
+        setTopBladeName(top?.[0] ?? "—")
 
-        setTopCombos(sortedBlades)
-        setProducts((productsData as ProductItem[]).slice(0, 3))
-      } catch {
-        // swallow for now; you can toast here if you want
+        setProducts((productsData as ProductItem[]).slice(0, 8))
+      } catch (e: any) {
+        console.warn("Home load failed", e)
+      } finally {
+        setLoading(false)
       }
     }
     load()
@@ -79,180 +180,616 @@ export default function Home() {
       new Intl.DateTimeFormat(undefined, {
         year: "numeric",
         month: "short",
-        day: "numeric"
+        day: "numeric",
       }),
     []
   )
 
+  const countdown = useCountdown(upcoming?.startTime || null)
+
+  // filter events by selected timeRange
+  const filteredEvents = useMemo(() => {
+    if (!completed.length) return []
+    const start = cutoffFor(timeRange)
+    return start
+      ? completed.filter(e => {
+          const end = new Date(e.endTime)
+          if (timeRange === "lastYear") {
+            const ny = new Date(new Date().getFullYear(), 0, 1)
+            return end >= start && end < ny
+          }
+          return end >= start
+        })
+      : completed
+  }, [completed, timeRange])
+
+  // compute popularity lists
+  useEffect(() => {
+    const maps = {
+      blade: new Map<string, number>(),
+      ratchet: new Map<string, number>(),
+      bit: new Map<string, number>(),
+    }
+    let total = 0
+    for (const e of filteredEvents) {
+      for (const p of e.topCut ?? []) {
+        for (const c of p.combos ?? []) {
+          total++
+          if (c.blade) maps.blade.set(c.blade, (maps.blade.get(c.blade) || 0) + 1)
+          if (c.ratchet) maps.ratchet.set(c.ratchet, (maps.ratchet.get(c.ratchet) || 0) + 1)
+          if (c.bit) maps.bit.set(c.bit, (maps.bit.get(c.bit) || 0) + 1)
+        }
+      }
+    }
+    const toArray = (m: Map<string, number>): PopularityRow[] =>
+      Array.from(m.entries())
+        .map(([name, count]) => ({ name, count, pct: total ? Math.round((count / total) * 1000) / 10 : 0 }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6)
+
+    setPopularity({ totalCombos: total, blades: toArray(maps.blade), ratchets: toArray(maps.ratchet), bits: toArray(maps.bit) })
+  }, [filteredEvents])
+
+  // TL options & stats
+  const parts = useMemo(() => {
+    const b = new Set<string>(), r = new Set<string>(), bt = new Set<string>()
+    for (const e of filteredEvents) {
+      for (const p of e.topCut ?? []) {
+        for (const c of p.combos ?? []) {
+          if (c.blade) b.add(c.blade)
+          if (c.ratchet) r.add(c.ratchet)
+          if (c.bit) bt.add(c.bit)
+        }
+      }
+    }
+    return { blades: Array.from(b).sort(), ratchets: Array.from(r).sort(), bits: Array.from(bt).sort() }
+  }, [filteredEvents])
+
+  const tlStats = useMemo(() => {
+    let total = 0
+    let matches = 0
+    const eventsMatched: { id: EventItem["id"]; title: string; date: string }[] = []
+
+    for (const e of filteredEvents) {
+      let eventMatched = false
+      for (const p of e.topCut ?? []) {
+        for (const c of p.combos ?? []) {
+          total++
+          const okBlade = !tlBlade || c.blade === tlBlade
+          const okRatchet = !tlRatchet || c.ratchet === tlRatchet
+          const okBit = !tlBit || c.bit === tlBit
+          if (okBlade && okRatchet && okBit) {
+            matches++
+            eventMatched = true
+          }
+        }
+      }
+      if (eventMatched) {
+        eventsMatched.push({ id: e.id, title: e.title, date: fmt.format(new Date(e.endTime)) })
+      }
+    }
+
+    const pct = total ? Math.round((matches / total) * 1000) / 10 : 0
+    return { pct, matches, total, eventsMatched }
+  }, [filteredEvents, tlBlade, tlRatchet, tlBit, fmt])
+
+  // attendee count detection (prioritize attendeeCount)
+  const getAttendeeCount = (e: EventItem): number | undefined => {
+    const firstNum = (...vals: any[]) => vals.find(v => typeof v === "number" && v > 0) as number | undefined
+    const numberCandidate = firstNum(
+      (e as any).attendeeCount,
+      e.participants as any,
+      e.playerCount,
+      e.attendees as any,
+      e.attendance,
+      typeof e.players === "number" ? e.players : undefined
+    )
+    if (numberCandidate) return numberCandidate
+    if (Array.isArray(e.players)) return e.players.length
+    if (Array.isArray(e.participants)) return e.participants.length
+    if (Array.isArray(e.attendeeIds)) return e.attendeeIds.length
+    if (Array.isArray(e.participantIds)) return e.participantIds.length
+    if (typeof e.participantList === "string") {
+      const count = e.participantList.split(",").map(s => s.trim()).filter(Boolean).length
+      return count || undefined
+    }
+    return undefined
+  }
+
   return (
     <>
       <Helmet>
-        <title>Meta Beys — Competitive Beyblade X Tracker & Events</title>
-        <meta
-          name="description"
-          content="Track top Beyblade X combos, find tournaments, and explore stores and product links across North America. Stay on top of the competitive scene."
-        />
-        <meta name="keywords" content="Beyblade X, Beyblade tournaments, meta combos, beyblade parts, top blades, beyblade events, competitive beyblade" />
-        <meta property="og:title" content="Meta Beys — Competitive Beyblade X Tracker" />
-        <meta property="og:description" content="Discover Beyblade tournaments, track top blades, and explore products. Your hub for the competitive Beyblade X scene." />
-        <meta property="og:url" content="https://www.metabeys.com/" />
-        <meta property="og:image" content="https://www.metabeys.com/favicon.png" />
+        <title>MetaBeys — Competitive Beyblade X Dashboard</title>
+        <meta name="description" content="Live insights, upcoming & recent events, and shop spotlight — all in one polished dashboard for Beyblade X." />
         <meta name="robots" content="index, follow" />
+        <meta property="og:title" content="MetaBeys — Competitive Beyblade X Dashboard" />
+        <meta property="og:url" content="https://www.metabeys.com/" />
+        <meta property="og:image" content="https://www.metabeys.com/og.png" />
       </Helmet>
 
-      <motion.div
-        className="p-6 max-w-5xl mx-auto space-y-10"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-      >
-        <div className="text-center">
-          <h1 className="text-4xl font-bold mb-2">Welcome to the Meta Beys Portal</h1>
-          <p className="text-lg text-neutral-content">
-            Discover local tournaments, track Meta Combos & stay informed about competitive Beyblade!
-          </p>
-        </div>
+      {/* Canvas background */}
+      <div className="relative min-h-[100dvh] overflow-hidden">
+        <div className="pointer-events-none absolute inset-0 [background:radial-gradient(1200px_600px_at_20%_-10%,theme(colors.indigo.600/.25),transparent_60%),radial-gradient(800px_400px_at_100%_0%,theme(colors.fuchsia.600/.25),transparent_60%),radial-gradient(1000px_500px_at_50%_120%,theme(colors.sky.600/.25),transparent_60%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(0,0,0,0.07))]" />
 
-        {/* Quick Nav */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
-          <Link to="/events" className="card bg-base-200 hover:shadow-xl transition">
-            <div className="card-body items-center">
-              <CalendarCheck className="w-8 h-8 mb-2" />
-              <h2 className="card-title text-center whitespace-nowrap">Upcoming Events</h2>
+        <motion.div
+          className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 md:py-10"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-6">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+                Welcome back to <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">MetaBeys</span>
+              </h1>
+              <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and shop highlights.</p>
             </div>
-          </Link>
-          <Link to="/events/completed" className="card bg-base-200 hover:shadow-xl transition">
-            <div className="card-body items-center">
-              <List className="w-8 h-8 mb-2" />
-              <h2 className="card-title text-center whitespace-nowrap">Completed Events</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link to="/events" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
+                <CalendarCheck className="h-4 w-4" /> Explore Events
+              </Link>
+              <Link to="/tournament-lab" className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600/90 px-4 py-2 text-sm font-medium shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500">
+                <BarChart3 className="h-4 w-4" /> Tournament Lab
+              </Link>
+              <Link to="/shop" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
+                <ShoppingBag className="h-4 w-4" /> Shop
+              </Link>
             </div>
-          </Link>
-          <Link to="/stores" className="card bg-base-200 hover:shadow-xl transition">
-            <div className="card-body items-center">
-              <MapPin className="w-8 h-8 mb-2" />
-              <h2 className="card-title text-center whitespace-nowrap">Store Finder</h2>
-            </div>
-          </Link>
-          <Link to="/leaderboard" className="card bg-base-200 hover:shadow-xl transition">
-            <div className="card-body items-center">
-              <Trophy className="w-8 h-8 mb-2" />
-              <h2 className="card-title text-center whitespace-nowrap">Meta</h2>
-            </div>
-          </Link>
-        </div>
-
-        {/* Tournament Lab */}
-        <div className="card bg-base-200 p-6 text-center">
-          <h2 className="text-2xl font-bold mb-2">Tournament Lab</h2>
-          <p className="text-sm text-neutral-content mb-4">
-            Curious how your combo would perform in real events? Test it against actual tournament data to see how often it appears in top cut results.
-          </p>
-          <div className="flex justify-center mt-4">
-            <Link to="/tournament-lab" className="btn btn-accent btn-sm whitespace-nowrap">
-              Try Tournament Lab
-            </Link>
-          </div>
-        </div>
-
-        {/* Products */}
-        <div className="card bg-base-200 p-6 text-center">
-          <h2 className="text-2xl font-bold mb-2">Shop Beyblade Products</h2>
-          <p className="text-sm text-neutral-content mb-4">Explore all Beyblade Products & Vendors!</p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            {products.map(product => (
-              <div key={product.id} className="bg-base-100 p-3 rounded shadow flex flex-col items-center">
-                <img
-                  src={product.imageUrl || "/placeholder.svg"}
-                  alt={product.title}
-                  loading="lazy"
-                  className="w-full h-36 object-contain mb-2"
-                />
-                <h3 className="text-sm font-medium mb-2 text-center">{product.title}</h3>
-                <button
-                  onClick={() => navigate(`/product/${product.id}`)}
-                  className="btn btn-outline btn-sm w-full mt-auto whitespace-nowrap"
-                >
-                  Buy Now
-                </button>
-              </div>
-            ))}
           </div>
 
-          <div className="flex justify-center mt-2">
-            <Link to="/shop" className="btn btn-primary btn-sm whitespace-nowrap">
-              Browse All Products
-            </Link>
-          </div>
-        </div>
-
-        {/* Meta + Next Event */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-10">
-          <div className="card bg-base-200 p-4 text-center">
-            <h2 className="text-xl font-semibold mb-2">Top Meta Blades</h2>
-            <ul className="text-sm space-y-1">
-              {topCombos.length ? (
-                topCombos.map((item, i) => (
-                  <li key={i}>
-                    {i + 1}. <strong>{item.blade}</strong> — {item.count} uses
-                  </li>
-                ))
-              ) : (
-                <li className="text-neutral-content">No data yet.</li>
-              )}
-            </ul>
+          {/* KPI cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <KPI label="Upcoming Events" value={stats.totalUpcoming} icon={<CalendarCheck className="h-4 w-4" />} hint="Across all stores" />
+            <KPI label="Completed" value={stats.totalCompleted} icon={<List className="h-4 w-4" />} hint="Lifetime" />
+            <KPI label="This Month" value={stats.monthEvents} icon={<Flame className="h-4 w-4" />} hint="Compelted This Month" />
+            <KPI label="Top Blade" value={topBladeName} icon={<Trophy className="h-4 w-4" />} hint="By top cut" />
           </div>
 
-          <div className="card bg-base-200 p-4 text-center">
-            <h2 className="text-xl font-semibold mb-2">Next Event</h2>
-            {upcoming ? (
-              <>
-                <h3 className="text-lg font-bold">{upcoming.title}</h3>
-                <p className="text-sm text-neutral-content">
-                  {fmt.format(new Date(upcoming.startTime))} @ {upcoming.store}
-                </p>
-                <div className="flex justify-center mt-3">
-                  <Link to={`/events/${upcoming.id}`} className="btn btn-primary btn-sm whitespace-nowrap">
-                    View Details
+          {/* Main grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left: Next + Part Popularity + Tournament Lab */}
+            <div className="space-y-6 lg:col-span-2">
+              <Section title="Next Up" icon={<Clock className="h-5 w-5" />}>
+                {loading ? (
+                  <Skeleton height="h-28" />
+                ) : upcoming ? (
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                    <div>
+                      <h3 className="text-lg md:text-xl font-semibold leading-tight">{upcoming.title}</h3>
+                      <p className="text-white/60 mt-1">
+                        {fmt.format(new Date(upcoming.startTime))} · <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{upcoming.store}</span>
+                      </p>
+                    </div>
+                    <CountdownPill d={countdown.d} h={countdown.h} m={countdown.m} s={countdown.s} />
+                  </div>
+                ) : (
+                  <p className="text-white/60">No upcoming events found.</p>
+                )}
+                <div className="mt-4">
+                  <Link to={upcoming ? `/events/${upcoming.id}` : "/events"} className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                    View details <ChevronRight className="h-4 w-4" />
                   </Link>
                 </div>
-              </>
-            ) : (
-              <p className="text-sm">No upcoming events found.</p>
-            )}
+              </Section>
+
+              {/* Replacement: Part Popularity Leaderboard */}
+              <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="inline-flex items-center gap-2 text-xs text-white/60">
+                    <Filter className="h-4 w-4" /> Time range
+                  </div>
+                  <Segmented
+                    value={timeRange}
+                    onChange={setTimeRange}
+                    options={[
+                      { label: "All", value: "all" },
+                      { label: "7d", value: "7d" },
+                      { label: "30d", value: "30d" },
+                      { label: "This Month", value: "month" },
+                      { label: "90d", value: "90d" },
+                      { label: "This Year", value: "year" },
+                    ]}
+                  />
+                </div>
+
+                <div className="min-h-64 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <PopularityList title="Blades" items={popularity.blades} />
+                  <PopularityList title="Ratchets" items={popularity.ratchets} />
+                  <PopularityList title="Bits" items={popularity.bits} />
+                </div>
+
+                <div className="mt-4 text-sm text-white/60">
+                  Based on {popularity.totalCombos || 0} top-cut combos in the selected range.
+                </div>
+              </Section>
+
+              {/* Tournament Lab */}
+              <Section title="Tournament Lab" icon={<FlaskConical className="h-5 w-5" />}>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <ComboBox label="Blade"   value={tlBlade}   onChange={setTlBlade}   options={parts.blades}   placeholder="Any blade" />
+                  <ComboBox label="Ratchet" value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets} placeholder="Any ratchet" />
+                  <ComboBox label="Bit"     value={tlBit}     onChange={setTlBit}     options={parts.bits}     placeholder="Any bit" />
+                </div>
+                <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  <div className="lg:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs uppercase tracking-wide text-white/60">Appearance Rate</div>
+                    <div className="mt-2 text-3xl font-semibold">{tlStats.pct}%</div>
+                    <div className="mt-1 text-xs text-white/60 tabular-nums">
+                      {tlStats.matches} matches / {tlStats.total} top-cut combos
+                    </div>
+                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, tlStats.pct)}%`, background: "linear-gradient(180deg,#a78bfa,#22d3ee)" }} />
+                    </div>
+
+                    <div className="mt-4 flex items-center gap-2">
+                      <Link to="/tournament-lab" className="btn btn-sm rounded-xl bg-indigo-600/90 hover:bg-indigo-500 border-0 px-4">
+                        Tournament Lab
+                      </Link>
+                      <button
+                        onClick={() => { setTlBlade(""); setTlRatchet(""); setTlBit(""); }}
+                        className="btn btn-sm rounded-xl border-white/10 bg-white/5 hover:bg-white/10 px-4"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="mb-2 text-xs uppercase tracking-wide text-white/60">Matching events</div>
+                    {tlStats.eventsMatched.length ? (
+                      <ul className="max-h-56 overflow-auto space-y-2 pr-1 isolate">
+                        {tlStats.eventsMatched.map(ev => (
+                          <li key={ev.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{ev.title}</div>
+                              <div className="text-xs text-white/60">{ev.date}</div>
+                            </div>
+                            <Link to={`/events/${ev.id}`} className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200">
+                              View <ChevronRight className="h-3.5 w-3.5" />
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-sm text-white/60">No events matched that combo in this time range.</div>
+                    )}
+                  </div>
+                </div>
+              </Section>
+            </div>
+
+            {/* Right: Recent & Shop */}
+            <div className="space-y-6">
+              <Section title="Recent Events" icon={<Trophy className="h-5 w-5" />}>
+                {loading ? (
+                  <div className="space-y-3">
+                    <Skeleton height="h-16" /><Skeleton height="h-16" /><Skeleton height="h-16" />
+                  </div>
+                ) : recent.length ? (
+                  <ul className="space-y-3">
+                    <AnimatePresence mode="popLayout">
+                      {recent.map(e => {
+                        const attendees = getAttendeeCount(e)
+                        return (
+                          <motion.li
+                            key={e.id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            transition={{ duration: 0.2 }}
+                            className="group isolate overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:bg-white/10"
+                          >
+                            <Link to={`/events/${e.id}`} className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium leading-tight group-hover:text-white/95">{e.title}</div>
+                                <div className="mt-1 flex items-center gap-2 text-xs text-white/60">
+                                  <span className="inline-flex items-center gap-1">
+                                    {fmt.format(new Date(e.endTime))} · <MapPin className="h-3.5 w-3.5" /> {e.store}
+                                  </span>
+                                </div>
+                                <TopCutRow players={e.topCut?.slice(0, 3)} />
+                              </div>
+
+                              <div className="flex items-center gap-2 pl-2">
+                                {typeof attendees === "number" && (
+                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80">
+                                    <Users className="h-3.5 w-3.5" /> {attendees}
+                                  </span>
+                                )}
+                                <ChevronRight className="h-4 w-4 mt-1 opacity-0 group-hover:opacity-100 transition" />
+                              </div>
+                            </Link>
+                          </motion.li>
+                        )
+                      })}
+                    </AnimatePresence>
+                  </ul>
+                ) : (
+                  <p className="text-white/60">No completed events yet.</p>
+                )}
+                <div className="mt-4">
+                  <Link to="/events/completed" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                    View all completed <ChevronRight className="h-4 w-4" />
+                  </Link>
+                </div>
+              </Section>
+
+              <Section title="Shop Spotlight" icon={<ShoppingBag className="h-5 w-5" />}>
+                {loading ? (
+                  <div className="grid grid-cols-2 gap-3"><Skeleton height="h-36" /><Skeleton height="h-36" /></div>
+                ) : products.length ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <AnimatePresence mode="popLayout">
+                      {products.slice(0, 4).map(p => (
+                        <motion.button
+                          key={p.id}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.2 }}
+                          onClick={() => navigate(`/product/${p.id}`)}
+                          className="group isolate overflow-hidden relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/[0.03] p-3 text-left transition hover:from-white/15"
+                        >
+                          <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-black/20">
+                            <img src={p.imageUrl || "/placeholder.svg"} alt={p.title} loading="lazy" className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]" />
+                          </div>
+                          <div className="mt-2 line-clamp-2 text-sm font-medium leading-snug">{p.title}</div>
+                        </motion.button>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                ) : (
+                  <p className="text-white/60">No products available.</p>
+                )}
+                <div className="mt-4 flex items-center justify-between">
+                  <Link to="/shop" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                    Browse all products <ChevronRight className="h-4 w-4" />
+                  </Link>
+                  <div className="inline-flex items-center gap-1 text-xs text-white/50">
+                    <Star className="h-3.5 w-3.5" /> Community picks
+                  </div>
+                </div>
+              </Section>
+            </div>
           </div>
-        </div>
 
-        {/* Recent Completed */}
-        <div className="card bg-base-200 p-4 text-center">
-          <h2 className="text-xl font-semibold mb-4">✅ Recent Completed Events</h2>
-          {recent.length ? (
-            recent.map(event => (
-              <div key={event.id} className="mb-4">
-                <Link to={`/events/${event.id}`} className="text-lg font-bold link link-hover">
-                  {event.title}
-                </Link>
-                <p className="text-sm text-neutral-content mb-1">
-                  {fmt.format(new Date(event.endTime))} @ {event.store}
-                </p>
-                <ul className="text-sm space-y-1">
-                  {event.topCut?.slice(0, 3).map((player, i) => (
-                    <li key={player.name + i}>
-                      {(trophyIcons[i] as string) || "•"} <strong>{player.name}</strong>
-                    </li>
-                  )) || <li className="text-neutral-content">No top cut posted.</li>}
-                </ul>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-neutral-content">No completed events yet.</p>
-          )}
-        </div>
+          {/* Quick nav tiles (bottom) */}
+          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <NavTile to="/events" icon={<CalendarCheck className="h-5 w-5" />} label="Upcoming" />
+            <NavTile to="/events/completed" icon={<List className="h-5 w-5" />} label="Completed" />
+            <NavTile to="/stores" icon={<MapPin className="h-5 w-5" />} label="Store Finder" />
+            <NavTile to="/leaderboard" icon={<Trophy className="h-5 w-5" />} label="Leaderboard" />
+          </div>
 
-        <div className="mt-12 text-center space-y-2 opacity-60">
-          <p className="text-sm font-medium">Metabeys is owned by @Aysus and @Karl6ix</p>
-        </div>
-      </motion.div>
+          <div className="mt-10 text-center text-xs text-white/40">
+            MetaBeys is built by @Aysus & @Karl6ix
+          </div>
+        </motion.div>
+      </div>
     </>
   )
+}
+
+/* --------------------------------
+   Reusable pieces
+---------------------------------*/
+function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  // isolate + overflow-hidden eliminates the hover seam/flaring across siblings
+  return (
+    <section className="isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 md:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="mb-3 flex items-center gap-2">
+        {icon}
+        <h2 className="text-sm font-semibold tracking-wide text-white/80">{title}</h2>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function KPI({ label, value, icon, hint }: { label: string; value: number | string; icon: React.ReactNode; hint?: string }) {
+  return (
+    <div className="isolate overflow-hidden relative rounded-3xl border border-white/10 ring-1 ring-white/10 bg-gradient-to-b from-white/10 to-white/[0.03] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/[0.03]" />
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-white/60">{label}</div>
+          <div className="mt-1 text-2xl font-semibold">{String(value)}</div>
+          {hint ? <div className="mt-1 text-[11px] text-white/45">{hint}</div> : null}
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-white/80">{icon}</div>
+      </div>
+    </div>
+  )
+}
+
+function PopularityList({ title, items }: { title: string; items: PopularityRow[] }) {
+  return (
+    <div className="rounded-2xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-3">
+      <div className="mb-2 text-xs uppercase tracking-wide text-white/60">{title}</div>
+      {items.length ? (
+        <ul className="space-y-1.5">
+          {items.map((it, i) => (
+            <li key={it.name + i} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-2.5 py-2">
+              <div className="min-w-0 flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">{i + 1}</span>
+                <span className="truncate text-sm">{it.name}</span>
+              </div>
+              <div className="text-xs tabular-nums text-white/70">{it.pct}%</div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-sm text-white/60">No data in range.</div>
+      )}
+    </div>
+  )
+}
+
+function TopCutRow({ players }: { players?: Player[] }) {
+  if (!players?.length) return <div className="mt-2 text-xs text-white/50">Top cut not posted.</div>
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      {players.map((p, i) => (
+        <div key={p.name + i} className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
+            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•"}
+          </span>
+          <span className="text-xs">{p.name}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CountdownPill({ d, h, m, s }: { d: number; h: number; m: number; s: number }) {
+  const Item = ({ v, u }: { v: number; u: string }) => (
+    <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-center">
+      <div className="text-sm font-semibold leading-none tabular-nums">{v.toString().padStart(2, "0")}</div>
+      <div className="mt-0.5 text-[10px] text-white/60">{u}</div>
+    </div>
+  )
+  return (
+    <div className="flex items-center gap-2">
+      <Item v={d} u="D" />
+      <Item v={h} u="H" />
+      <Item v={m} u="M" />
+      <Item v={s} u="S" />
+    </div>
+  )
+}
+
+function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T
+  onChange: (v: T) => void
+  options: { label: string; value: T }[]
+}) {
+  return (
+    <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-1 text-xs overflow-auto">
+      {options.map(o => {
+        const active = o.value === value
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "px-2.5 py-1 rounded-lg transition whitespace-nowrap",
+              active ? "bg-indigo-600/90 text-white" : "text-white/70 hover:bg-white/10"
+            )}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ComboBox({
+  label, value, onChange, options, placeholder,
+}: {
+  label: string; value: string; onChange: (v: string) => void; options: string[]; placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(value)
+
+  useEffect(() => setQuery(value), [value])
+
+  const norm = (s: string) => s.toLowerCase().trim()
+  const filtered = useMemo(() => {
+    const q = norm(query)
+    if (!q) return options.slice(0, 12)
+    const starts = options.filter(o => norm(o).startsWith(q))
+    const includes = options.filter(o => !norm(o).startsWith(q) && norm(o).includes(q))
+    return [...starts, ...includes].slice(0, 12)
+  }, [options, query])
+
+  const commit = (next: string) => {
+    onChange(next)
+    setQuery(next)
+    setOpen(false)
+  }
+
+  return (
+    <label className="block relative">
+      <div className="mb-1 flex items-center justify-between text-xs text-white/60">
+        <span>{label}</span>
+        {value && (
+          <button
+            type="button"
+            onClick={() => commit("")}
+            className="text-[11px] rounded-md px-1.5 py-0.5 border border-white/10 bg-white/5 hover:bg-white/10"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <input
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder || `Any ${label.toLowerCase()}`}
+        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none transition focus:border-indigo-500/50"
+      />
+
+      {open && (
+        <div
+          className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-xl border border-white/10 bg-[#0b1220]/95 backdrop-blur-sm p-1 shadow-lg"
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {filtered.length ? (
+            filtered.map(o => (
+              <button
+                key={o}
+                type="button"
+                onClick={() => commit(o)}
+                className={cn("w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10", o === value && "bg-white/10")}
+              >
+                {o}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-white/60">No matches.</div>
+          )}
+
+          {!query && (
+            <button
+              type="button"
+              onClick={() => commit("")}
+              className="mt-1 w-full text-left px-3 py-2 rounded-lg text-xs text-white/70 hover:bg-white/10"
+            >
+              Any {label.toLowerCase()}
+            </button>
+          )}
+        </div>
+      )}
+    </label>
+  )
+}
+
+
+function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+  return (
+    <Link
+      to={to}
+      className="group isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 transition hover:bg-white/10"
+    >
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-white/80">{icon}</div>
+        <div className="font-medium">{label}</div>
+      </div>
+      <div className="mt-2 flex items-center gap-1 text-xs text-white/60 group-hover:text-white/75">
+        Open <ChevronRight className="h-3.5 w-3.5" />
+      </div>
+    </Link>
+  )
+}
+
+function Skeleton({ height = "h-10" }: { height?: string }) {
+  return <div className={cn("w-full animate-pulse rounded-2xl bg-white/5", height)} />
 }
