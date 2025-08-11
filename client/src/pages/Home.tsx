@@ -17,6 +17,7 @@ import {
   FlaskConical,
   Users,
 } from "lucide-react"
+import { useAuth } from "../context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -100,21 +101,30 @@ export default function Home() {
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
   const navigate = useNavigate()
 
+  // auth → username for greeting
+  const { user } = (useAuth?.() as any) || {}
+  const username =
+    ((user?.username as string) ||
+      (user?.email ? String(user.email).split("@")[0] : "")).toString().trim()
+
   // KPI “Top Blade”
   const [topBladeName, setTopBladeName] = useState<string>("—")
 
   // Tournament Lab local state
   const [tlBlade, setTlBlade] = useState<string>("")
+  const [tlAssist, setTlAssist] = useState<string>("")
   const [tlRatchet, setTlRatchet] = useState<string>("")
   const [tlBit, setTlBit] = useState<string>("")
 
-  // Part popularity
+  // Part popularity (now includes assistBlades with separate denominator)
   const [popularity, setPopularity] = useState<{
     totalCombos: number
+    totalAssistCombos: number
     blades: PopularityRow[]
+    assistBlades: PopularityRow[]
     ratchets: PopularityRow[]
     bits: PopularityRow[]
-  }>({ totalCombos: 0, blades: [], ratchets: [], bits: [] })
+  }>({ totalCombos: 0, totalAssistCombos: 0, blades: [], assistBlades: [], ratchets: [], bits: [] })
 
   // load once
   useEffect(() => {
@@ -203,46 +213,67 @@ export default function Home() {
       : completed
   }, [completed, timeRange])
 
-  // compute popularity lists
+  // compute popularity lists (Assist uses its own denominator)
   useEffect(() => {
     const maps = {
       blade: new Map<string, number>(),
+      assistBlade: new Map<string, number>(),
       ratchet: new Map<string, number>(),
       bit: new Map<string, number>(),
     }
     let total = 0
+    let assistTotal = 0
+
     for (const e of filteredEvents) {
       for (const p of e.topCut ?? []) {
         for (const c of p.combos ?? []) {
           total++
           if (c.blade) maps.blade.set(c.blade, (maps.blade.get(c.blade) || 0) + 1)
+          if (c.assistBlade) {
+            assistTotal++
+            maps.assistBlade.set(c.assistBlade, (maps.assistBlade.get(c.assistBlade) || 0) + 1)
+          }
           if (c.ratchet) maps.ratchet.set(c.ratchet, (maps.ratchet.get(c.ratchet) || 0) + 1)
           if (c.bit) maps.bit.set(c.bit, (maps.bit.get(c.bit) || 0) + 1)
         }
       }
     }
-    const toArray = (m: Map<string, number>): PopularityRow[] =>
+
+    const toArray = (m: Map<string, number>, denom: number): PopularityRow[] =>
       Array.from(m.entries())
-        .map(([name, count]) => ({ name, count, pct: total ? Math.round((count / total) * 1000) / 10 : 0 }))
+        .map(([name, count]) => ({ name, count, pct: denom ? Math.round((count / denom) * 1000) / 10 : 0 }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 6)
 
-    setPopularity({ totalCombos: total, blades: toArray(maps.blade), ratchets: toArray(maps.ratchet), bits: toArray(maps.bit) })
+    setPopularity({
+      totalCombos: total,
+      totalAssistCombos: assistTotal,
+      blades: toArray(maps.blade, total),
+      assistBlades: toArray(maps.assistBlade, assistTotal),
+      ratchets: toArray(maps.ratchet, total),
+      bits: toArray(maps.bit, total),
+    })
   }, [filteredEvents])
 
-  // TL options & stats
+  // TL options & stats (include assist blades)
   const parts = useMemo(() => {
-    const b = new Set<string>(), r = new Set<string>(), bt = new Set<string>()
+    const b = new Set<string>(), ab = new Set<string>(), r = new Set<string>(), bt = new Set<string>()
     for (const e of filteredEvents) {
       for (const p of e.topCut ?? []) {
         for (const c of p.combos ?? []) {
           if (c.blade) b.add(c.blade)
+          if (c.assistBlade) ab.add(c.assistBlade)
           if (c.ratchet) r.add(c.ratchet)
           if (c.bit) bt.add(c.bit)
         }
       }
     }
-    return { blades: Array.from(b).sort(), ratchets: Array.from(r).sort(), bits: Array.from(bt).sort() }
+    return {
+      blades: Array.from(b).sort(),
+      assistBlades: Array.from(ab).sort(),
+      ratchets: Array.from(r).sort(),
+      bits: Array.from(bt).sort(),
+    }
   }, [filteredEvents])
 
   const tlStats = useMemo(() => {
@@ -255,10 +286,11 @@ export default function Home() {
       for (const p of e.topCut ?? []) {
         for (const c of p.combos ?? []) {
           total++
-          const okBlade = !tlBlade || c.blade === tlBlade
+          const okBlade   = !tlBlade   || c.blade === tlBlade
+          const okAssist  = !tlAssist  || c.assistBlade === tlAssist
           const okRatchet = !tlRatchet || c.ratchet === tlRatchet
-          const okBit = !tlBit || c.bit === tlBit
-          if (okBlade && okRatchet && okBit) {
+          const okBit     = !tlBit     || c.bit === tlBit
+          if (okBlade && okAssist && okRatchet && okBit) {
             matches++
             eventMatched = true
           }
@@ -271,7 +303,7 @@ export default function Home() {
 
     const pct = total ? Math.round((matches / total) * 1000) / 10 : 0
     return { pct, matches, total, eventsMatched }
-  }, [filteredEvents, tlBlade, tlRatchet, tlBit, fmt])
+  }, [filteredEvents, tlBlade, tlAssist, tlRatchet, tlBit, fmt])
 
   // attendee count detection (prioritize attendeeCount)
   const getAttendeeCount = (e: EventItem): number | undefined => {
@@ -321,7 +353,9 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-6">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                Welcome back to <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">MetaBeys</span>
+                {username
+                  ? <>Welcome back <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">{username}</span></>
+                  : <>Welcome to <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">MetaBeys</span></>}
               </h1>
               <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and shop highlights.</p>
             </div>
@@ -373,43 +407,52 @@ export default function Home() {
                 </div>
               </Section>
 
-              {/* Replacement: Part Popularity Leaderboard */}
-              <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="inline-flex items-center gap-2 text-xs text-white/60">
-                    <Filter className="h-4 w-4" /> Time range
-                  </div>
-                  <Segmented
-                    value={timeRange}
-                    onChange={setTimeRange}
-                    options={[
-                      { label: "All", value: "all" },
-                      { label: "7d", value: "7d" },
-                      { label: "30d", value: "30d" },
-                      { label: "This Month", value: "month" },
-                      { label: "90d", value: "90d" },
-                      { label: "This Year", value: "year" },
-                    ]}
-                  />
-                </div>
+              {/* Part Popularity Leaderboard (balanced desktop layout) */}
+<Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
+  <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="inline-flex items-center gap-2 text-xs text-white/60">
+      <Filter className="h-4 w-4" /> Time range
+    </div>
+    <Segmented
+      value={timeRange}
+      onChange={setTimeRange}
+      options={[
+        { label: "All", value: "all" },
+        { label: "7d", value: "7d" },
+        { label: "30d", value: "30d" },
+        { label: "This Month", value: "month" },
+        { label: "90d", value: "90d" },
+        { label: "This Year", value: "year" },
+      ]}
+    />
+  </div>
 
-                <div className="min-h-64 grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <PopularityList title="Blades" items={popularity.blades} />
-                  <PopularityList title="Ratchets" items={popularity.ratchets} />
-                  <PopularityList title="Bits" items={popularity.bits} />
-                </div>
+  {/* Mobile: single column; Desktop: two balanced columns with equal row heights */}
+  <div className="min-h-64 grid gap-3 md:grid-cols-2">
+    <div className="grid gap-3 [grid-auto-rows:1fr]">
+      <PopularityList title="Blades"        items={popularity.blades}        className="h-full" />
+      <PopularityList title="Assist Blades" items={popularity.assistBlades}  className="h-full" />
+    </div>
+    <div className="grid gap-3 [grid-auto-rows:1fr]">
+      <PopularityList title="Ratchets"      items={popularity.ratchets}      className="h-full" />
+      <PopularityList title="Bits"          items={popularity.bits}          className="h-full" />
+    </div>
+  </div>
 
-                <div className="mt-4 text-sm text-white/60">
-                  Based on {popularity.totalCombos || 0} top-cut combos in the selected range.
-                </div>
-              </Section>
+  <div className="mt-4 text-sm text-white/60 space-y-1">
+    <div>Based on {popularity.totalCombos || 0} top-cut combos in the selected range.</div>
+    <div className="text-white/50">Assist Blade % based on {popularity.totalAssistCombos || 0} combos that used an assist.</div>
+  </div>
+</Section>
 
-              {/* Tournament Lab */}
+
+              {/* Tournament Lab (added Assist Blade) */}
               <Section title="Tournament Lab" icon={<FlaskConical className="h-5 w-5" />}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <ComboBox label="Blade"   value={tlBlade}   onChange={setTlBlade}   options={parts.blades}   placeholder="Any blade" />
-                  <ComboBox label="Ratchet" value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets} placeholder="Any ratchet" />
-                  <ComboBox label="Bit"     value={tlBit}     onChange={setTlBit}     options={parts.bits}     placeholder="Any bit" />
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <ComboBox label="Blade"        value={tlBlade}   onChange={setTlBlade}   options={parts.blades}        placeholder="Any blade" />
+                  <ComboBox label="Assist Blade"  value={tlAssist}  onChange={setTlAssist}  options={parts.assistBlades}  placeholder="Any assist" />
+                  <ComboBox label="Ratchet"       value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets}      placeholder="Any ratchet" />
+                  <ComboBox label="Bit"           value={tlBit}     onChange={setTlBit}     options={parts.bits}          placeholder="Any bit" />
                 </div>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div className="lg:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -427,7 +470,7 @@ export default function Home() {
                         Tournament Lab
                       </Link>
                       <button
-                        onClick={() => { setTlBlade(""); setTlRatchet(""); setTlBit(""); }}
+                        onClick={() => { setTlBlade(""); setTlAssist(""); setTlRatchet(""); setTlBit(""); }}
                         className="btn btn-sm rounded-xl border-white/10 bg-white/5 hover:bg-white/10 px-4"
                       >
                         Reset
@@ -603,9 +646,13 @@ function KPI({ label, value, icon, hint }: { label: string; value: number | stri
   )
 }
 
-function PopularityList({ title, items }: { title: string; items: PopularityRow[] }) {
+function PopularityList({
+  title,
+  items,
+  className = "",
+}: { title: string; items: PopularityRow[]; className?: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-3">
+    <div className={cn("rounded-2xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-3", className)}>
       <div className="mb-2 text-xs uppercase tracking-wide text-white/60">{title}</div>
       {items.length ? (
         <ul className="space-y-1.5">
@@ -613,7 +660,9 @@ function PopularityList({ title, items }: { title: string; items: PopularityRow[
             <li key={it.name + i} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-2.5 py-2">
               <div className="min-w-0 flex items-center gap-2">
                 <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">{i + 1}</span>
-                <span className="truncate text-sm">{it.name}</span>
+                <span className="text-sm leading-tight line-clamp-2 whitespace-normal" title={it.name}>
+                  {it.name}
+                </span>
               </div>
               <div className="text-xs tabular-nums text-white/70">{it.pct}%</div>
             </li>
@@ -625,6 +674,7 @@ function PopularityList({ title, items }: { title: string; items: PopularityRow[
     </div>
   )
 }
+
 
 function TopCutRow({ players }: { players?: Player[] }) {
   if (!players?.length) return <div className="mt-2 text-xs text-white/50">Top cut not posted.</div>
@@ -721,7 +771,8 @@ function ComboBox({
         {value && (
           <button
             type="button"
-            onClick={() => commit("")}
+            onMouseDown={() => commit("")}
+            onTouchStart={() => commit("")}
             className="text-[11px] rounded-md px-1.5 py-0.5 border border-white/10 bg-white/5 hover:bg-white/10"
           >
             Clear
@@ -747,7 +798,8 @@ function ComboBox({
               <button
                 key={o}
                 type="button"
-                onClick={() => commit(o)}
+                onMouseDown={() => commit(o)}     // desktop: commit before blur
+                onTouchStart={() => commit(o)}    // mobile: commit on touch
                 className={cn("w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10", o === value && "bg-white/10")}
               >
                 {o}
@@ -760,7 +812,8 @@ function ComboBox({
           {!query && (
             <button
               type="button"
-              onClick={() => commit("")}
+              onMouseDown={() => commit("")}
+              onTouchStart={() => commit("")}
               className="mt-1 w-full text-left px-3 py-2 rounded-lg text-xs text-white/70 hover:bg-white/10"
             >
               Any {label.toLowerCase()}
@@ -772,8 +825,7 @@ function ComboBox({
   )
 }
 
-
-function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label: React.ReactNode }) {
   return (
     <Link
       to={to}
