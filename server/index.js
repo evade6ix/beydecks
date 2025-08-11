@@ -52,6 +52,8 @@ const startServer = async () => {
   app.use("/api/events", eventsRouter)
   app.use("/events", eventsRouter)
 
+
+
   // ---------- EVENTS CRUD (both /api and non-/api) ----------
   const listEvents = async (_, res) => {
     const data = await events.find().toArray()
