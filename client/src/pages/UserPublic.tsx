@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion, AnimatePresence } from "framer-motion"
+import type React from "react"
 import {
   Share2,
   MapPin,
