@@ -2,6 +2,9 @@
 import express from "express"
 import jwt from "jsonwebtoken"
 
+/* ------------------------------------------
+   Helpers
+------------------------------------------- */
 const slugify = (s) =>
   (s || "")
     .toString()
@@ -13,9 +16,9 @@ const slugify = (s) =>
     .replace(/^-+|-+$/g, "")
     .substring(0, 60)
 
-const usernameOk = (s) => /^[a-zA-Z0-9_\.]{3,24}$/.test(String(s || ""))
+const usernameOk = (s) => /^[a-zA-Z0-9_.]{3,24}$/.test(String(s || ""))
 
-const publicUserProjection = {
+const publicProjection = {
   id: 1,
   _id: 1,
   username: 1,
@@ -26,6 +29,11 @@ const publicUserProjection = {
   homeStore: 1,
   ownedParts: 1,
   tournamentsPlayed: 1,
+  // podium counters maintained by the event sync in index.js
+  firsts: 1,
+  seconds: 1,
+  thirds: 1,
+  topCutCount: 1,
 }
 
 function getBearerToken(req) {
@@ -55,17 +63,20 @@ function requireAuth(usersCol) {
   }
 }
 
+/* ------------------------------------------
+   Router
+------------------------------------------- */
 export default function usersRoutes({ users }) {
   const router = express.Router()
 
-  // --- NEW: lightweight search for admin autocomplete ---
+  /* ---------- Admin/Editor search (autocomplete) ---------- */
   // GET /users/search?q=term
   router.get("/search", async (req, res) => {
     const q = String(req.query.q || "").trim()
     if (q.length < 2) return res.json([])
 
-    // escape regex special chars
-    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const rx = new RegExp(safe, "i")
 
     const hits = await users
       .find(
@@ -75,123 +86,139 @@ export default function usersRoutes({ users }) {
       .limit(8)
       .toArray()
 
-    // normalize id shape for client
-    const result = hits.map((u) => ({
-      id: u.id ?? String(u._id),
-      username: u.username || "",
-      displayName: u.displayName || "",
-      slug: u.slug || "",
-      avatarDataUrl: u.avatarDataUrl || "",
-    }))
-
-    res.json(result)
+    res.json(
+      hits.map((u) => ({
+        id: u.id ?? String(u._id),
+        username: u.username || "",
+        displayName: u.displayName || "",
+        slug: u.slug || "",
+        avatarDataUrl: u.avatarDataUrl || "",
+      }))
+    )
   })
 
-  // Public profile by slug
+  /* ---------- Public profile by slug (used by /u/:slug) ---------- */
   router.get("/slug/:slug", async (req, res) => {
     const slug = String(req.params.slug || "").trim().toLowerCase()
     if (!slug) return res.status(400).json({ error: "Missing slug" })
 
-    const u = await users.findOne({ slug }, { projection: publicUserProjection })
+    const u = await users.findOne({ slug }, { projection: publicProjection })
     if (!u) return res.status(404).json({ error: "User not found" })
 
-    const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
+    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
+    const tournamentsCount = tournamentsPlayed.length
+
     return res.json({
       id: u.id ?? u._id,
       username: u.username || "",
-      displayName: u.displayName || "",
-      // prefer displayName in UI but always send username too
-      name: u.displayName || u.username || "",
+      displayName: u.displayName || u.username || "",
       slug: u.slug,
       avatarDataUrl: u.avatarDataUrl || "",
       bio: u.bio || "",
       homeStore: u.homeStore || "",
       ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+      tournamentsPlayed,
+      firsts: Number(u.firsts || 0),
+      seconds: Number(u.seconds || 0),
+      thirds: Number(u.thirds || 0),
+      topCutCount: Number(u.topCutCount || 0),
       stats: { tournamentsCount },
     })
   })
 
-  // Backwards-compat GET /users/:slug (optional)
-  router.get("/:slug", async (req, res) => {
-    const u = await users.findOne(
-      { slug: String(req.params.slug || "").toLowerCase() },
-      { projection: publicUserProjection }
-    )
+  /* ---------- Optional: public by ID (avoid catch-all conflicts) ---------- */
+  router.get("/id/:id", async (req, res) => {
+    const id = String(req.params.id || "")
+    if (!id) return res.status(400).json({ error: "Missing id" })
+
+    const u =
+      (await users.findOne({ id }, { projection: publicProjection })) ||
+      (await users.findOne({ _id: id }, { projection: publicProjection }))
+
     if (!u) return res.status(404).json({ error: "User not found" })
-    const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
+
+    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
+    const tournamentsCount = tournamentsPlayed.length
+
     return res.json({
       id: u.id ?? u._id,
       username: u.username || "",
-      displayName: u.displayName || "",
-      name: u.displayName || u.username || "",
+      displayName: u.displayName || u.username || "",
       slug: u.slug,
       avatarDataUrl: u.avatarDataUrl || "",
       bio: u.bio || "",
       homeStore: u.homeStore || "",
       ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+      tournamentsPlayed,
+      firsts: Number(u.firsts || 0),
+      seconds: Number(u.seconds || 0),
+      thirds: Number(u.thirds || 0),
+      topCutCount: Number(u.topCutCount || 0),
       stats: { tournamentsCount },
     })
   })
 
-  // Edit own profile
+  /* ---------- Edit own profile ---------- */
+  // NOTE:
+  // - Username is the canonical identity.
+  // - Slug always follows username (unique); no keepSlug anymore.
+  // - Avatar can be set to a data URL or cleared by sending "".
+  // - Owned parts are NOT updated here (they come from the BuildFromMyParts flow).
   router.patch("/me", requireAuth(users), async (req, res) => {
     const me = req.me
-    const { username, displayName, avatarDataUrl, bio, homeStore, ownedParts, keepSlug } = req.body || {}
+    const { username, displayName, avatarDataUrl, bio, homeStore } = req.body || {}
     const $set = {}
 
-    // username: canonical
+    // Username -> validate, ensure uniqueness, and sync slug to username
     if (typeof username === "string" && username !== me.username) {
       if (!usernameOk(username)) {
-        return res.status(400).json({ error: "Username must be 3–24 chars: letters, numbers, underscores, dots." })
+        return res
+          .status(400)
+          .json({ error: "Username must be 3–24 chars: letters, numbers, underscores, dots." })
       }
       const exists = await users.findOne({ username }, { projection: { _id: 1 } })
       if (exists && String(exists._id) !== String(me._id)) {
         return res.status(409).json({ error: "Username already taken" })
       }
       $set.username = username
-      if (!keepSlug) {
-        // regenerate slug from username
-        const base = slugify(username) || `user-${String(me._id).slice(-6)}`
-        let candidate = base
-        let n = 0
-        // eslint-disable-next-line no-await-in-loop
-        while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
-          n += 1
-          candidate = `${base}-${n}`
-        }
-        $set.slug = candidate
+
+      // slug mirrors username
+      const base = slugify(username) || `user-${String(me._id).slice(-6)}`
+      let candidate = base
+      let n = 0
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
+        n += 1
+        candidate = `${base}-${n}`
       }
-      // If displayName not explicitly provided, keep it as-is;
-      // or set it to username the first time user gets a username.
-      if (!displayName && !me.displayName) $set.displayName = username
+      $set.slug = candidate
+
+      // If they never had a displayName, default it to username once
+      if (!me.displayName && !displayName) $set.displayName = username
     }
 
-    // optional displayName (kept as flair)
-    if (typeof displayName === "string" && displayName.trim()) {
-      $set.displayName = displayName.trim()
-      // do NOT auto-change slug from displayName anymore
+    // Display name stays optional "flair" (not used for slug)
+    if (typeof displayName === "string") {
+      const clean = displayName.trim()
+      if (clean) $set.displayName = clean
+      else if (displayName === "") $set.displayName = "" // allow clearing if you want that behavior
     }
 
+    // Avatar: allow data URL or clear by sending ""
     if (typeof avatarDataUrl === "string") {
-      if (avatarDataUrl === "" || (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,"))) {
-        $set.avatarDataUrl = avatarDataUrl
-      } else {
-        return res.status(400).json({ error: "avatarDataUrl must be a base64 data URL" })
+      const ok =
+        avatarDataUrl === "" ||
+        (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,"))
+      if (!ok) {
+        return res.status(400).json({ error: "avatarDataUrl must be a base64 data URL (or empty to clear)" })
       }
+      $set.avatarDataUrl = avatarDataUrl
     }
 
     if (typeof bio === "string") $set.bio = bio.slice(0, 500)
     if (typeof homeStore === "string") $set.homeStore = homeStore.slice(0, 120)
 
-    if (ownedParts && typeof ownedParts === "object") {
-      const normArr = (a) => (Array.isArray(a) ? a.map(String).slice(0, 300) : [])
-      $set.ownedParts = {
-        blades: normArr(ownedParts.blades),
-        assistBlades: normArr(ownedParts.assistBlades),
-        ratchets: normArr(ownedParts.ratchets),
-        bits: normArr(ownedParts.bits),
-      }
-    }
+    // Intentionally ignore ownedParts here — managed elsewhere
 
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" })
@@ -200,20 +227,26 @@ export default function usersRoutes({ users }) {
     const result = await users.findOneAndUpdate(
       { _id: me._id },
       { $set },
-      { returnDocument: "after", projection: publicUserProjection }
+      { returnDocument: "after", projection: publicProjection }
     )
 
     const u = result.value
+    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
     return res.json({
       id: u.id ?? u._id,
       username: u.username || "",
       displayName: u.displayName || "",
-      name: u.displayName || u.username || "",
       slug: u.slug,
       avatarDataUrl: u.avatarDataUrl || "",
       bio: u.bio || "",
       homeStore: u.homeStore || "",
       ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+      // send counters back too, in case the client wants to reflect them
+      firsts: Number(u.firsts || 0),
+      seconds: Number(u.seconds || 0),
+      thirds: Number(u.thirds || 0),
+      topCutCount: Number(u.topCutCount || 0),
+      stats: { tournamentsCount: tournamentsPlayed.length },
     })
   })
 
