@@ -1,5 +1,5 @@
 // File: src/pages/UserPublic.tsx
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion } from "framer-motion"
@@ -15,7 +15,7 @@ import {
   CalendarDays,
   ChevronRight,
   Search,
-  Package,   // ⬅️ use Package instead of Boxes for broad lucide compatibility
+  Package, // safe across lucide versions
   Zap,
   Swords,
 } from "lucide-react"
@@ -28,6 +28,7 @@ const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
 /* ---------- Types ---------- */
 type InvKey = "blades" | "assistBlades" | "ratchets" | "bits"
 type TabMeta = { key: InvKey; label: string; count: number; icon: React.ReactNode }
+
 
 type OwnedParts = {
   blades: string[]
@@ -56,8 +57,7 @@ type PublicUser = {
   bio?: string
   homeStore?: string
 
-  // legacy container
-  ownedParts?: OwnedParts
+  ownedParts?: OwnedParts // legacy
 
   // top-level (future-proof)
   blades?: string[]
@@ -87,9 +87,7 @@ export default function UserPublic() {
   useEffect(() => {
     let mounted = true
     setLoading(true)
-
-    const url = api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`)
-    fetch(url)
+    fetch(api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`))
       .then(async (r) => {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
@@ -97,7 +95,6 @@ export default function UserPublic() {
       .then((data) => mounted && setU(data))
       .catch((e) => mounted && setError(e?.message || "Failed to load profile"))
       .finally(() => mounted && setLoading(false))
-
     return () => {
       mounted = false
     }
@@ -118,7 +115,7 @@ export default function UserPublic() {
 
   const shareUrl = `${window.location.origin}/u/${u.slug}`
 
-  // normalize parts (handles legacy ownedParts OR top-level arrays)
+  // Normalize parts (legacy or top-level)
   const parts: OwnedParts = {
     blades: u.ownedParts?.blades || u.blades || [],
     assistBlades: u.ownedParts?.assistBlades || u.assistBlades || [],
@@ -126,28 +123,26 @@ export default function UserPublic() {
     bits: u.ownedParts?.bits || u.bits || [],
   }
 
-  const tournaments =
-    Array.isArray(u.tournamentsPlayed)
-      ? [...u.tournamentsPlayed]
-          .filter(Boolean)
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      : []
+  const tournaments: TournamentEntry[] = Array.isArray(u.tournamentsPlayed)
+    ? [...u.tournamentsPlayed]
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : []
 
-  const tournamentsCount = u.stats?.tournamentsCount ?? tournaments.length
+  const tournamentsCount = (u.stats && u.stats.tournamentsCount) ?? tournaments.length
   const firsts = u.firsts ?? 0
   const seconds = u.seconds ?? 0
   const thirds = u.thirds ?? 0
   const topCuts = (u.topCutCount ?? tournaments.filter((t) => t.placement === "Top Cut").length) || 0
 
-  // Perf snapshot
-  const totalWins = useMemo(() => tournaments.reduce((a, t) => a + (t.roundWins || 0), 0), [tournaments])
-  const totalLosses = useMemo(() => tournaments.reduce((a, t) => a + (t.roundLosses || 0), 0), [tournaments])
+  // Perf snapshot (no hooks)
+  const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
+  const totalLosses = tournaments.reduce((a, t) => a + (t.roundLosses || 0), 0)
   const totalMatches = totalWins + totalLosses
   const winRate = totalMatches ? Math.round((totalWins / totalMatches) * 100) : 0
   const firstEvent = tournaments.length ? tournaments[tournaments.length - 1] : null
   const latestEvent = tournaments[0] || null
 
-  // inventory search filter
   const filterItems = (arr: string[]) =>
     arr.filter((x) => x.toLowerCase().includes(invSearch.trim().toLowerCase()))
 
@@ -184,7 +179,6 @@ export default function UserPublic() {
         animate={{ opacity: 1, y: 0 }}
         className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-700/25 via-fuchsia-700/20 to-cyan-700/20 p-0"
       >
-        {/* soft backdrop with avatar */}
         <div
           className="pointer-events-none absolute inset-0 opacity-30 blur-2xl"
           style={{
@@ -209,7 +203,6 @@ export default function UserPublic() {
                   {u.username ? (
                     <div className="mt-0.5 text-sm text-white/80 truncate">@{u.username}</div>
                   ) : null}
-
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs md:text-sm">
                     {u.homeStore ? (
                       <Pill>
@@ -240,7 +233,6 @@ export default function UserPublic() {
                 </button>
               </div>
 
-              {/* Podium stats */}
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <StatTile tone="gold" icon={<Crown className="h-4 w-4" />} label="Champion" value={firsts} />
                 <StatTile tone="silver" icon={<Medal className="h-4 w-4" />} label="Second" value={seconds} />
@@ -254,9 +246,7 @@ export default function UserPublic() {
 
       {/* MAIN */}
       <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-4">
-        {/* Left (About + Results + Inventory) */}
         <div className="xl:col-span-2 space-y-4">
-          {/* About */}
           <Card>
             <SectionHeader icon={<Sparkles className="h-4 w-4" />} title="About" />
             {u.bio ? (
@@ -266,7 +256,6 @@ export default function UserPublic() {
             )}
           </Card>
 
-          {/* Recent Results */}
           <Card>
             <SectionHeader icon={<CalendarDays className="h-4 w-4" />} title="Recent Results" />
             {!tournaments.length ? (
@@ -274,7 +263,7 @@ export default function UserPublic() {
             ) : (
               <ul className="divide-y divide-white/10">
                 {tournaments.slice(0, 10).map((t, i) => {
-                  const eventId = (t as any).eventId ?? (t as any).id
+                  const eventId = t.eventId ?? t.id
                   const row = (
                     <div className="flex items-start justify-between gap-3 py-3">
                       <div className="min-w-0">
@@ -308,24 +297,20 @@ export default function UserPublic() {
             ) : null}
           </Card>
 
-          {/* Inventory */}
           <Card>
             <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <SectionHeader icon={<Package className="h-4 w-4" />} title="Inventory" />
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-white/50" />
-                  <input
-                    className="pl-8 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 outline-none text-sm focus:border-indigo-500/50"
-                    placeholder="Search parts…"
-                    value={invSearch}
-                    onChange={(e) => setInvSearch(e.target.value)}
-                  />
-                </div>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-white/50" />
+                <input
+                  className="pl-8 pr-3 py-2 rounded-xl bg-white/5 border border-white/10 outline-none text-sm focus:border-indigo-500/50"
+                  placeholder="Search parts…"
+                  value={invSearch}
+                  onChange={(e) => setInvSearch(e.target.value)}
+                />
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="mb-3 flex flex-wrap gap-2">
               {tabs.map((t) => {
                 const active = invTab === t.key
@@ -346,7 +331,6 @@ export default function UserPublic() {
               })}
             </div>
 
-            {/* Items */}
             {invItems.length === 0 ? (
               <div className="text-sm text-white/70">No {tabs.find((t) => t.key === invTab)?.label.toLowerCase()} listed.</div>
             ) : (
@@ -367,7 +351,6 @@ export default function UserPublic() {
           </Card>
         </div>
 
-        {/* Right (Quick facts + Performance) */}
         <div className="space-y-4">
           <Card>
             <div className="mb-2 text-sm font-semibold">Quick Facts</div>
@@ -400,7 +383,6 @@ export default function UserPublic() {
         </div>
       </div>
 
-      {/* Back link */}
       <div className="mt-8">
         <Link to="/" className="inline-flex items-center gap-2 text-indigo-400 hover:text-indigo-300">
           <ArrowLeft className="h-4 w-4" />
@@ -427,10 +409,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function Pill({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
-    <span
-      title={title}
-      className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1"
-    >
+    <span title={title} className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1">
       {children}
     </span>
   )
