@@ -55,6 +55,28 @@ function requireAuth(usersCol) {
 export default function usersRoutes({ users }) {
   const router = express.Router()
 
+  // ✅ Public profile by slug (explicit alias): GET /users/slug/:slug
+router.get("/slug/:slug", async (req, res) => {
+  const slug = String(req.params.slug || "").trim().toLowerCase()
+  if (!slug) return res.status(400).json({ error: "Missing slug" })
+
+  const u = await users.findOne({ slug }, { projection: publicUserProjection })
+  if (!u) return res.status(404).json({ error: "User not found" })
+
+  const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
+  return res.json({
+    id: u.id ?? u._id,
+    displayName: u.displayName || "",
+    slug: u.slug,
+    avatarDataUrl: u.avatarDataUrl || "",
+    bio: u.bio || "",
+    homeStore: u.homeStore || "",
+    ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+    stats: { tournamentsCount },
+  })
+})
+
+
   // Public profile by slug
   router.get("/:slug", async (req, res) => {
     const { slug } = req.params

@@ -34,7 +34,7 @@ export default function UserPublic() {
   useEffect(() => {
     let mounted = true
     setLoading(true)
-    fetch(`${API}/api/users/${slug}`)
+    fetch(`${API}/api/users/slug/${encodeURIComponent(slug || "")}`)
       .then(async (r) => {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
