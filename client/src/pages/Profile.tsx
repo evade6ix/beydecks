@@ -160,7 +160,7 @@ export default function Profile() {
   async function patchMe(payload: Record<string, any>) {
     const token = localStorage.getItem("token")
     if (!token) throw new Error("No auth token")
-    const res = await fetch(api("/api/users/me"), {
+    const res = await fetch(api("/users/me"), {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),
