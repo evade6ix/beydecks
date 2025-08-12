@@ -45,6 +45,13 @@ type PublicUser = {
   bio?: string
   homeStore?: string
   ownedParts?: OwnedParts
+  // NEW: prefer these top-level arrays provided by Mongo
+  blades?: string[]
+  assistBlades?: string[]
+  ratchets?: string[]
+  bits?: string[]
+  partsUpdatedAt?: string
+
   tournamentsPlayed?: TournamentEntry[]
   topCutCount?: number
   firsts?: number
@@ -60,7 +67,7 @@ export default function UserPublic() {
   const [u, setU] = useState<PublicUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [invTab, setInvTab] = useState<InvKey>("blades") // ← inventory tab
+  const [invTab, setInvTab] = useState<InvKey>("blades") // inventory tab
 
   useEffect(() => {
     let mounted = true
@@ -104,11 +111,13 @@ export default function UserPublic() {
     )
   }
 
+  // Prefer top-level arrays; fall back to ownedParts if they’re not present.
   const parts: OwnedParts = {
-    blades: u.ownedParts?.blades || [],
-    assistBlades: u.ownedParts?.assistBlades || [],
-    ratchets: u.ownedParts?.ratchets || [],
-    bits: u.ownedParts?.bits || [],
+    blades: (u.blades && u.blades.length ? u.blades : u.ownedParts?.blades) || [],
+    assistBlades:
+      (u.assistBlades && u.assistBlades.length ? u.assistBlades : u.ownedParts?.assistBlades) || [],
+    ratchets: (u.ratchets && u.ratchets.length ? u.ratchets : u.ownedParts?.ratchets) || [],
+    bits: (u.bits && u.bits.length ? u.bits : u.ownedParts?.bits) || [],
   }
 
   const shareUrl = `${window.location.origin}/u/${u.slug}`
@@ -124,7 +133,7 @@ export default function UserPublic() {
   const firsts = u.firsts ?? 0
   const seconds = u.seconds ?? 0
   const thirds = u.thirds ?? 0
-  const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
+  const topCuts = tournaments.filter((t) => t.placement === "Top Cut").length
 
   // Performance snapshot (right column)
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
@@ -158,7 +167,7 @@ export default function UserPublic() {
             className="h-20 w-20 md:h-24 md:w-24 rounded-2xl object-cover ring-1 ring-white/10"
             draggable={false}
           />
-        <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="truncate text-2xl md:text-3xl font-bold tracking-tight">{u.displayName}</h1>
@@ -190,7 +199,7 @@ export default function UserPublic() {
           </div>
         </div>
 
-        {/* Podium row — single source of truth */}
+        {/* Podium row */}
         <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatPill icon={<Crown className="h-4 w-4" />} label="Champion" value={firsts} tone="gold" />
           <StatPill icon={<Medal className="h-4 w-4" />} label="Second" value={seconds} tone="silver" />
@@ -225,37 +234,37 @@ export default function UserPublic() {
               <div className="text-sm text-white/70">No recorded results yet.</div>
             ) : (
               <ul className="divide-y divide-white/10">
-  {tournaments.slice(0, 8).map((t, i) => {
-    const eventId = (t as any).eventId ?? (t as any).id
+                {tournaments.slice(0, 8).map((t, i) => {
+                  const eventId = (t as any).eventId ?? (t as any).id
 
-    const row = (
-      <div className="py-3 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-medium">{t.storeName}</div>
-          <div className="text-xs text-white/70">
-            {safeDate(t.date)} · {t.totalPlayers} players
-          </div>
-        </div>
-        <PlacementBadge placement={t.placement} />
-      </div>
-    )
+                  const row = (
+                    <div className="py-3 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium">{t.storeName}</div>
+                        <div className="text-xs text-white/70">
+                          {safeDate(t.date)} · {t.totalPlayers} players
+                        </div>
+                      </div>
+                      <PlacementBadge placement={t.placement} />
+                    </div>
+                  )
 
-    return (
-      <li key={i} className="relative">
-        {eventId ? (
-          <Link
-            to={`/events/${eventId}`}
-            className="block rounded-xl -mx-2 px-2 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-          >
-            {row}
-          </Link>
-        ) : (
-          row
-        )}
-      </li>
-    )
-  })}
-</ul>
+                  return (
+                    <li key={i} className="relative">
+                      {eventId ? (
+                        <Link
+                          to={`/events/${eventId}`}
+                          className="block rounded-xl -mx-2 px-2 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                        >
+                          {row}
+                        </Link>
+                      ) : (
+                        row
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
             )}
             {tournaments.length > 8 ? (
               <div className="mt-3 text-xs text-white/60">Showing 8 of {tournaments.length}.</div>
@@ -263,11 +272,7 @@ export default function UserPublic() {
           </Card>
 
           {/* BIG INVENTORY SECTION */}
-          <InventorySection
-            parts={parts}
-            invTab={invTab}
-            onChangeTab={(k) => setInvTab(k)}
-          />
+          <InventorySection parts={parts} invTab={invTab} onChangeTab={(k) => setInvTab(k)} />
         </div>
 
         {/* Right column */}
@@ -433,7 +438,9 @@ function InventorySection({
       </div>
 
       {items.length === 0 ? (
-        <div className="text-sm text-white/70">No {tabs.find(t => t.key === invTab)?.label.toLowerCase()} listed yet.</div>
+        <div className="text-sm text-white/70">
+          No {tabs.find((t) => t.key === invTab)?.label.toLowerCase()} listed yet.
+        </div>
       ) : (
         <ul className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
           {items.map((x, i) => (
