@@ -5,7 +5,10 @@ import { Helmet } from "react-helmet-async"
 import { motion } from "framer-motion"
 import { Share2, MapPin, Users, ArrowLeft } from "lucide-react"
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
+// --- API base (no double /api) ---
+const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
+const ROOT = RAW.replace(/\/api\/?$/i, "") // strip trailing /api if present
+const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
 
 type OwnedParts = {
   blades: string[]
@@ -34,7 +37,9 @@ export default function UserPublic() {
   useEffect(() => {
     let mounted = true
     setLoading(true)
-    fetch(`${API}/api/users/slug/${encodeURIComponent(slug || "")}`)
+
+    const url = api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`)
+    fetch(url)
       .then(async (r) => {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
@@ -45,6 +50,7 @@ export default function UserPublic() {
       })
       .catch((e) => mounted && setError(e?.message || "Failed to load profile"))
       .finally(() => mounted && setLoading(false))
+
     return () => {
       mounted = false
     }
