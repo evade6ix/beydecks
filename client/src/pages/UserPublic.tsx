@@ -15,7 +15,7 @@ import {
   CalendarDays,
   ChevronRight,
   Search,
-  Boxes,
+  Package,   // ⬅️ use Package instead of Boxes for broad lucide compatibility
   Zap,
   Swords,
 } from "lucide-react"
@@ -26,6 +26,9 @@ const ROOT = RAW.replace(/\/api\/?$/i, "")
 const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
 
 /* ---------- Types ---------- */
+type InvKey = "blades" | "assistBlades" | "ratchets" | "bits"
+type TabMeta = { key: InvKey; label: string; count: number; icon: React.ReactNode }
+
 type OwnedParts = {
   blades: string[]
   assistBlades?: string[]
@@ -151,7 +154,7 @@ export default function UserPublic() {
   const tabs: TabMeta[] = [
     { key: "blades", label: "Blades", count: parts.blades.length, icon: <Swords className="h-4 w-4" /> },
     { key: "assistBlades", label: "Assist Blades", count: parts.assistBlades?.length || 0, icon: <Zap className="h-4 w-4" /> },
-    { key: "ratchets", label: "Ratchets", count: parts.ratchets.length, icon: <Boxes className="h-4 w-4" /> },
+    { key: "ratchets", label: "Ratchets", count: parts.ratchets.length, icon: <Package className="h-4 w-4" /> },
     { key: "bits", label: "Bits", count: parts.bits.length, icon: <Sparkles className="h-4 w-4" /> },
   ]
 
@@ -220,7 +223,7 @@ export default function UserPublic() {
                     </Pill>
                     {u.partsUpdatedAt ? (
                       <Pill title="Last inventory update">
-                        <Boxes className="h-4 w-4" />
+                        <Package className="h-4 w-4" />
                         {timeAgo(u.partsUpdatedAt)}
                       </Pill>
                     ) : null}
@@ -308,7 +311,7 @@ export default function UserPublic() {
           {/* Inventory */}
           <Card>
             <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <SectionHeader icon={<Boxes className="h-4 w-4" />} title="Inventory" />
+              <SectionHeader icon={<Package className="h-4 w-4" />} title="Inventory" />
               <div className="flex items-center gap-2">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2 top-2.5 h-4 w-4 text-white/50" />
@@ -496,9 +499,6 @@ function PlacementBadge({ placement }: { placement: string }) {
 }
 
 /* ---------- helpers ---------- */
-type InvKey = "blades" | "assistBlades" | "ratchets" | "bits"
-type TabMeta = { key: InvKey; label: string; count: number; icon: React.ReactNode }
-
 function safeDate(d: string) {
   const dt = new Date(d)
   return isNaN(dt.getTime())
