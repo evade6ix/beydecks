@@ -106,9 +106,12 @@ const startServer = async () => {
       const payload = jwt.verify(token, process.env.JWT_SECRET)
       const userId = payload?.id || payload?.userId || payload?._id || payload?.sub
       if (!userId) return res.status(401).json({ error: "Invalid token" })
+      const idStr = String(userId)
       const me =
-        (await usersCol.findOne({ id: userId })) ||
-        (await usersCol.findOne({ _id: userId }))
+        (await usersCol.findOne({ id: idStr })) ||
+        (await usersCol.findOne({ _id: idStr })) ||
+        (await usersCol.findOne({ _id: userId })) // fallback if _id is ObjectId/other
+
       if (!me) return res.status(401).json({ error: "User not found" })
       req.me = me
       next()
