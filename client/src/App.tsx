@@ -1,8 +1,10 @@
 // File: src/App.tsx
 import { useEffect, useState, Suspense, lazy } from "react"
-import { Routes, Route, useLocation } from "react-router-dom" // <-- added useLocation
+import { Routes, Route, useLocation } from "react-router-dom"
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
+
+// Eager (as you had)
 import ForumThread from "./pages/ForumThread"
 import Forum from "./pages/Forum"
 import BuildFromMyParts from "./pages/BuildFromMyParts"
@@ -39,11 +41,13 @@ const RatchetDetail = lazy(() => import("./pages/RatchetDetail"))
 const BitDetail = lazy(() => import("./pages/BitDetail"))
 const AssistDetail = lazy(() => import("./pages/AssistDetail"))
 
+// ✅ Lazy load UserPublic (was eager)
+const UserPublic = lazy(() => import("./pages/UserPublic"))
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const { user, loading } = useAuth()
-  const location = useLocation() // <-- added this
+  const location = useLocation()
 
   useEffect(() => {
     const loggedIn = sessionStorage.getItem("admin") === "true"
@@ -53,13 +57,16 @@ export default function App() {
 
   return (
     <>
-      {/* ✅ Hide Navbar on landing page */}
+      {/* Hide Navbar on landing page */}
       {location.pathname !== "/" && (
         <Navbar isAdmin={isAdmin} user={user} loading={loading} />
       )}
 
       <Suspense fallback={<div className="p-6 text-center">Loading...</div>}>
         <Routes>
+          {/* Public shareable user profile */}
+          <Route path="/u/:slug" element={<UserPublic />} />
+
           <Route path="/" element={<Landing />} />
           <Route path="/home" element={<Home />} />
           <Route path="/events" element={<Events />} />

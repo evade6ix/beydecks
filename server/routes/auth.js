@@ -138,6 +138,69 @@ export default (collections) => {
     }
   })
 
+  // UPDATE profile: PATCH /api/auth/me
+router.patch("/me", async (req, res) => {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
+
+  try {
+    const token = auth.split(" ")[1]
+    const payload = jwt.verify(token, JWT_SECRET)
+
+    // collections is closed over above; same users collection
+    const { displayName, bio, homeStore, avatarDataUrl, ownedParts, slug } = req.body || {}
+
+    const $set = { updatedAt: new Date() }
+    if (typeof displayName === "string") $set.displayName = displayName.trim()
+    if (typeof bio === "string") $set.bio = bio.slice(0, 500)
+    if (typeof homeStore === "string") $set.homeStore = homeStore.slice(0, 120)
+    if (typeof avatarDataUrl === "string") $set.avatarDataUrl = avatarDataUrl
+
+    if (ownedParts && typeof ownedParts === "object") {
+      const norm = (a) => (Array.isArray(a) ? a.map(String).slice(0, 300) : [])
+      $set.ownedParts = {
+        blades: norm(ownedParts.blades),
+        assistBlades: norm(ownedParts.assistBlades),
+        ratchets: norm(ownedParts.ratchets),
+        bits: norm(ownedParts.bits),
+      }
+    }
+
+    // optional — only set if you intend to allow client to pass slug directly
+    if (typeof slug === "string") $set.slug = slug
+
+    const r = await users.updateOne({ id: String(payload.id) }, { $set })
+    if (r.matchedCount === 0) return res.status(404).json({ error: "User not found" })
+
+    const updated = await users.findOne(
+      { id: String(payload.id) },
+      {
+        projection: {
+          id: 1,
+          username: 1,
+          displayName: 1,
+          slug: 1,
+          avatarDataUrl: 1,
+          bio: 1,
+          homeStore: 1,
+          ownedParts: 1,
+          tournamentsPlayed: 1,
+          matchupHistory: 1,
+          topCutCount: 1,
+          firsts: 1,
+          seconds: 1,
+          thirds: 1,
+        },
+      }
+    )
+
+    return res.json(updated)
+  } catch {
+    return res.status(401).json({ error: "Invalid token" })
+  }
+})
+
+
   router.post("/submit-matchup", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })

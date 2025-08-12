@@ -21,8 +21,14 @@ import {
 } from "lucide-react"
 import { toast } from "react-hot-toast"
 import { useAuth } from "../context/AuthContext"
+import type { OwnedParts } from "../context/AuthContext"
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
+const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
+const API_BASE = RAW
+const api = (path: string) => `${API_BASE}/${String(path).replace(/^\/+/, "")}`
+
+
+
 
 /* ------------------------------
    Types
@@ -57,8 +63,19 @@ export default function Profile() {
   const { isAuthenticated, user, logout } = useAuth()
   if (!isAuthenticated || !user) return <Navigate to="/user-auth" />
 
+  // widen runtime user with optional profile fields used here
+  type ProfileExtras = {
+    displayName?: string
+    bio?: string
+    homeStore?: string
+    avatarDataUrl?: string
+    slug?: string
+    ownedParts?: OwnedParts
+  }
+  const u = user as typeof user & ProfileExtras
+
   // Tabs
-  const [tab, setTab] = useState<"overview" | "matchups" | "tournaments">("overview")
+  const [tab, setTab] = useState<"overview" | "profile" | "matchups" | "tournaments">("overview")
 
   // Matchups state
   const [myCombo, setMyCombo] = useState<Combo>({ blade: "", ratchet: "", bit: "", notes: "" })
@@ -95,9 +112,10 @@ export default function Profile() {
   const seconds = useMemo(() => tournaments.filter((t) => t.placement === "Second Place").length, [tournaments])
   const thirds = useMemo(() => tournaments.filter((t) => t.placement === "Third Place").length, [tournaments])
   const topCutCount = useMemo(
-    () => tournaments.filter((t) =>
-      ["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)
-    ).length,
+    () =>
+      tournaments.filter((t) =>
+        ["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)
+      ).length,
     [tournaments]
   )
 
@@ -106,7 +124,26 @@ export default function Profile() {
   useEffect(() => setTournamentPage(1), [tournaments.length])
 
   /* ------------------------------
-     Actions
+     Profile editor state
+  ---------------------------------*/
+  const [displayName, setDisplayName] = useState<string>(u.displayName || user.username || "")
+  const [bio, setBio] = useState<string>(u.bio || "")
+  const [homeStore, setHomeStore] = useState<string>(u.homeStore || "")
+  const [avatarDataUrl, setAvatarDataUrl] = useState<string>(u.avatarDataUrl || "")
+  const [keepSlug, setKeepSlug] = useState<boolean>(true)
+
+  const [ownedParts, setOwnedParts] = useState<OwnedParts>({
+    blades: u.ownedParts?.blades || [],
+    assistBlades: u.ownedParts?.assistBlades || [],
+    ratchets: u.ownedParts?.ratchets || [],
+    bits: u.ownedParts?.bits || [],
+  })
+
+  // Convenience for showing share link after save
+  const [publicSlug, setPublicSlug] = useState<string>(u.slug || "")
+
+  /* ------------------------------
+     Actions (matchups/tournaments)
   ---------------------------------*/
   const handleSubmitMatchup: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault()
@@ -117,7 +154,7 @@ export default function Profile() {
     if (!opponentCombo.blade || !opponentCombo.ratchet || !opponentCombo.bit)
       return toast.error("Fill opponent combo completely.")
 
-    const res = await fetch(`${API}/auth/submit-matchup`, {
+    const res = await fetch(api("/auth/submit-matchup"), {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ myCombo, opponentCombo, result }),
@@ -140,7 +177,7 @@ export default function Profile() {
     const token = localStorage.getItem("token")
     if (!token) return toast.error("Please log in again.")
 
-    const res = await fetch(`${API}/auth/matchup/${toDeleteId}`, {
+    const res = await fetch(api(`/auth/matchup/${toDeleteId}`), {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -161,7 +198,7 @@ export default function Profile() {
     if (!token) return toast.error("Please log in again.")
 
     try {
-      const res = await fetch(`${API}/auth/submit-tournament`, {
+      const res = await fetch(api("/auth/submit-tournament"), {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ userId: user.id, ...tournament }),
@@ -169,7 +206,6 @@ export default function Profile() {
       if (!res.ok) throw new Error()
 
       let newTournament = await res.json()
-      // Normalize date for instant readability
       if (newTournament.date) {
         newTournament.date = new Date(newTournament.date).toISOString()
       }
@@ -178,13 +214,7 @@ export default function Profile() {
       setTournaments(updated)
       user.tournamentsPlayed = updated
 
-      // Live recompute placement tallies on user (for any other pages relying on it)
-      const placementStats = {
-        firsts: 0,
-        seconds: 0,
-        thirds: 0,
-        topCutCount: 0,
-      }
+      const placementStats = { firsts: 0, seconds: 0, thirds: 0, topCutCount: 0 }
       for (const t of updated) {
         if (t.placement === "First Place") placementStats.firsts++
         if (t.placement === "Second Place") placementStats.seconds++
@@ -218,7 +248,7 @@ export default function Profile() {
     if (!token) return toast.error("Please log in again.")
 
     try {
-      const res = await fetch(`${API}/auth/tournament/${index}`, {
+      const res = await fetch(api(`/auth/tournament/${index}`), {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -228,13 +258,7 @@ export default function Profile() {
         setTournaments(updated)
         user.tournamentsPlayed = updated
 
-        // Recalc placement stats
-        const placementStats = {
-          firsts: 0,
-          seconds: 0,
-          thirds: 0,
-          topCutCount: 0,
-        }
+        const placementStats = { firsts: 0, seconds: 0, thirds: 0, topCutCount: 0 }
         for (const t of updated) {
           if (t.placement === "First Place") placementStats.firsts++
           if (t.placement === "Second Place") placementStats.seconds++
@@ -293,6 +317,73 @@ export default function Profile() {
       ? "text-indigo-300"
       : "text-white/70"
 
+  // file -> base64 data URL
+  async function fileToDataUrl(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  // simple CSV <-> array helpers for quick editing
+  const toCSV = (arr?: string[]) => (Array.isArray(arr) ? arr.join(", ") : "")
+  const fromCSV = (s: string) =>
+    s.split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+
+ async function saveProfile() {
+  const token = localStorage.getItem("token")
+  if (!token) {
+    toast.error("Please log in again.")
+    return
+  }
+
+  const payload = {
+    displayName,
+    avatarDataUrl,
+    bio,
+    homeStore,
+    ownedParts,
+    keepSlug, // harmless if server ignores it
+  }
+
+  try {
+    const res = await fetch(api("/auth/me"), {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!res.ok) {
+      const msg = await res.text().catch(() => `${res.status} ${res.statusText}`)
+      throw new Error(msg || "Failed to save")
+    }
+
+    const updated = await res.json()
+
+    // sync UI
+    u.displayName = updated.displayName ?? displayName
+    u.username = updated.displayName ?? displayName
+    u.avatarDataUrl = updated.avatarDataUrl ?? avatarDataUrl
+    u.bio = updated.bio ?? bio
+    u.homeStore = updated.homeStore ?? homeStore
+    u.ownedParts = updated.ownedParts ?? ownedParts
+    if (typeof updated.slug === "string") setPublicSlug(updated.slug)
+
+    toast.success("Profile saved!")
+  } catch (err) {
+    console.warn("saveProfile failed:", err)
+    toast.error("Failed to save profile.")
+  }
+}
+
+
   /* ------------------------------
      Render
   ---------------------------------*/
@@ -311,9 +402,15 @@ export default function Profile() {
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{user.username}</h1>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
-              <Pill><Users className="mr-1 h-3.5 w-3.5" /> {matchups.length} matchups</Pill>
-              <Pill><Trophy className="mr-1 h-3.5 w-3.5" /> {tournaments.length} tournaments</Pill>
-              <Pill><Percent className="mr-1 h-3.5 w-3.5" /> {winRate}% win rate</Pill>
+              <Pill>
+                <Users className="mr-1 h-3.5 w-3.5" /> {matchups.length} matchups
+              </Pill>
+              <Pill>
+                <Trophy className="mr-1 h-3.5 w-3.5" /> {tournaments.length} tournaments
+              </Pill>
+              <Pill>
+                <Percent className="mr-1 h-3.5 w-3.5" /> {winRate}% win rate
+              </Pill>
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -338,53 +435,55 @@ export default function Profile() {
       </div>
 
       {/* QUICK STATS */}
-<div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <Percent className="h-4 w-4" /> Win Rate
-    </div>
-    <div className="mt-1 text-2xl font-bold">{winRate}%</div>
-    <div className="mt-2">
-      <Progress pct={Number(winRate)} />
-    </div>
-  </div>
+      <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Percent className="h-4 w-4" /> Win Rate
+          </div>
+          <div className="mt-1 text-2xl font-bold">{winRate}%</div>
+          <div className="mt-2">
+            <Progress pct={Number(winRate)} />
+          </div>
+        </div>
 
-  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <Swords className="h-4 w-4" /> Record
-    </div>
-    <div className="mt-1 text-2xl font-bold">{wins}-{losses}</div>
-    <div className="mt-1 text-xs opacity-70">{matchups.length} matches</div>
-  </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Swords className="h-4 w-4" /> Record
+          </div>
+          <div className="mt-1 text-2xl font-bold">
+            {wins}-{losses}
+          </div>
+          <div className="mt-1 text-xs opacity-70">{matchups.length} matches</div>
+        </div>
 
-  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <Trophy className="h-4 w-4" /> Top Cuts
-    </div>
-    <div className="mt-1 text-2xl font-bold">{topCutCount}</div>
-    <div className="mt-1 text-xs opacity-70">
-      {firsts}×1st • {seconds}×2nd • {thirds}×3rd
-    </div>
-  </div>
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Trophy className="h-4 w-4" /> Top Cuts
+          </div>
+          <div className="mt-1 text-2xl font-bold">{topCutCount}</div>
+          <div className="mt-1 text-xs opacity-70">
+            {firsts}×1st • {seconds}×2nd • {thirds}×3rd
+          </div>
+        </div>
 
-  <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-    <div className="flex items-center gap-2 text-sm font-semibold">
-      <TrendingUp className="h-4 w-4" /> Tournaments
-    </div>
-    <div className="mt-1 text-2xl font-bold">{tournaments.length}</div>
-    <div className="mt-1 text-xs opacity-70">Lifetime entries</div>
-  </div>
-</div>
-
+        <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <TrendingUp className="h-4 w-4" /> Tournaments
+          </div>
+          <div className="mt-1 text-2xl font-bold">{tournaments.length}</div>
+          <div className="mt-1 text-xs opacity-70">Lifetime entries</div>
+        </div>
+      </div>
 
       {/* TABS */}
       <div className="mt-5 flex items-center gap-2">
         {[
           { key: "overview", label: "Overview", icon: History },
+          { key: "profile", label: "Profile", icon: Users },
           { key: "matchups", label: "Matchups", icon: Swords },
           { key: "tournaments", label: "Tournaments", icon: Trophy },
         ].map(({ key, label, icon: Icon }) => {
-          const active = tab === key
+          const active = tab === (key as typeof tab)
           return (
             <button
               key={key}
@@ -435,9 +534,7 @@ export default function Profile() {
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                       <div className="text-xs uppercase tracking-wide text-white/60">Recent Activity</div>
                       <div className="mt-1 text-sm">
-                        {tournaments[0]?.date
-                          ? new Date(tournaments[0].date).toLocaleDateString()
-                          : "No tournaments yet"}
+                        {tournaments[0]?.date ? new Date(tournaments[0].date).toLocaleDateString() : "No tournaments yet"}
                       </div>
                     </div>
                   </div>
@@ -471,6 +568,157 @@ export default function Profile() {
             </motion.div>
           )}
 
+          {/* Profile editor panel */}
+          {tab === "profile" && (
+            <motion.div
+              key="profile"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              className="grid grid-cols-1 lg:grid-cols-3 gap-4"
+            >
+              {/* Left: avatar + identity + store */}
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Avatar</div>
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={avatarDataUrl || "/default-avatar.png"}
+                      alt="avatar"
+                      className="h-20 w-20 rounded-2xl object-cover ring-1 ring-white/10"
+                    />
+                    <div className="text-sm">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 hover:bg-white/10">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0]
+                            if (!f) return
+                            const dataUrl = await fileToDataUrl(f)
+                            setAvatarDataUrl(dataUrl)
+                          }}
+                        />
+                        Change…
+                      </label>
+                      {avatarDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setAvatarDataUrl("")}
+                          className="ml-2 inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-rose-300 hover:text-rose-200"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      <div className="mt-1 text-xs text-white/60">PNG/JPG, stored as base64.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Identity</div>
+                  <LabelInput
+                    label="Display Name"
+                    value={displayName}
+                    onChange={setDisplayName}
+                    placeholder="Your name"
+                  />
+                  <label className="mt-3 inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="accent-indigo-500"
+                      checked={keepSlug}
+                      onChange={(e) => setKeepSlug(e.target.checked)}
+                    />
+                    Keep my current public link (don’t change my slug)
+                  </label>
+                  {publicSlug ? (
+                    <div className="mt-3 text-sm">
+                      Share URL:{" "}
+                      <Link
+                        to={`/u/${publicSlug}`}
+                        className="text-indigo-300 underline hover:text-indigo-200"
+                        target="_blank"
+                      >
+                        {window.location.origin}/u/{publicSlug}
+                      </Link>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Home Store</div>
+                  <LabelInput
+                    label="Home Store"
+                    value={homeStore}
+                    onChange={setHomeStore}
+                    placeholder="Type your store name"
+                  />
+                </div>
+              </div>
+
+              {/* Middle: bio */}
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Bio</div>
+                  <label className="flex flex-col text-sm">
+                    <textarea
+                      className="min-h-[140px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-indigo-500/50"
+                      placeholder="Tell people about you…"
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value.slice(0, 500))}
+                    />
+                    <span className="mt-1 text-xs text-white/60">{bio.length}/500</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Right: owned parts (CSV editors for now) */}
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                  <div className="mb-3 text-sm font-semibold">Owned Parts</div>
+
+                  <label className="mb-3 block text-xs uppercase tracking-wide text-white/60">Blades</label>
+                  <TextInput
+                    value={toCSV(ownedParts.blades)}
+                    onChange={(v) => setOwnedParts({ ...ownedParts, blades: fromCSV(v) })}
+                    placeholder="Comma separated (e.g., Cobalt Drake, Dran Dagger 1-60)"
+                  />
+
+                  <label className="mt-4 mb-3 block text-xs uppercase tracking-wide text-white/60">Assist Blades</label>
+                  <TextInput
+                    value={toCSV(ownedParts.assistBlades || [])}
+                    onChange={(v) => setOwnedParts({ ...ownedParts, assistBlades: fromCSV(v) })}
+                    placeholder="Comma separated"
+                  />
+
+                  <label className="mt-4 mb-3 block text-xs uppercase tracking-wide text-white/60">Ratchets</label>
+                  <TextInput
+                    value={toCSV(ownedParts.ratchets)}
+                    onChange={(v) => setOwnedParts({ ...ownedParts, ratchets: fromCSV(v) })}
+                    placeholder="Comma separated (e.g., 1-60, 2-60R)"
+                  />
+
+                  <label className="mt-4 mb-3 block text-xs uppercase tracking-wide text-white/60">Bits</label>
+                  <TextInput
+                    value={toCSV(ownedParts.bits)}
+                    onChange={(v) => setOwnedParts({ ...ownedParts, bits: fromCSV(v) })}
+                    placeholder="Comma separated (e.g., Sword, Hedgehog)"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  className="w-full rounded-xl bg-emerald-600/90 px-3 py-2 text-sm font-medium hover:bg-emerald-500"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </motion.div>
+          )}
+
           {tab === "matchups" && (
             <motion.div
               key="matchups"
@@ -487,27 +735,69 @@ export default function Profile() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <div className="mb-2 font-medium">Your Combo</div>
-                    <TextInput placeholder="Blade" value={myCombo.blade} onChange={(v) => setMyCombo({ ...myCombo, blade: v })} />
-                    <TextInput placeholder="Ratchet" value={myCombo.ratchet} onChange={(v) => setMyCombo({ ...myCombo, ratchet: v })} />
-                    <TextInput placeholder="Bit" value={myCombo.bit} onChange={(v) => setMyCombo({ ...myCombo, bit: v })} />
-                    <TextInput placeholder="Notes (optional)" value={myCombo.notes || ""} onChange={(v) => setMyCombo({ ...myCombo, notes: v })} />
+                    <TextInput
+                      placeholder="Blade"
+                      value={myCombo.blade}
+                      onChange={(v) => setMyCombo({ ...myCombo, blade: v })}
+                    />
+                    <TextInput
+                      placeholder="Ratchet"
+                      value={myCombo.ratchet}
+                      onChange={(v) => setMyCombo({ ...myCombo, ratchet: v })}
+                    />
+                    <TextInput
+                      placeholder="Bit"
+                      value={myCombo.bit}
+                      onChange={(v) => setMyCombo({ ...myCombo, bit: v })}
+                    />
+                    <TextInput
+                      placeholder="Notes (optional)"
+                      value={myCombo.notes || ""}
+                      onChange={(v) => setMyCombo({ ...myCombo, notes: v })}
+                    />
                   </div>
                   <div>
                     <div className="mb-2 font-medium">Opponent Combo</div>
-                    <TextInput placeholder="Blade" value={opponentCombo.blade} onChange={(v) => setOpponentCombo({ ...opponentCombo, blade: v })} />
-                    <TextInput placeholder="Ratchet" value={opponentCombo.ratchet} onChange={(v) => setOpponentCombo({ ...opponentCombo, ratchet: v })} />
-                    <TextInput placeholder="Bit" value={opponentCombo.bit} onChange={(v) => setOpponentCombo({ ...opponentCombo, bit: v })} />
-                    <TextInput placeholder="Notes (optional)" value={opponentCombo.notes || ""} onChange={(v) => setOpponentCombo({ ...opponentCombo, notes: v })} />
+                    <TextInput
+                      placeholder="Blade"
+                      value={opponentCombo.blade}
+                      onChange={(v) => setOpponentCombo({ ...opponentCombo, blade: v })}
+                    />
+                    <TextInput
+                      placeholder="Ratchet"
+                      value={opponentCombo.ratchet}
+                      onChange={(v) => setOpponentCombo({ ...opponentCombo, ratchet: v })}
+                    />
+                    <TextInput
+                      placeholder="Bit"
+                      value={opponentCombo.bit}
+                      onChange={(v) => setOpponentCombo({ ...opponentCombo, bit: v })}
+                    />
+                    <TextInput
+                      placeholder="Notes (optional)"
+                      value={opponentCombo.notes || ""}
+                      onChange={(v) => setOpponentCombo({ ...opponentCombo, notes: v })}
+                    />
                   </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                   <label className="inline-flex items-center gap-2">
-                    <input type="radio" className="accent-indigo-500" checked={result === "win"} onChange={() => setResult("win")} />
+                    <input
+                      type="radio"
+                      className="accent-indigo-500"
+                      checked={result === "win"}
+                      onChange={() => setResult("win")}
+                    />
                     <span>Win</span>
                   </label>
                   <label className="inline-flex items-center gap-2">
-                    <input type="radio" className="accent-indigo-500" checked={result === "loss"} onChange={() => setResult("loss")} />
+                    <input
+                      type="radio"
+                      className="accent-indigo-500"
+                      checked={result === "loss"}
+                      onChange={() => setResult("loss")}
+                    />
                     <span>Loss</span>
                   </label>
                 </div>
@@ -544,7 +834,11 @@ export default function Profile() {
                       {matchups.slice((page - 1) * perPage, page * perPage).map((m) => (
                         <li key={m.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                           <div className="flex items-center justify-between gap-2">
-                            <div className={`text-sm font-semibold ${m.result === "win" ? "text-emerald-300" : "text-rose-300"}`}>
+                            <div
+                              className={`text-sm font-semibold ${
+                                m.result === "win" ? "text-emerald-300" : "text-rose-300"
+                              }`}
+                            >
                               {m.result.toUpperCase()}
                             </div>
                             <button
@@ -560,13 +854,21 @@ export default function Profile() {
                           <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                             <div className="rounded-xl bg-white/5 p-2">
                               <div className="mb-1 font-medium">Your Combo</div>
-                              <div>{m.myCombo.blade} / {m.myCombo.ratchet} / {m.myCombo.bit}</div>
-                              {m.myCombo.notes ? <div className="mt-0.5 text-xs text-white/60">{m.myCombo.notes}</div> : null}
+                              <div>
+                                {m.myCombo.blade} / {m.myCombo.ratchet} / {m.myCombo.bit}
+                              </div>
+                              {m.myCombo.notes ? (
+                                <div className="mt-0.5 text-xs text-white/60">{m.myCombo.notes}</div>
+                              ) : null}
                             </div>
                             <div className="rounded-xl bg-white/5 p-2">
                               <div className="mb-1 font-medium">Opponent Combo</div>
-                              <div>{m.opponentCombo.blade} / {m.opponentCombo.ratchet} / {m.opponentCombo.bit}</div>
-                              {m.opponentCombo.notes ? <div className="mt-0.5 text-xs text-white/60">{m.opponentCombo.notes}</div> : null}
+                              <div>
+                                {m.opponentCombo.blade} / {m.opponentCombo.ratchet} / {m.opponentCombo.bit}
+                              </div>
+                              {m.opponentCombo.notes ? (
+                                <div className="mt-0.5 text-xs text-white/60">{m.opponentCombo.notes}</div>
+                              ) : null}
                             </div>
                           </div>
                         </li>
@@ -694,12 +996,13 @@ export default function Profile() {
                           return (
                             <li key={globalIndex} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                               <div className="flex items-center justify-between gap-2">
-                                <div className={`text-sm font-semibold ${placementAccent(t.placement)}`}>{t.placement}</div>
+                                <div className={`text-sm font-semibold ${placementAccent(t.placement)}`}>
+                                  {t.placement}
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteTournament(globalIndex)}
-                                  className="inline-flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200"
-                                >
+                                  className="inline-flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200">
                                   <Trash2 className="h-3.5 w-3.5" /> Delete
                                 </button>
                               </div>
@@ -711,9 +1014,7 @@ export default function Profile() {
                                 </div>
                                 <div className="rounded-xl bg-white/5 p-2">
                                   <div className="text-xs uppercase tracking-wide text-white/60">Date</div>
-                                  <div className="mt-0.5">
-                                    {t.date ? new Date(t.date).toLocaleDateString() : "—"}
-                                  </div>
+                                  <div className="mt-0.5">{t.date ? new Date(t.date).toLocaleDateString() : "—"}</div>
                                 </div>
                                 <div className="rounded-xl bg-white/5 p-2">
                                   <div className="text-xs uppercase tracking-wide text-white/60">Players</div>

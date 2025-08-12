@@ -11,6 +11,8 @@ import forumRoutes from "./routes/forum.js"
 import eventsRouter from "./routes/events.js"
 import userPartsRoutes from "./routes/userParts.js"
 import dotenv from "dotenv"
+import usersRoutes from "./routes/users.js"
+import jwt from "jsonwebtoken" //
 
 dotenv.config()
 
@@ -24,21 +26,180 @@ const startServer = async () => {
   const uploadDir = join(__dirname, "../client/public/uploads")
   if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true })
 
-  // --- CORS (allow preflight + auth header) ---
   app.use(
     cors({
-      origin: true, // or set to your domains array
+      origin: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization"],
       credentials: true,
     })
   )
-  app.options("*", cors()) // handle all preflights
+  app.options("*", cors())
 
   app.use(express.json({ limit: "10mb" }))
   app.use(fileUpload())
 
+  // ✅ Connect to DB first
   const { users, products, events, stores, prepDecks } = await connectDB()
+
+  // --- Profile slug support (helper + index + backfill) ---
+  const slugify = (s) =>
+    (s || "")
+      .toString()
+      .trim()
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .substring(0, 60)
+
+  async function ensureUserSlugIndex() {
+    await users.createIndex({ slug: 1 }, { unique: true, sparse: true })
+  }
+
+  async function backfillUserSlugs() {
+    const cursor = users.find({ $or: [{ slug: { $exists: false } }, { slug: "" }] })
+    const toFix = await cursor.toArray()
+    for (const u of toFix) {
+      const base =
+        slugify(u.displayName) ||
+        slugify(u.email?.split?.("@")?.[0]) ||
+        `user-${String(u._id).slice(-6)}`
+      let candidate = base || `user-${String(u._id).slice(-6)}`
+      let n = 0
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: candidate, _id: { $ne: u._id } })) {
+        n += 1
+        candidate = `${base}-${n}`
+      }
+      await users.updateOne({ _id: u._id }, { $set: { slug: candidate } })
+    }
+  }
+
+  await ensureUserSlugIndex()
+  await backfillUserSlugs()
+
+  // ---------- Inline auth + PATCH /users/me shim (covers both prefixes) ----------
+  const publicUserProjection = {
+    id: 1,
+    _id: 1,
+    displayName: 1,
+    slug: 1,
+    avatarDataUrl: 1,
+    bio: 1,
+    homeStore: 1,
+    ownedParts: 1,
+    tournamentsPlayed: 1,
+  }
+
+  const getBearerToken = (req) => {
+    const h = req.headers.authorization || ""
+    return h.startsWith("Bearer ") ? h.slice(7) : null
+  }
+
+  const requireAuth = (usersCol) => async (req, res, next) => {
+    try {
+      const token = getBearerToken(req)
+      if (!token) return res.status(401).json({ error: "Missing auth token" })
+      const payload = jwt.verify(token, process.env.JWT_SECRET)
+      const userId = payload?.id || payload?.userId || payload?._id || payload?.sub
+      if (!userId) return res.status(401).json({ error: "Invalid token" })
+      const me =
+        (await usersCol.findOne({ id: userId })) ||
+        (await usersCol.findOne({ _id: userId }))
+      if (!me) return res.status(401).json({ error: "User not found" })
+      req.me = me
+      next()
+    } catch {
+      return res.status(401).json({ error: "Unauthorized" })
+    }
+  }
+
+  async function handlePatchMe(req, res) {
+    const me = req.me
+    const {
+      displayName,
+      avatarDataUrl,
+      bio,
+      homeStore,
+      ownedParts,
+      keepSlug,
+    } = req.body || {}
+
+    const $set = {}
+
+    if (typeof displayName === "string" && displayName.trim()) {
+      $set.displayName = displayName.trim()
+    }
+
+    if (typeof avatarDataUrl === "string") {
+      if (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,")) {
+        $set.avatarDataUrl = avatarDataUrl
+      } else if (avatarDataUrl === "") {
+        $set.avatarDataUrl = ""
+      } else {
+        return res.status(400).json({ error: "avatarDataUrl must be a base64 data URL" })
+      }
+    }
+
+    if (typeof bio === "string") $set.bio = bio.slice(0, 500)
+    if (typeof homeStore === "string") $set.homeStore = homeStore.slice(0, 120)
+
+    if (ownedParts && typeof ownedParts === "object") {
+      const normArr = (a) => (Array.isArray(a) ? a.map(String).slice(0, 300) : [])
+      $set.ownedParts = {
+        blades: normArr(ownedParts.blades),
+        assistBlades: normArr(ownedParts.assistBlades),
+        ratchets: normArr(ownedParts.ratchets),
+        bits: normArr(ownedParts.bits),
+      }
+    }
+
+    if ("displayName" in $set && !keepSlug) {
+      const base =
+        slugify($set.displayName) ||
+        slugify(me.email?.split?.("@")?.[0]) ||
+        `user-${String(me._id).slice(-6)}`
+      let candidate = base || `user-${String(me._id).slice(-6)}`
+      let n = 0
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
+        n += 1
+        candidate = `${base}-${n}`
+      }
+      $set.slug = candidate
+    }
+
+    if (Object.keys($set).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" })
+    }
+
+    const result = await users.findOneAndUpdate(
+      { _id: me._id },
+      { $set },
+      { returnDocument: "after", projection: publicUserProjection }
+    )
+
+    const u = result.value
+    return res.json({
+      id: u.id ?? u._id,
+      displayName: u.displayName || "",
+      slug: u.slug,
+      avatarDataUrl: u.avatarDataUrl || "",
+      bio: u.bio || "",
+      homeStore: u.homeStore || "",
+      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+    })
+  }
+
+  // ⬇️ Guarantee these two PATCH endpoints exist no matter what
+  app.patch("/api/users/me", requireAuth(users), handlePatchMe)
+  app.patch("/users/me", requireAuth(users), handlePatchMe)
+
+  // ✅ Mount users router on both prefixes (kept for slug GET etc.)
+  app.use("/api/users", usersRoutes({ users }))
+  app.use("/users", usersRoutes({ users }))
 
   // ---------- Auth & Forum ----------
   app.use("/api/auth", authRoutes({ users }))
@@ -51,8 +212,6 @@ const startServer = async () => {
   // ---------- Events router (PUT /:id) on both ----------
   app.use("/api/events", eventsRouter)
   app.use("/events", eventsRouter)
-
-
 
   // ---------- EVENTS CRUD (both /api and non-/api) ----------
   const listEvents = async (_, res) => {
@@ -298,11 +457,23 @@ const startServer = async () => {
     res.json({ analysis: scoredCombos })
   })
 
+  // ⬇️ Guarantee these two PATCH endpoints exist no matter what
+app.patch("/api/users/me", requireAuth(users), handlePatchMe)
+app.patch("/users/me", requireAuth(users), handlePatchMe)
+console.log("➡️ Mounted PATCH /api/users/me and /users/me")
+
+// Users router (for other users endpoints like GET by slug)
+app.use("/api/users", usersRoutes({ users }))
+app.use("/users", usersRoutes({ users }))
+
+
   // ---------- Static + SPA fallback ----------
   app.use(express.static(join(__dirname, "../client/dist")))
   app.get("*", (req, res) => {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))
   })
+
+  
 
   app.listen(port, () => {
     console.log("✅ Backend + frontend running at: http://localhost:" + port)

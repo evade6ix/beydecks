@@ -1,6 +1,14 @@
+// AuthContext.tsx
 import { createContext, useContext, useEffect, useState } from "react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
+
+export type OwnedParts = {
+  blades: string[]
+  assistBlades?: string[]
+  ratchets: string[]
+  bits: string[]
+}
 
 interface Tournament {
   storeName: string
@@ -15,21 +23,20 @@ interface User {
   id: string
   username: string
   email: string
+
+  // ✅ New optional profile fields
+  displayName?: string
+  avatarDataUrl?: string
+  bio?: string
+  homeStore?: string
+  ownedParts?: OwnedParts
+  slug?: string
+
   profileImage?: string
-  tournamentsPlayed: Tournament[] // ✅ correct type here now
+  tournamentsPlayed: Tournament[]
   matchupHistory: {
-    myCombo: {
-      blade: string
-      ratchet: string
-      bit: string
-      notes?: string
-    }
-    opponentCombo: {
-      blade: string
-      ratchet: string
-      bit: string
-      notes?: string
-    }
+    myCombo: { blade: string; ratchet: string; bit: string; notes?: string }
+    opponentCombo: { blade: string; ratchet: string; bit: string; notes?: string }
     result: "win" | "loss"
   }[]
   topCutCount: number
@@ -59,77 +66,72 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-const login = (jwt: string, userData: User) => {
-  localStorage.setItem("token", jwt)
-  localStorage.setItem("user", JSON.stringify(userData)) // ✅ Save initial user
-  setToken(jwt)
+  const login = (jwt: string, userData: User) => {
+    localStorage.setItem("token", jwt)
+    localStorage.setItem("user", JSON.stringify(userData))
+    setToken(jwt)
 
-  setUser({
-    ...userData,
-    tournamentsPlayed: userData.tournamentsPlayed ?? [],
-    matchupHistory: userData.matchupHistory ?? [],
-  })
-
-  fetch(`${API}/auth/me`, {
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-    },
-  })
-    .then((res) => {
-      if (!res.ok) throw new Error("Token invalid or expired")
-      return res.json()
+    // ensure arrays exist
+    setUser({
+      ...userData,
+      tournamentsPlayed: userData.tournamentsPlayed ?? [],
+      matchupHistory: userData.matchupHistory ?? [],
     })
-    .then((verified) => {
-      setUser({
-        ...verified,
-        tournamentsPlayed: verified.tournamentsPlayed ?? [],
-        matchupHistory: verified.matchupHistory ?? [],
+
+    fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Token invalid or expired")
+        return res.json()
       })
-      localStorage.setItem("user", JSON.stringify(verified)) // ✅ Save verified user
-    })
-    .catch(() => logout())
-    .finally(() => setLoading(false))
-}
-
+      .then((verified) => {
+        const normalized: User = {
+          ...verified,
+          tournamentsPlayed: verified.tournamentsPlayed ?? [],
+          matchupHistory: verified.matchupHistory ?? [],
+        }
+        setUser(normalized)
+        localStorage.setItem("user", JSON.stringify(normalized))
+      })
+      .catch(() => logout())
+      .finally(() => setLoading(false))
+  }
 
   const logout = () => {
     localStorage.removeItem("token")
+    localStorage.removeItem("user")
     setUser(null)
     setToken(null)
   }
 
   useEffect(() => {
     const stored = localStorage.getItem("token")
-    if (stored) {
-      setToken(stored)
-    } else {
-      setLoading(false)
-    }
+    if (stored) setToken(stored)
+    else setLoading(false)
   }, [])
 
   useEffect(() => {
-    if (token) {
-      fetch(`${API}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error("Token invalid or expired")
-          return res.json()
-        })
-        .then((data) =>
-          setUser({
-            ...data,
-            tournamentsPlayed: data.tournamentsPlayed ?? [],
-            matchupHistory: data.matchupHistory ?? [],
-          })
-        )
-        .catch(() => logout())
-        .finally(() => setLoading(false))
-    } else {
+    if (!token) {
       setLoading(false)
+      return
     }
+    fetch(`${API}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Token invalid or expired")
+        return res.json()
+      })
+      .then((data) =>
+        setUser({
+          ...data,
+          tournamentsPlayed: data.tournamentsPlayed ?? [],
+          matchupHistory: data.matchupHistory ?? [],
+        })
+      )
+      .catch(() => logout())
+      .finally(() => setLoading(false))
   }, [token])
 
   return (
