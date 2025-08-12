@@ -28,10 +28,10 @@ const publicProjection = {
   bio: 1,
   homeStore: 1,
 
-  // old container (keep for back-compat)
+  // legacy container (keep for back-compat)
   ownedParts: 1,
 
-  // NEW: top-level parts fields used by your DB
+  // NEW: top-level parts used by your DB
   blades: 1,
   assistBlades: 1,
   ratchets: 1,
@@ -45,7 +45,6 @@ const publicProjection = {
   thirds: 1,
   topCutCount: 1,
 }
-
 
 function getBearerToken(req) {
   const h = req.headers.authorization || ""
@@ -72,6 +71,64 @@ function requireAuth(usersCol) {
       return res.status(401).json({ error: "Unauthorized" })
     }
   }
+}
+
+/* Build ownedParts from top-level arrays when legacy container is empty */
+function normalizeOwnedParts(u) {
+  const legacy = u?.ownedParts || {}
+  const legacyHasData =
+    (Array.isArray(legacy.blades) && legacy.blades.length) ||
+    (Array.isArray(legacy.assistBlades) && legacy.assistBlades.length) ||
+    (Array.isArray(legacy.ratchets) && legacy.ratchets.length) ||
+    (Array.isArray(legacy.bits) && legacy.bits.length)
+
+  if (legacyHasData) return legacy
+
+  return {
+    blades: Array.isArray(u?.blades) ? u.blades : [],
+    assistBlades: Array.isArray(u?.assistBlades) ? u.assistBlades : [],
+    ratchets: Array.isArray(u?.ratchets) ? u.ratchets : [],
+    bits: Array.isArray(u?.bits) ? u.bits : [],
+  }
+}
+
+/* Shape a public user payload consistently */
+function publicUserPayload(u, { includeTournaments = true } = {}) {
+  const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
+  const tournamentsCount = tournamentsPlayed.length
+
+  const ownedParts = normalizeOwnedParts(u)
+
+  const base = {
+    id: u.id ?? u._id,
+    username: u.username || "",
+    displayName: u.displayName || u.username || "",
+    slug: u.slug,
+    avatarDataUrl: u.avatarDataUrl || "",
+    bio: u.bio || "",
+    homeStore: u.homeStore || "",
+
+    // normalized parts + timestamp
+    ownedParts,
+    partsUpdatedAt: u.partsUpdatedAt || null,
+
+    // also expose top-level arrays (future-proof / optional for UIs)
+    blades: Array.isArray(u.blades) ? u.blades : [],
+    assistBlades: Array.isArray(u.assistBlades) ? u.assistBlades : [],
+    ratchets: Array.isArray(u.ratchets) ? u.ratchets : [],
+    bits: Array.isArray(u.bits) ? u.bits : [],
+
+    // counters
+    firsts: Number(u.firsts || 0),
+    seconds: Number(u.seconds || 0),
+    thirds: Number(u.thirds || 0),
+    topCutCount: Number(u.topCutCount || 0),
+
+    stats: { tournamentsCount },
+  }
+
+  if (!includeTournaments) return base
+  return { ...base, tournamentsPlayed }
 }
 
 /* ------------------------------------------
@@ -116,25 +173,7 @@ export default function usersRoutes({ users }) {
     const u = await users.findOne({ slug }, { projection: publicProjection })
     if (!u) return res.status(404).json({ error: "User not found" })
 
-    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
-    const tournamentsCount = tournamentsPlayed.length
-
-    return res.json({
-      id: u.id ?? u._id,
-      username: u.username || "",
-      displayName: u.displayName || u.username || "",
-      slug: u.slug,
-      avatarDataUrl: u.avatarDataUrl || "",
-      bio: u.bio || "",
-      homeStore: u.homeStore || "",
-      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
-      tournamentsPlayed,
-      firsts: Number(u.firsts || 0),
-      seconds: Number(u.seconds || 0),
-      thirds: Number(u.thirds || 0),
-      topCutCount: Number(u.topCutCount || 0),
-      stats: { tournamentsCount },
-    })
+    return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
 
   /* ---------- Optional: public by ID (avoid catch-all conflicts) ---------- */
@@ -148,25 +187,7 @@ export default function usersRoutes({ users }) {
 
     if (!u) return res.status(404).json({ error: "User not found" })
 
-    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
-    const tournamentsCount = tournamentsPlayed.length
-
-    return res.json({
-      id: u.id ?? u._id,
-      username: u.username || "",
-      displayName: u.displayName || u.username || "",
-      slug: u.slug,
-      avatarDataUrl: u.avatarDataUrl || "",
-      bio: u.bio || "",
-      homeStore: u.homeStore || "",
-      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
-      tournamentsPlayed,
-      firsts: Number(u.firsts || 0),
-      seconds: Number(u.seconds || 0),
-      thirds: Number(u.thirds || 0),
-      topCutCount: Number(u.topCutCount || 0),
-      stats: { tournamentsCount },
-    })
+    return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
 
   /* ---------- Edit own profile ---------- */
@@ -242,23 +263,7 @@ export default function usersRoutes({ users }) {
     )
 
     const u = result.value
-    const tournamentsPlayed = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
-    return res.json({
-      id: u.id ?? u._id,
-      username: u.username || "",
-      displayName: u.displayName || "",
-      slug: u.slug,
-      avatarDataUrl: u.avatarDataUrl || "",
-      bio: u.bio || "",
-      homeStore: u.homeStore || "",
-      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
-      // send counters back too, in case the client wants to reflect them
-      firsts: Number(u.firsts || 0),
-      seconds: Number(u.seconds || 0),
-      thirds: Number(u.thirds || 0),
-      topCutCount: Number(u.topCutCount || 0),
-      stats: { tournamentsCount: tournamentsPlayed.length },
-    })
+    return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
 
   return router
