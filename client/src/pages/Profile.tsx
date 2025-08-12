@@ -6,7 +6,7 @@ import {
   Swords,
   Trophy,
   CalendarDays,
-  Plus,
+  Plus, 
   Trash2,
   LogOut,
   BarChart3,
@@ -17,6 +17,8 @@ import {
   ChevronRight,
   TrendingUp,
 } from "lucide-react"
+
+
 import { toast } from "react-hot-toast"
 import { useAuth } from "../context/AuthContext"
 import type { OwnedParts } from "../context/AuthContext"
@@ -73,15 +75,6 @@ export default function Profile() {
   const [page, setPage] = useState(1)
   const perPage = 5
 
-  // Tournaments
-  const [tournament, setTournament] = useState<Tournament>({
-    storeName: "",
-    date: "",
-    totalPlayers: 0,
-    roundWins: 0,
-    roundLosses: 0,
-    placement: "DNQ",
-  })
   const [tournaments, setTournaments] = useState<Tournament[]>(user.tournamentsPlayed || [])
   const [tournamentPage, setTournamentPage] = useState(1)
   const tournamentsPerPage = 5
@@ -94,7 +87,7 @@ export default function Profile() {
     [wins, matchups.length]
   )
 
-  const firsts = useMemo(() => tournaments.filter((t) => t.placement === "First Place").length, [tournaments])
+    const firsts = useMemo(() => tournaments.filter((t) => t.placement === "First Place").length, [tournaments])
   const seconds = useMemo(() => tournaments.filter((t) => t.placement === "Second Place").length, [tournaments])
   const thirds = useMemo(() => tournaments.filter((t) => t.placement === "Third Place").length, [tournaments])
   const topCutCount = useMemo(
@@ -104,6 +97,24 @@ export default function Profile() {
       ).length,
     [tournaments]
   )
+
+  // NEW: best placement across all tournaments (First > Second > Third > Top Cut)
+  const placementRank = (p: string) =>
+    ({ "First Place": 4, "Second Place": 3, "Third Place": 2, "Top Cut": 1 } as const)[p] ?? 0
+
+  const bestPlacement = useMemo(() => {
+    let best = "—"
+    let bestScore = 0
+    for (const t of tournaments) {
+      const score = placementRank(t.placement)
+      if (score > bestScore) {
+        bestScore = score
+        best = t.placement
+      }
+    }
+    return best
+  }, [tournaments])
+
 
   useEffect(() => setPage(1), [matchups.length])
   useEffect(() => setTournamentPage(1), [tournaments.length])
@@ -225,32 +236,6 @@ export default function Profile() {
       toast.success("Matchup deleted.")
     } else {
       toast.error("Failed to delete matchup.")
-    }
-  }
-
-  const handleSubmitTournament: React.FormEventHandler<HTMLFormElement> = async (e) => {
-    e.preventDefault()
-    const token = localStorage.getItem("token")
-    if (!token) return toast.error("Please log in again.")
-
-    try {
-      const res = await fetch(api("/auth/submit-tournament"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ userId: user.id, ...tournament }),
-      })
-      if (!res.ok) throw new Error()
-
-      let newTournament = await res.json()
-      if (newTournament.date) newTournament.date = new Date(newTournament.date).toISOString()
-
-      const updated = [newTournament, ...tournaments]
-      setTournaments(updated)
-      user.tournamentsPlayed = updated
-
-      toast.success("Tournament saved!")
-    } catch {
-      toast.error("Failed to submit tournament.")
     }
   }
 
@@ -427,11 +412,9 @@ export default function Profile() {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs uppercase tracking-wide text-white/60">Best Placement</div>
-                      <div className="mt-1 text-lg font-semibold">
-                        {firsts > 0 ? "First Place" : topCutCount > 0 ? "Top Cut" : "—"}
-                      </div>
-                    </div>
+                    <div className="text-xs uppercase tracking-wide text-white/60">Best Placement</div>
+                    <div className="mt-1 text-lg font-semibold">{bestPlacement}</div>
+                  </div>
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                       <div className="text-xs uppercase tracking-wide text-white/60">Recent Activity</div>
                       <div className="mt-1 text-sm">
@@ -723,118 +706,98 @@ export default function Profile() {
           )}
 
           {tab === "tournaments" && (
-            <motion.div
-              key="tournaments"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              className="space-y-4"
-            >
-              <form onSubmit={handleSubmitTournament} className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="mb-3 text-sm font-semibold flex items-center gap-2">
-                  <Trophy className="h-4 w-4" /> Submit Tournament
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <LabelInput label="Store Name" value={tournament.storeName} onChange={(v) => setTournament({ ...tournament, storeName: v })} placeholder="Store Name" />
-                  <LabelInput label="Date" type="date" value={tournament.date} onChange={(v) => setTournament({ ...tournament, date: v })} />
-                  <LabelInput label="Total Players" type="number" value={String(tournament.totalPlayers)} onChange={(v) => setTournament({ ...tournament, totalPlayers: Number(v || 0) })} min={0} placeholder="0" />
-                  <LabelInput label="Round Wins" type="number" value={String(tournament.roundWins)} onChange={(v) => setTournament({ ...tournament, roundWins: Number(v || 0) })} min={0} placeholder="0" />
-                  <LabelInput label="Round Losses" type="number" value={String(tournament.roundLosses)} onChange={(v) => setTournament({ ...tournament, roundLosses: Number(v || 0) })} min={0} placeholder="0" />
-                  <div className="flex flex-col text-sm">
-                    <span className="mb-1 text-white/90">Placement</span>
-                    <select
-                      className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-indigo-500/50"
-                      value={tournament.placement}
-                      onChange={(e) => setTournament({ ...tournament, placement: e.target.value })}
-                    >
-                      <option>First Place</option>
-                      <option>Second Place</option>
-                      <option>Third Place</option>
-                      <option>Top Cut</option>
-                      <option>DNQ</option>
-                    </select>
-                  </div>
-                </div>
+  <motion.div
+    key="tournaments"
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -6 }}
+    className="space-y-4"
+  >
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="mb-3 text-sm font-semibold flex items-center gap-2">
+        <CalendarDays className="h-4 w-4" /> Tournament History
+      </div>
 
-                <button type="submit" className="mt-3 inline-flex items-center gap-1 rounded-xl bg-emerald-600/90 px-3 py-1.5 text-sm font-medium hover:bg-emerald-500">
-                  <Plus className="h-4 w-4" /> Submit Tournament
-                </button>
-              </form>
-
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="mb-3 text-sm font-semibold flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4" /> Tournament History
-                </div>
-
-                {tournaments.length === 0 ? (
-                  <div className="text-sm text-white/60">No tournaments submitted yet.</div>
-                ) : (
-                  <>
-                    <ul className="space-y-3">
-                      {tournaments
-                        .slice((tournamentPage - 1) * tournamentsPerPage, tournamentPage * tournamentsPerPage)
-                        .map((t, idx) => {
-                          const globalIndex = (tournamentPage - 1) * tournamentsPerPage + idx
-                          return (
-                            <li key={globalIndex} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className={`text-sm font-semibold ${placementAccent(t.placement)}`}>{t.placement}</div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTournament(globalIndex)}
-                                  className="inline-flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" /> Delete
-                                </button>
-                              </div>
-
-                              <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-                                <div className="rounded-xl bg-white/5 p-2">
-                                  <div className="text-xs uppercase tracking-wide text-white/60">Store</div>
-                                  <div className="mt-0.5">{t.storeName || "—"}</div>
-                                </div>
-                                <div className="rounded-xl bg-white/5 p-2">
-                                  <div className="text-xs uppercase tracking-wide text-white/60">Date</div>
-                                  <div className="mt-0.5">{t.date ? new Date(t.date).toLocaleDateString() : "—"}</div>
-                                </div>
-                                <div className="rounded-xl bg-white/5 p-2">
-                                  <div className="text-xs uppercase tracking-wide text-white/60">Players</div>
-                                  <div className="mt-0.5">{t.totalPlayers ?? 0}</div>
-                                </div>
-                                <div className="rounded-xl bg-white/5 p-2">
-                                  <div className="text-xs uppercase tracking-wide text-white/60">Record</div>
-                                  <div className="mt-0.5">{t.roundWins ?? 0}–{t.roundLosses ?? 0}</div>
-                                </div>
-                              </div>
-                            </li>
-                          )
-                        })}
-                    </ul>
-
-                    <div className="mt-4 flex items-center justify-center gap-2">
-                      <button
-                        disabled={tournamentPage === 1}
-                        onClick={() => setTournamentPage((p) => Math.max(1, p - 1))}
-                        className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
-                      >
-                        <ChevronLeft className="h-4 w-4" /> Prev
-                      </button>
-                      <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                        Page {tournamentPage} / {Math.max(1, Math.ceil(tournaments.length / tournamentsPerPage))}
-                      </span>
-                      <button
-                        disabled={tournamentPage * tournamentsPerPage >= tournaments.length}
-                        onClick={() => setTournamentPage((p) => p + 1)}
-                        className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
-                      >
-                        Next <ChevronRight className="h-4 w-4" />
-                      </button>
+      {tournaments.length === 0 ? (
+        <div className="text-sm text-white/60">No tournaments submitted yet.</div>
+      ) : (
+        <>
+          <ul className="space-y-3">
+            {tournaments
+              .slice((tournamentPage - 1) * tournamentsPerPage, tournamentPage * tournamentsPerPage)
+              .map((t, idx) => {
+                const globalIndex = (tournamentPage - 1) * tournamentsPerPage + idx
+                const eventId = (t as any).eventId ?? (t as any).id
+                return (
+                  <li key={globalIndex} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className={`text-sm font-semibold ${placementAccent(t.placement)}`}>
+                        {t.placement}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {eventId ? (
+                          <Link
+                            to={`/events/${eventId}`}
+                            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10"
+                          >
+                            View Event
+                          </Link>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTournament(globalIndex)}
+                          className="inline-flex items-center gap-1 text-xs text-rose-300 hover:text-rose-200"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
+                        </button>
+                      </div>
                     </div>
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
+
+                    <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                      <div className="rounded-xl bg-white/5 p-2">
+                        <div className="text-xs uppercase tracking-wide text-white/60">Store</div>
+                        <div className="mt-0.5">{t.storeName || "—"}</div>
+                      </div>
+                      <div className="rounded-xl bg-white/5 p-2">
+                        <div className="text-xs uppercase tracking-wide text-white/60">Date</div>
+                        <div className="mt-0.5">
+                          {t.date ? new Date(t.date).toLocaleDateString() : "—"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-white/5 p-2">
+                        <div className="text-xs uppercase tracking-wide text-white/60">Players</div>
+                        <div className="mt-0.5">{t.totalPlayers ?? 0}</div>
+                      </div>
+                    </div>
+                  </li>
+                )
+              })}
+          </ul>
+
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <button
+              disabled={tournamentPage === 1}
+              onClick={() => setTournamentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-4 w-4" /> Prev
+            </button>
+            <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+              Page {tournamentPage} / {Math.max(1, Math.ceil(tournaments.length / tournamentsPerPage))}
+            </span>
+            <button
+              disabled={tournamentPage * tournamentsPerPage >= tournaments.length}
+              onClick={() => setTournamentPage((p) => p + 1)}
+              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
+            >
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  </motion.div>
+)}
         </AnimatePresence>
       </div>
     </motion.div>

@@ -124,11 +124,7 @@ export default function UserPublic() {
   const firsts = u.firsts ?? 0
   const seconds = u.seconds ?? 0
   const thirds = u.thirds ?? 0
-  const topCuts =
-    u.topCutCount ??
-    tournaments.filter(t =>
-      ["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)
-    ).length
+  const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
 
   // Performance snapshot (right column)
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
@@ -229,20 +225,38 @@ export default function UserPublic() {
               <div className="text-sm text-white/70">No recorded results yet.</div>
             ) : (
               <ul className="divide-y divide-white/10">
-                {tournaments.slice(0, 8).map((t, i) => (
-                  <li key={i} className="py-3 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium">{t.storeName}</div>
-                      <div className="text-xs text-white/70">
-                        {safeDate(t.date)} · {t.totalPlayers} players · W/L {t.roundWins}-{t.roundLosses}
-                      </div>
-                    </div>
-                    <PlacementBadge placement={t.placement} />
-                  </li>
-                ))}
-              </ul>
-            )}
+  {tournaments.slice(0, 8).map((t, i) => {
+    const eventId = (t as any).eventId ?? (t as any).id
 
+    const row = (
+      <div className="py-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-medium">{t.storeName}</div>
+          <div className="text-xs text-white/70">
+            {safeDate(t.date)} · {t.totalPlayers} players
+          </div>
+        </div>
+        <PlacementBadge placement={t.placement} />
+      </div>
+    )
+
+    return (
+      <li key={i} className="relative">
+        {eventId ? (
+          <Link
+            to={`/events/${eventId}`}
+            className="block rounded-xl -mx-2 px-2 hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          >
+            {row}
+          </Link>
+        ) : (
+          row
+        )}
+      </li>
+    )
+  })}
+</ul>
+            )}
             {tournaments.length > 8 ? (
               <div className="mt-3 text-xs text-white/60">Showing 8 of {tournaments.length}.</div>
             ) : null}
