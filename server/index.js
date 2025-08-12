@@ -194,101 +194,120 @@ const startServer = async () => {
     })
   }
 
-  // --- Podium sync helpers (add/update/delete) ---
-  async function syncPodiumsForEvent(eventDoc) {
-    if (!eventDoc || !Array.isArray(eventDoc.topCut)) return
+  // --- Tournament sync helpers (write to tournamentsPlayed + counters) ---
+  function placementFromIndex(i) {
+    if (i === 0) return "First Place"
+    if (i === 1) return "Second Place"
+    if (i === 2) return "Third Place"
+    return "Top Cut"
+  }
 
+  async function recomputeUserCounters(userDoc) {
+    const arr = Array.isArray(userDoc.tournamentsPlayed) ? userDoc.tournamentsPlayed : []
+    let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
+    for (const t of arr) {
+      if (t.placement === "First Place") firsts++
+      if (t.placement === "Second Place") seconds++
+      if (t.placement === "Third Place") thirds++
+      if (["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)) topCutCount++
+    }
+    await users.updateOne(
+      { _id: userDoc._id },
+      { $set: { firsts, seconds, thirds, topCutCount } }
+    )
+  }
+
+  /**
+   * Sync an event's topCut into users.tournamentsPlayed.
+   * Strategy:
+   *  - Find all users currently referencing this eventId -> affectedOld
+   *  - $pull that event entry from them
+   *  - For each current topCut row with userId/userSlug, push a fresh entry (front) -> affectedNew
+   *  - Recompute counters for union(affectedOld, affectedNew)
+   */
+  async function syncTournamentsForEvent(eventDoc) {
+    if (!eventDoc) return
     const eventId = String(eventDoc.id)
     const eventTitle = eventDoc.title || ""
-    const eventDate = eventDoc.endTime || eventDoc.startTime || new Date().toISOString()
+    const date = eventDoc.endTime || eventDoc.startTime || new Date().toISOString()
+    const storeName = eventDoc.store || ""
+    const totalPlayers = Number(eventDoc.attendeeCount ?? 0)
 
-    // 1) Clear existing podium refs for this event from all users
-    await users.updateMany(
-      { "podiums.eventId": eventId },
-      { $pull: { podiums: { eventId } } }
-    )
+    // who currently has this event
+    const previously = await users.find(
+      { "tournamentsPlayed.eventId": eventId },
+      { projection: { _id: 1, tournamentsPlayed: 1 } }
+    ).toArray()
+    const previouslyIds = previously.map(u => u._id)
 
-    // 2) Re-add podiums based on current topCut order
-    const placements = ["Champion", "Second", "Third"]
-    const ops = []
-
-    for (let i = 0; i < eventDoc.topCut.length; i += 1) {
-      const p = eventDoc.topCut[i] || {}
-      const placement = placements[i] || "Top Cut"
-
-      const userQuery = p.userSlug
-        ? { slug: String(p.userSlug).toLowerCase() }
-        : (p.userId ? { id: String(p.userId) } : null)
-      if (!userQuery) continue
-
-      const u = await users.findOne(userQuery, { projection: { _id: 1 } })
-      if (!u) continue
-
-      ops.push(users.updateOne(
-        { _id: u._id },
-        {
-          $push: {
-            podiums: {
-              eventId,
-              eventTitle,
-              placement,
-              date: eventDate,
-            },
-          },
-        }
-      ))
+    // remove from those users
+    if (previouslyIds.length) {
+      await users.updateMany(
+        { _id: { $in: previouslyIds } },
+        { $pull: { tournamentsPlayed: { eventId } } }
+      )
     }
 
-    if (ops.length) await Promise.all(ops)
+    // upsert for current top cut
+    const topCut = Array.isArray(eventDoc.topCut) ? eventDoc.topCut : []
+    const affectedNewIds = []
+    for (let i = 0; i < topCut.length; i++) {
+      const p = topCut[i] || {}
+      const q = p.userId
+        ? { $or: [{ id: String(p.userId) }, { _id: String(p.userId) }] }
+        : (p.userSlug ? { slug: String(p.userSlug).toLowerCase() } : null)
+      if (!q) continue
 
-    // 3) Recompute counters for all users that reference this event
-    const affectedUsers = await users.find(
-      { "podiums.eventId": eventId },
-      { projection: { _id: 1, podiums: 1 } }
-    ).toArray()
+      const u = await users.findOne(q, { projection: { _id: 1 } })
+      if (!u) continue
 
-    for (const u of affectedUsers) {
-      const podiums = Array.isArray(u.podiums) ? u.podiums : []
-      let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
-      for (const r of podiums) {
-        if (r?.placement === "Champion") firsts += 1
-        else if (r?.placement === "Second") seconds += 1
-        else if (r?.placement === "Third") thirds += 1
-        if (["Champion", "Second", "Third", "Top Cut"].includes(r?.placement)) {
-          topCutCount += 1
-        }
+      const entry = {
+        eventId,
+        eventTitle,
+        storeName,
+        date,
+        totalPlayers,
+        roundWins: typeof p.roundWins === "number" ? p.roundWins : 0,
+        roundLosses: typeof p.roundLosses === "number" ? p.roundLosses : 0,
+        placement: placementFromIndex(i),
       }
+
       await users.updateOne(
         { _id: u._id },
-        { $set: { firsts, seconds, thirds, topCutCount } }
+        { $push: { tournamentsPlayed: { $each: [entry], $position: 0 } } }
       )
+      affectedNewIds.push(u._id)
+    }
+
+    // recompute counters for union set
+    const unionIds = [...new Set([...previouslyIds, ...affectedNewIds])]
+    if (unionIds.length) {
+      const docs = await users.find(
+        { _id: { $in: unionIds } },
+        { projection: { _id: 1, tournamentsPlayed: 1 } }
+      ).toArray()
+      await Promise.all(docs.map(recomputeUserCounters))
     }
   }
 
-  async function removePodiumsForEvent(eventId) {
+  async function cleanupEventFromAllUsers(eventId) {
     const idStr = String(eventId)
-    // remove entries for this event
-    await users.updateMany(
-      { "podiums.eventId": idStr },
-      { $pull: { podiums: { eventId: idStr } } }
-    )
-    // recompute counters for all users (safe & simple)
-    const everyone = await users.find({}, { projection: { _id: 1, podiums: 1 } }).toArray()
-    for (const u of everyone) {
-      const podiums = Array.isArray(u.podiums) ? u.podiums : []
-      let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
-      for (const r of podiums) {
-        if (r?.placement === "Champion") firsts += 1
-        else if (r?.placement === "Second") seconds += 1
-        else if (r?.placement === "Third") thirds += 1
-        if (["Champion", "Second", "Third", "Top Cut"].includes(r?.placement)) {
-          topCutCount += 1
-        }
-      }
-      await users.updateOne(
-        { _id: u._id },
-        { $set: { firsts, seconds, thirds, topCutCount } }
+    const targets = await users.find(
+      { "tournamentsPlayed.eventId": idStr },
+      { projection: { _id: 1, tournamentsPlayed: 1 } }
+    ).toArray()
+
+    if (targets.length) {
+      await users.updateMany(
+        { _id: { $in: targets.map(t => t._id) } },
+        { $pull: { tournamentsPlayed: { eventId: idStr } } }
       )
+      // recompute counters
+      const post = await users.find(
+        { _id: { $in: targets.map(t => t._id) } },
+        { projection: { _id: 1, tournamentsPlayed: 1 } }
+      ).toArray()
+      await Promise.all(post.map(recomputeUserCounters))
     }
   }
 
@@ -317,27 +336,28 @@ const startServer = async () => {
   const createEvent = async (req, res) => {
     const newEvent = { ...req.body, id: Date.now() }
     await events.insertOne(newEvent)
-    // sync user podiums
-    try { await syncPodiumsForEvent(newEvent) } catch (e) { console.warn("Podium sync (create) failed:", e) }
+    // sync user tournaments
+    try { await syncTournamentsForEvent(newEvent) } catch (e) { console.warn("Tournament sync (create) failed:", e) }
     res.status(201).json(newEvent)
   }
   const updateEvent = async (req, res) => {
+    const idNum = parseInt(req.params.id)
     const result = await events.findOneAndUpdate(
-      { id: parseInt(req.params.id) },
+      { id: idNum },
       { $set: req.body },
       { returnDocument: "after" }
     )
     if (!result.value) return res.status(404).send("Event not found")
-    // sync user podiums with the updated event
-    try { await syncPodiumsForEvent(result.value) } catch (e) { console.warn("Podium sync (update) failed:", e) }
+    // sync user tournaments with the updated event
+    try { await syncTournamentsForEvent(result.value) } catch (e) { console.warn("Tournament sync (update) failed:", e) }
     res.json(result.value)
   }
   const deleteEvent = async (req, res) => {
     const idNum = parseInt(req.params.id)
     const result = await events.deleteOne({ id: idNum })
     if (result.deletedCount === 0) return res.status(404).send("Event not found")
-    // remove podium refs for this event across users
-    try { await removePodiumsForEvent(idNum) } catch (e) { console.warn("Podium cleanup (delete) failed:", e) }
+    // remove references from users
+    try { await cleanupEventFromAllUsers(idNum) } catch (e) { console.warn("Tournament cleanup (delete) failed:", e) }
     res.status(204).send()
   }
 
