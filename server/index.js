@@ -63,6 +63,7 @@ const startServer = async () => {
     const toFix = await cursor.toArray()
     for (const u of toFix) {
       const base =
+        slugify(u.username) ||
         slugify(u.displayName) ||
         slugify(u.email?.split?.("@")?.[0]) ||
         `user-${String(u._id).slice(-6)}`

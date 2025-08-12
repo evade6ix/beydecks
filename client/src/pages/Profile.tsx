@@ -126,7 +126,8 @@ export default function Profile() {
   /* ------------------------------
      Profile editor state
   ---------------------------------*/
-  const [displayName, setDisplayName] = useState<string>(u.displayName || user.username || "")
+  const [username, setUsername] = useState<string>(u.username || user.username || "")
+  const [displayName, setDisplayName] = useState<string>(u.displayName || "")
   const [bio, setBio] = useState<string>(u.bio || "")
   const [homeStore, setHomeStore] = useState<string>(u.homeStore || "")
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>(u.avatarDataUrl || "")
@@ -284,12 +285,13 @@ export default function Profile() {
   /* ------------------------------
      UI helpers
   ---------------------------------*/
-  const initials = (user.username || "?")
-    .split(" ")
-    .map((s: string) => s[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase()
+  const initials = ((u.displayName && u.displayName.trim()) ? u.displayName : (u.username || user.username) || "?")
+  .split(" ")
+  .map((s: string) => s[0])
+  .join("")
+  .slice(0, 2)
+  .toUpperCase()
+
 
   const Progress = ({ pct }: { pct: number }) => (
     <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
@@ -341,42 +343,47 @@ export default function Profile() {
     return
   }
 
-  const payload = {
-    displayName,
-    avatarDataUrl,
-    bio,
-    homeStore,
-    ownedParts,
-    keepSlug, // harmless if server ignores it
-  }
+  // client-side validation (optional but nice)
+const usernameOk = (s: string) => /^[a-zA-Z0-9_.]{3,24}$/.test(s || "")
+if (!usernameOk(username)) {
+  toast.error("Invalid username. Use 3–24 chars: letters, numbers, _ or .")
+  return
+}
+
+const payload = {
+  username,        // NEW
+  displayName,     // optional
+  avatarDataUrl,
+  bio,
+  homeStore,
+  ownedParts,
+  keepSlug,
+}
 
   try {
-    const res = await fetch(api("/auth/me"), {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify(payload),
-    })
+    const res = await fetch(api("/api/users/me"), {
+  method: "PATCH",
+  headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+  body: JSON.stringify(payload),
+})
 
-    if (!res.ok) {
-      const msg = await res.text().catch(() => `${res.status} ${res.statusText}`)
-      throw new Error(msg || "Failed to save")
-    }
+if (!res.ok) {
+  const msg = await res.text().catch(() => `${res.status} ${res.statusText}`)
+  throw new Error(msg || "Failed to save")
+}
 
-    const updated = await res.json()
+const updated = await res.json()
 
-    // sync UI
-    u.displayName = updated.displayName ?? displayName
-    u.username = updated.displayName ?? displayName
-    u.avatarDataUrl = updated.avatarDataUrl ?? avatarDataUrl
-    u.bio = updated.bio ?? bio
-    u.homeStore = updated.homeStore ?? homeStore
-    u.ownedParts = updated.ownedParts ?? ownedParts
-    if (typeof updated.slug === "string") setPublicSlug(updated.slug)
+// sync UI correctly
+u.username = updated.username ?? username
+u.displayName = updated.displayName ?? displayName
+u.avatarDataUrl = updated.avatarDataUrl ?? avatarDataUrl
+u.bio = updated.bio ?? bio
+u.homeStore = updated.homeStore ?? homeStore
+u.ownedParts = updated.ownedParts ?? ownedParts
+if (typeof updated.slug === "string") setPublicSlug(updated.slug)
 
-    toast.success("Profile saved!")
+toast.success("Profile saved!")
   } catch (err) {
     console.warn("saveProfile failed:", err)
     toast.error("Failed to save profile.")
@@ -400,7 +407,10 @@ export default function Profile() {
             {initials}
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{user.username}</h1>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
+  {(u.displayName && u.displayName.trim()) ? u.displayName : (u.username || user.username)}
+</h1>
+
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
               <Pill>
                 <Users className="mr-1 h-3.5 w-3.5" /> {matchups.length} matchups
@@ -617,35 +627,45 @@ export default function Profile() {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="mb-3 text-sm font-semibold">Identity</div>
-                  <LabelInput
-                    label="Display Name"
-                    value={displayName}
-                    onChange={setDisplayName}
-                    placeholder="Your name"
-                  />
-                  <label className="mt-3 inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="accent-indigo-500"
-                      checked={keepSlug}
-                      onChange={(e) => setKeepSlug(e.target.checked)}
-                    />
-                    Keep my current public link (don’t change my slug)
-                  </label>
-                  {publicSlug ? (
-                    <div className="mt-3 text-sm">
-                      Share URL:{" "}
-                      <Link
-                        to={`/u/${publicSlug}`}
-                        className="text-indigo-300 underline hover:text-indigo-200"
-                        target="_blank"
-                      >
-                        {window.location.origin}/u/{publicSlug}
-                      </Link>
-                    </div>
-                  ) : null}
-                </div>
+  <div className="mb-3 text-sm font-semibold">Identity</div>
+
+  <LabelInput
+    label="Username"
+    value={username}
+    onChange={setUsername}
+    placeholder="yourname"
+  />
+  <div className="mt-1 text-xs text-white/60">
+    3–24 chars. Letters, numbers, underscores, dots.
+  </div>
+
+  <LabelInput
+    label="Display Name (optional)"
+    value={displayName}
+    onChange={setDisplayName}
+    placeholder="Shown in some places"
+  />
+
+  <label className="mt-3 inline-flex items-center gap-2 text-sm">
+    <input
+      type="checkbox"
+      className="accent-indigo-500"
+      checked={keepSlug}
+      onChange={(e) => setKeepSlug(e.target.checked)}
+    />
+    Keep my current public link (don’t change my slug)
+  </label>
+
+  {publicSlug ? (
+    <div className="mt-3 text-sm">
+      Share URL:{" "}
+      <Link to={`/u/${publicSlug}`} className="text-indigo-300 underline hover:text-indigo-200" target="_blank">
+        {window.location.origin}/u/{publicSlug}
+      </Link>
+    </div>
+  ) : null}
+</div>
+
 
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="mb-3 text-sm font-semibold">Home Store</div>

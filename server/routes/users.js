@@ -13,9 +13,12 @@ const slugify = (s) =>
     .replace(/^-+|-+$/g, "")
     .substring(0, 60)
 
+const usernameOk = (s) => /^[a-zA-Z0-9_\.]{3,24}$/.test(String(s || ""))
+
 const publicUserProjection = {
   id: 1,
   _id: 1,
+  username: 1,
   displayName: 1,
   slug: 1,
   avatarDataUrl: 1,
@@ -55,38 +58,40 @@ function requireAuth(usersCol) {
 export default function usersRoutes({ users }) {
   const router = express.Router()
 
-  // ✅ Public profile by slug (explicit alias): GET /users/slug/:slug
-router.get("/slug/:slug", async (req, res) => {
-  const slug = String(req.params.slug || "").trim().toLowerCase()
-  if (!slug) return res.status(400).json({ error: "Missing slug" })
-
-  const u = await users.findOne({ slug }, { projection: publicUserProjection })
-  if (!u) return res.status(404).json({ error: "User not found" })
-
-  const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
-  return res.json({
-    id: u.id ?? u._id,
-    displayName: u.displayName || "",
-    slug: u.slug,
-    avatarDataUrl: u.avatarDataUrl || "",
-    bio: u.bio || "",
-    homeStore: u.homeStore || "",
-    ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
-    stats: { tournamentsCount },
-  })
-})
-
-
   // Public profile by slug
-  router.get("/:slug", async (req, res) => {
-    const { slug } = req.params
+  router.get("/slug/:slug", async (req, res) => {
+    const slug = String(req.params.slug || "").trim().toLowerCase()
+    if (!slug) return res.status(400).json({ error: "Missing slug" })
+
     const u = await users.findOne({ slug }, { projection: publicUserProjection })
     if (!u) return res.status(404).json({ error: "User not found" })
 
     const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
     return res.json({
       id: u.id ?? u._id,
+      username: u.username || "",
       displayName: u.displayName || "",
+      // prefer displayName in UI but always send username too
+      name: u.displayName || u.username || "",
+      slug: u.slug,
+      avatarDataUrl: u.avatarDataUrl || "",
+      bio: u.bio || "",
+      homeStore: u.homeStore || "",
+      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+      stats: { tournamentsCount },
+    })
+  })
+
+  // Backwards-compat GET /users/:slug (optional)
+  router.get("/:slug", async (req, res) => {
+    const u = await users.findOne({ slug: String(req.params.slug || "").toLowerCase() }, { projection: publicUserProjection })
+    if (!u) return res.status(404).json({ error: "User not found" })
+    const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
+    return res.json({
+      id: u.id ?? u._id,
+      username: u.username || "",
+      displayName: u.displayName || "",
+      name: u.displayName || u.username || "",
       slug: u.slug,
       avatarDataUrl: u.avatarDataUrl || "",
       bio: u.bio || "",
@@ -99,16 +104,45 @@ router.get("/slug/:slug", async (req, res) => {
   // Edit own profile
   router.patch("/me", requireAuth(users), async (req, res) => {
     const me = req.me
-    const { displayName, avatarDataUrl, bio, homeStore, ownedParts, keepSlug } = req.body || {}
+    const { username, displayName, avatarDataUrl, bio, homeStore, ownedParts, keepSlug } = req.body || {}
     const $set = {}
 
-    if (typeof displayName === "string" && displayName.trim()) $set.displayName = displayName.trim()
+    // username: canonical
+    if (typeof username === "string" && username !== me.username) {
+      if (!usernameOk(username)) {
+        return res.status(400).json({ error: "Username must be 3–24 chars: letters, numbers, underscores, dots." })
+      }
+      const exists = await users.findOne({ username }, { projection: { _id: 1 } })
+      if (exists && String(exists._id) !== String(me._id)) {
+        return res.status(409).json({ error: "Username already taken" })
+      }
+      $set.username = username
+      if (!keepSlug) {
+        // regenerate slug from username
+        const base = slugify(username) || `user-${String(me._id).slice(-6)}`
+        let candidate = base
+        let n = 0
+        // eslint-disable-next-line no-await-in-loop
+        while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
+          n += 1
+          candidate = `${base}-${n}`
+        }
+        $set.slug = candidate
+      }
+      // If displayName not explicitly provided, keep it as-is;
+      // or set it to username the first time user gets a username.
+      if (!displayName && !me.displayName) $set.displayName = username
+    }
+
+    // optional displayName (kept as flair)
+    if (typeof displayName === "string" && displayName.trim()) {
+      $set.displayName = displayName.trim()
+      // do NOT auto-change slug from displayName anymore
+    }
 
     if (typeof avatarDataUrl === "string") {
-      if (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,")) {
+      if (avatarDataUrl === "" || (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,"))) {
         $set.avatarDataUrl = avatarDataUrl
-      } else if (avatarDataUrl === "") {
-        $set.avatarDataUrl = ""
       } else {
         return res.status(400).json({ error: "avatarDataUrl must be a base64 data URL" })
       }
@@ -127,21 +161,6 @@ router.get("/slug/:slug", async (req, res) => {
       }
     }
 
-    if ("displayName" in $set && !keepSlug) {
-      const base =
-        slugify($set.displayName) ||
-        slugify(me.email?.split?.("@")?.[0]) ||
-        `user-${String(me._id).slice(-6)}`
-      let candidate = base || `user-${String(me._id).slice(-6)}`
-      let n = 0
-      // eslint-disable-next-line no-await-in-loop
-      while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
-        n += 1
-        candidate = `${base}-${n}`
-      }
-      $set.slug = candidate
-    }
-
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" })
     }
@@ -155,7 +174,9 @@ router.get("/slug/:slug", async (req, res) => {
     const u = result.value
     return res.json({
       id: u.id ?? u._id,
+      username: u.username || "",
       displayName: u.displayName || "",
+      name: u.displayName || u.username || "",
       slug: u.slug,
       avatarDataUrl: u.avatarDataUrl || "",
       bio: u.bio || "",
