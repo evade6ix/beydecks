@@ -143,13 +143,16 @@ export default function UserPublic() {
   const firstEvent = tournaments.length ? tournaments[tournaments.length - 1] : null
   const latestEvent = tournaments[0] || null
 
+  // Show ONLY username (fallback to displayName if username missing)
+  const nameForDisplay = u.username && u.username.trim().length > 0 ? u.username : u.displayName
+
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       <Helmet>
-        <title>{u.displayName} — MetaBeys Profile</title>
-        <meta name="description" content={u.bio || `${u.displayName}'s MetaBeys profile`} />
+        <title>{nameForDisplay} — MetaBeys Profile</title>
+        <meta name="description" content={u.bio || `${nameForDisplay}'s MetaBeys profile`} />
         <link rel="canonical" href={shareUrl} />
-        <meta property="og:title" content={`${u.displayName} — MetaBeys Profile`} />
+        <meta property="og:title" content={`${nameForDisplay} — MetaBeys Profile`} />
         <meta property="og:description" content={u.bio || ""} />
         {u.avatarDataUrl ? <meta property="og:image" content={u.avatarDataUrl} /> : null}
       </Helmet>
@@ -163,17 +166,15 @@ export default function UserPublic() {
         <div className="relative flex items-start gap-4">
           <img
             src={u.avatarDataUrl || "/default-avatar.png"}
-            alt={u.displayName}
+            alt={nameForDisplay}
             className="h-20 w-20 md:h-24 md:w-24 rounded-2xl object-cover ring-1 ring-white/10"
             draggable={false}
           />
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
-                <h1 className="truncate text-2xl md:text-3xl font-bold tracking-tight">{u.displayName}</h1>
-                {u.username ? (
-                  <div className="mt-0.5 text-sm text-white/70 truncate">@{u.username}</div>
-                ) : null}
+                <h1 className="truncate text-2xl md:text-3xl font-bold tracking-tight">{nameForDisplay}</h1>
+                {/* Removed the '@username' subline to show username only */}
               </div>
               <button
                 onClick={() => navigator.clipboard.writeText(shareUrl).catch(() => {})}
