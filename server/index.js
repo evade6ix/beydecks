@@ -180,21 +180,27 @@ const startServer = async () => {
     }
 
     const result = await users.findOneAndUpdate(
-      { _id: me._id },
-      { $set },
-      { returnDocument: "after", projection: publicUserProjection }
-    )
+  { _id: me._id },
+  { $set },
+  { returnDocument: "after", projection: publicUserProjection }
+)
 
-    const u = result.value
-    return res.json({
-      id: u.id ?? u._id,
-      displayName: u.displayName || "",
-      slug: u.slug,
-      avatarDataUrl: u.avatarDataUrl || "",
-      bio: u.bio || "",
-      homeStore: u.homeStore || "",
-      ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
-    })
+const u = result.value
+if (!u) {
+  // nothing matched — avoid a crash and tell the client
+  return res.status(404).json({ error: "User not found" })
+}
+
+return res.json({
+  id: u.id ?? u._id,
+  displayName: u.displayName || "",
+  slug: u.slug,
+  avatarDataUrl: u.avatarDataUrl || "",
+  bio: u.bio || "",
+  homeStore: u.homeStore || "",
+  ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
+})
+
   }
 
   // --- Tournament sync helpers (write to tournamentsPlayed + counters) ---
