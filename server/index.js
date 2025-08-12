@@ -192,15 +192,6 @@ const startServer = async () => {
       ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
     })
   }
-
-  // ⬇️ Guarantee these two PATCH endpoints exist no matter what
-  app.patch("/api/users/me", requireAuth(users), handlePatchMe)
-  app.patch("/users/me", requireAuth(users), handlePatchMe)
-
-  // ✅ Mount users router on both prefixes (kept for slug GET etc.)
-  app.use("/api/users", usersRoutes({ users }))
-  app.use("/users", usersRoutes({ users }))
-
   // ---------- Auth & Forum ----------
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
