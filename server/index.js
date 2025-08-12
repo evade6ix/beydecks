@@ -193,6 +193,105 @@ const startServer = async () => {
       ownedParts: u.ownedParts || { blades: [], assistBlades: [], ratchets: [], bits: [] },
     })
   }
+
+  // --- Podium sync helpers (add/update/delete) ---
+  async function syncPodiumsForEvent(eventDoc) {
+    if (!eventDoc || !Array.isArray(eventDoc.topCut)) return
+
+    const eventId = String(eventDoc.id)
+    const eventTitle = eventDoc.title || ""
+    const eventDate = eventDoc.endTime || eventDoc.startTime || new Date().toISOString()
+
+    // 1) Clear existing podium refs for this event from all users
+    await users.updateMany(
+      { "podiums.eventId": eventId },
+      { $pull: { podiums: { eventId } } }
+    )
+
+    // 2) Re-add podiums based on current topCut order
+    const placements = ["Champion", "Second", "Third"]
+    const ops = []
+
+    for (let i = 0; i < eventDoc.topCut.length; i += 1) {
+      const p = eventDoc.topCut[i] || {}
+      const placement = placements[i] || "Top Cut"
+
+      const userQuery = p.userSlug
+        ? { slug: String(p.userSlug).toLowerCase() }
+        : (p.userId ? { id: String(p.userId) } : null)
+      if (!userQuery) continue
+
+      const u = await users.findOne(userQuery, { projection: { _id: 1 } })
+      if (!u) continue
+
+      ops.push(users.updateOne(
+        { _id: u._id },
+        {
+          $push: {
+            podiums: {
+              eventId,
+              eventTitle,
+              placement,
+              date: eventDate,
+            },
+          },
+        }
+      ))
+    }
+
+    if (ops.length) await Promise.all(ops)
+
+    // 3) Recompute counters for all users that reference this event
+    const affectedUsers = await users.find(
+      { "podiums.eventId": eventId },
+      { projection: { _id: 1, podiums: 1 } }
+    ).toArray()
+
+    for (const u of affectedUsers) {
+      const podiums = Array.isArray(u.podiums) ? u.podiums : []
+      let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
+      for (const r of podiums) {
+        if (r?.placement === "Champion") firsts += 1
+        else if (r?.placement === "Second") seconds += 1
+        else if (r?.placement === "Third") thirds += 1
+        if (["Champion", "Second", "Third", "Top Cut"].includes(r?.placement)) {
+          topCutCount += 1
+        }
+      }
+      await users.updateOne(
+        { _id: u._id },
+        { $set: { firsts, seconds, thirds, topCutCount } }
+      )
+    }
+  }
+
+  async function removePodiumsForEvent(eventId) {
+    const idStr = String(eventId)
+    // remove entries for this event
+    await users.updateMany(
+      { "podiums.eventId": idStr },
+      { $pull: { podiums: { eventId: idStr } } }
+    )
+    // recompute counters for all users (safe & simple)
+    const everyone = await users.find({}, { projection: { _id: 1, podiums: 1 } }).toArray()
+    for (const u of everyone) {
+      const podiums = Array.isArray(u.podiums) ? u.podiums : []
+      let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
+      for (const r of podiums) {
+        if (r?.placement === "Champion") firsts += 1
+        else if (r?.placement === "Second") seconds += 1
+        else if (r?.placement === "Third") thirds += 1
+        if (["Champion", "Second", "Third", "Top Cut"].includes(r?.placement)) {
+          topCutCount += 1
+        }
+      }
+      await users.updateOne(
+        { _id: u._id },
+        { $set: { firsts, seconds, thirds, topCutCount } }
+      )
+    }
+  }
+
   // ---------- Auth & Forum ----------
   app.use("/api/auth", authRoutes({ users }))
   app.use("/api/forum", forumRoutes)
@@ -218,6 +317,8 @@ const startServer = async () => {
   const createEvent = async (req, res) => {
     const newEvent = { ...req.body, id: Date.now() }
     await events.insertOne(newEvent)
+    // sync user podiums
+    try { await syncPodiumsForEvent(newEvent) } catch (e) { console.warn("Podium sync (create) failed:", e) }
     res.status(201).json(newEvent)
   }
   const updateEvent = async (req, res) => {
@@ -227,11 +328,16 @@ const startServer = async () => {
       { returnDocument: "after" }
     )
     if (!result.value) return res.status(404).send("Event not found")
+    // sync user podiums with the updated event
+    try { await syncPodiumsForEvent(result.value) } catch (e) { console.warn("Podium sync (update) failed:", e) }
     res.json(result.value)
   }
   const deleteEvent = async (req, res) => {
-    const result = await events.deleteOne({ id: parseInt(req.params.id) })
+    const idNum = parseInt(req.params.id)
+    const result = await events.deleteOne({ id: idNum })
     if (result.deletedCount === 0) return res.status(404).send("Event not found")
+    // remove podium refs for this event across users
+    try { await removePodiumsForEvent(idNum) } catch (e) { console.warn("Podium cleanup (delete) failed:", e) }
     res.status(204).send()
   }
 
@@ -450,22 +556,19 @@ const startServer = async () => {
   })
 
   // ⬇️ Guarantee these two PATCH endpoints exist no matter what
-app.patch("/api/users/me", requireAuth(users), handlePatchMe)
-app.patch("/users/me", requireAuth(users), handlePatchMe)
-console.log("➡️ Mounted PATCH /api/users/me and /users/me")
+  app.patch("/api/users/me", requireAuth(users), handlePatchMe)
+  app.patch("/users/me", requireAuth(users), handlePatchMe)
+  console.log("➡️ Mounted PATCH /api/users/me and /users/me")
 
-// Users router (for other users endpoints like GET by slug)
-app.use("/api/users", usersRoutes({ users }))
-app.use("/users", usersRoutes({ users }))
-
+  // Users router (for other users endpoints like GET by slug)
+  app.use("/api/users", usersRoutes({ users }))
+  app.use("/users", usersRoutes({ users }))
 
   // ---------- Static + SPA fallback ----------
   app.use(express.static(join(__dirname, "../client/dist")))
   app.get("*", (req, res) => {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))
   })
-
-  
 
   app.listen(port, () => {
     console.log("✅ Backend + frontend running at: http://localhost:" + port)

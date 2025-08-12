@@ -58,6 +58,35 @@ function requireAuth(usersCol) {
 export default function usersRoutes({ users }) {
   const router = express.Router()
 
+  // --- NEW: lightweight search for admin autocomplete ---
+  // GET /users/search?q=term
+  router.get("/search", async (req, res) => {
+    const q = String(req.query.q || "").trim()
+    if (q.length < 2) return res.json([])
+
+    // escape regex special chars
+    const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+
+    const hits = await users
+      .find(
+        { $or: [{ username: rx }, { displayName: rx }] },
+        { projection: { id: 1, _id: 1, username: 1, displayName: 1, slug: 1, avatarDataUrl: 1 } }
+      )
+      .limit(8)
+      .toArray()
+
+    // normalize id shape for client
+    const result = hits.map((u) => ({
+      id: u.id ?? String(u._id),
+      username: u.username || "",
+      displayName: u.displayName || "",
+      slug: u.slug || "",
+      avatarDataUrl: u.avatarDataUrl || "",
+    }))
+
+    res.json(result)
+  })
+
   // Public profile by slug
   router.get("/slug/:slug", async (req, res) => {
     const slug = String(req.params.slug || "").trim().toLowerCase()
@@ -84,7 +113,10 @@ export default function usersRoutes({ users }) {
 
   // Backwards-compat GET /users/:slug (optional)
   router.get("/:slug", async (req, res) => {
-    const u = await users.findOne({ slug: String(req.params.slug || "").toLowerCase() }, { projection: publicUserProjection })
+    const u = await users.findOne(
+      { slug: String(req.params.slug || "").toLowerCase() },
+      { projection: publicUserProjection }
+    )
     if (!u) return res.status(404).json({ error: "User not found" })
     const tournamentsCount = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed.length : 0
     return res.json({

@@ -1,5 +1,5 @@
 // File: client/src/pages/Admin.tsx
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Link } from "react-router-dom"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
@@ -48,6 +48,14 @@ interface Store {
   city?: string
 }
 
+type UserHit = {
+  id: string
+  username: string
+  displayName?: string
+  slug?: string
+  avatarDataUrl?: string
+}
+
 export default function Admin() {
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
@@ -68,6 +76,10 @@ export default function Admin() {
     name: "", address: "", logo: "", mapEmbedUrl: "", website: "", notes: "", country: "", region: "", city: ""
   })
   const [storeEditId, setStoreEditId] = useState<number | null>(null)
+
+  // Suggestions state (aligned per player row)
+  const [nameSuggestions, setNameSuggestions] = useState<UserHit[][]>([])
+  const timersRef = useRef<number[]>([])
 
   useEffect(() => {
     fetch(`${API}/events`).then(res => res.json()).then((data: Event[]) => {
@@ -91,6 +103,8 @@ export default function Admin() {
     setCountry("")
     setRegion("")
     setCity("")
+    setNameSuggestions([])
+    timersRef.current = []
   }
 
   const addOrUpdateEvent = () => {
@@ -109,15 +123,15 @@ export default function Admin() {
   }
 
   const addCombo = (playerIndex: number) => {
-  setTopCut(prev => {
-    const updated = [...prev]
-    updated[playerIndex] = {
-      ...updated[playerIndex],
-      combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
-    }
-    return updated
-  })
-}
+    setTopCut(prev => {
+      const updated = [...prev]
+      updated[playerIndex] = {
+        ...updated[playerIndex],
+        combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
+      }
+      return updated
+    })
+  }
 
   const updateTopCutCombo = (p: number, c: number, f: keyof Combo, val: string) => {
     setTopCut(prev => {
@@ -135,16 +149,72 @@ export default function Admin() {
         combos: [{ blade: "", ratchet: "", bit: "", notes: "" }]
       }
     ])
+    setNameSuggestions(prev => [...prev, []])
+    timersRef.current.push(0)
   }
 
   const removeTopCutPlayer = (i: number) => {
     setTopCut(prev => prev.filter((_, idx) => idx !== i))
+    setNameSuggestions(prev => prev.filter((_, idx) => idx !== i))
+    timersRef.current.splice(i, 1)
   }
 
   const updatePlayerName = (i: number, val: string) => {
     setTopCut(prev => {
       const copy = [...prev]
       copy[i].name = val
+      return copy
+    })
+  }
+
+  // --- username suggestion helpers ---
+  const fetchNameSuggestions = async (i: number, q: string) => {
+    try {
+      const res = await fetch(`${API}/users/search?q=${encodeURIComponent(q)}`)
+      const data: UserHit[] = res.ok ? await res.json() : []
+      setNameSuggestions(prev => {
+        const copy = [...prev]
+        copy[i] = data
+        return copy
+      })
+    } catch {
+      setNameSuggestions(prev => {
+        const copy = [...prev]
+        copy[i] = []
+        return copy
+      })
+    }
+  }
+
+  const handlePlayerNameChange = (i: number, val: string) => {
+    updatePlayerName(i, val)
+
+    if (timersRef.current[i]) window.clearTimeout(timersRef.current[i])
+
+    const q = val.trim()
+    if (q.length < 2) {
+      setNameSuggestions(prev => {
+        const copy = [...prev]
+        copy[i] = []
+        return copy
+      })
+      return
+    }
+
+    timersRef.current[i] = window.setTimeout(() => fetchNameSuggestions(i, q), 250)
+  }
+
+  const selectSuggestedUser = (i: number, u: UserHit) => {
+    setTopCut(prev => {
+      const copy: any[] = [...prev as any]
+      copy[i].name = u.username
+      copy[i].userSlug = u.slug || ""
+      copy[i].userId = u.id
+      return copy as Player[]
+    })
+    setNameSuggestions(prev => {
+      const copy = [...prev]
+      copy[i] = []
       return copy
     })
   }
@@ -199,6 +269,9 @@ export default function Admin() {
     setCountry(e.country || "")
     setRegion(e.region || "")
     setCity(e.city || "")
+    // reset suggestions for loaded rows
+    setNameSuggestions((e.topCut || []).map(() => []))
+    timersRef.current = new Array(e.topCut?.length || 0).fill(0)
   }
 
   const upcomingEvents = events.filter(e => new Date(e.startTime) > new Date())
@@ -219,25 +292,25 @@ export default function Admin() {
         </div>
         <input className="input input-bordered" placeholder="Buy Ticket URL" value={buyLink} onChange={e => setBuyLink(e.target.value)} />
         <div className="space-y-2">
-  <label className="text-sm font-semibold">Event Image</label>
-  <input
-    type="file"
-    accept="image/*"
-    className="file-input file-input-bordered w-full"
-    onChange={(e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImageUrl(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }}
-  />
-  {imageUrl && (
-    <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />
-  )}
-</div>
+          <label className="text-sm font-semibold">Event Image</label>
+          <input
+            type="file"
+            accept="image/*"
+            className="file-input file-input-bordered w-full"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              const reader = new FileReader()
+              reader.onloadend = () => {
+                setImageUrl(reader.result as string)
+              }
+              reader.readAsDataURL(file)
+            }}
+          />
+          {imageUrl && (
+            <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />
+          )}
+        </div>
 
         <input className="input input-bordered" type="number" placeholder="Capacity (for upcoming)" value={capacity ?? ""} onChange={e => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)} />
         <input className="input input-bordered" type="number" placeholder="Attendee Count (for completed)" value={attendeeCount ?? ""} onChange={e => setAttendeeCount(e.target.value ? parseInt(e.target.value) : undefined)} />
@@ -254,16 +327,55 @@ export default function Admin() {
           <h3 className="font-semibold">Top Cut Combos</h3>
           {topCut.map((p, i) => (
             <div key={i} className="space-y-2 border rounded p-2">
-              <input className="input input-sm w-full" placeholder="Player Name" value={p.name} onChange={e => updatePlayerName(i, e.target.value)} />
+              <div className="relative">
+                <input
+                  className="input input-sm w-full"
+                  placeholder="Player Name"
+                  value={p.name}
+                  onChange={e => handlePlayerNameChange(i, e.target.value)}
+                  autoComplete="off"
+                />
+                {nameSuggestions[i]?.length ? (
+                  <ul className="absolute z-20 mt-1 w-full rounded-md border border-white/10 bg-base-100 shadow-lg max-h-60 overflow-auto">
+                    {nameSuggestions[i].map((u) => (
+                      <li
+                        key={u.id}
+                        className="px-3 py-2 hover:bg-base-200 cursor-pointer"
+                        onClick={() => selectSuggestedUser(i, u)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {u.avatarDataUrl ? (
+                            <img
+                              src={u.avatarDataUrl}
+                              alt=""
+                              className="h-6 w-6 rounded-full object-cover"
+                            />
+                          ) : null}
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">@{u.username}</div>
+                            {u.displayName ? (
+                              <div className="text-xs opacity-70 truncate">{u.displayName}</div>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                    <li className="px-3 py-2 text-xs opacity-60">
+                      Or keep free text: “{p.name}”
+                    </li>
+                  </ul>
+                ) : null}
+              </div>
+
               {p.combos.map((c, j) => (
                 <div key={j} className="grid md:grid-cols-5 gap-2">
-                <input className="input input-sm" placeholder="Blade" value={c.blade} onChange={e => updateTopCutCombo(i, j, "blade", e.target.value)} />
-                <input className="input input-sm" placeholder="Assist Blade (optional)" value={c.assistBlade ?? ""} onChange={e => updateTopCutCombo(i, j, "assistBlade", e.target.value)} />
-                <input className="input input-sm" placeholder="Ratchet" value={c.ratchet} onChange={e => updateTopCutCombo(i, j, "ratchet", e.target.value)} />
-                <input className="input input-sm" placeholder="Bit" value={c.bit} onChange={e => updateTopCutCombo(i, j, "bit", e.target.value)} />
-                <input className="input input-sm" placeholder="Notes" value={c.notes ?? ""} onChange={e => updateTopCutCombo(i, j, "notes", e.target.value)} />
-              </div>
-            ))}
+                  <input className="input input-sm" placeholder="Blade" value={c.blade} onChange={e => updateTopCutCombo(i, j, "blade", e.target.value)} />
+                  <input className="input input-sm" placeholder="Assist Blade (optional)" value={c.assistBlade ?? ""} onChange={e => updateTopCutCombo(i, j, "assistBlade", e.target.value)} />
+                  <input className="input input-sm" placeholder="Ratchet" value={c.ratchet} onChange={e => updateTopCutCombo(i, j, "ratchet", e.target.value)} />
+                  <input className="input input-sm" placeholder="Bit" value={c.bit} onChange={e => updateTopCutCombo(i, j, "bit", e.target.value)} />
+                  <input className="input input-sm" placeholder="Notes" value={c.notes ?? ""} onChange={e => updateTopCutCombo(i, j, "notes", e.target.value)} />
+                </div>
+              ))}
 
               <button className="btn btn-outline btn-xs" onClick={() => addCombo(i)}>Add Combo</button>
               <button className="btn btn-error btn-xs" onClick={() => removeTopCutPlayer(i)}>Remove Player</button>
@@ -285,25 +397,25 @@ export default function Admin() {
           <input className="input input-bordered" placeholder="Name" value={storeForm.name} onChange={e => setStoreForm(s => ({ ...s, name: e.target.value }))} />
           <input className="input input-bordered" placeholder="Address" value={storeForm.address} onChange={e => setStoreForm(s => ({ ...s, address: e.target.value }))} />
           <div className="space-y-2">
-  <label className="text-sm font-semibold">Store Logo</label>
-  <input
-    type="file"
-    accept="image/*"
-    className="file-input file-input-bordered w-full"
-    onChange={(e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setStoreForm(s => ({ ...s, logo: reader.result as string }))
-      }
-      reader.readAsDataURL(file)
-    }}
-  />
-  {storeForm.logo && (
-    <img src={storeForm.logo} alt="Preview" className="w-32 h-32 object-contain border rounded" />
-  )}
-</div>
+            <label className="text-sm font-semibold">Store Logo</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="file-input file-input-bordered w-full"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (!file) return
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                  setStoreForm(s => ({ ...s, logo: reader.result as string }))
+                }
+                reader.readAsDataURL(file)
+              }}
+            />
+            {storeForm.logo && (
+              <img src={storeForm.logo} alt="Preview" className="w-32 h-32 object-contain border rounded" />
+            )}
+          </div>
 
           <input className="input input-bordered" placeholder="Google Maps Embed URL" value={storeForm.mapEmbedUrl} onChange={e => setStoreForm(s => ({ ...s, mapEmbedUrl: e.target.value }))} />
           <input className="input input-bordered" placeholder="Website" value={storeForm.website} onChange={e => setStoreForm(s => ({ ...s, website: e.target.value }))} />

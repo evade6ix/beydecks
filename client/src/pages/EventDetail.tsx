@@ -34,7 +34,10 @@ type Combo = {
 interface Player {
   name: string
   combos: Combo[]
+  userId?: string
+  userSlug?: string
 }
+
 interface Event {
   id: number | string
   title: string
@@ -727,8 +730,19 @@ export default function EventDetail() {
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="truncate font-medium">
-                                  {ordinal(i + 1)} — {p.name}
-                                </div>
+  {ordinal(i + 1)} — {p.userSlug ? (
+    <Link
+      to={`/users/${p.userSlug}`}
+      className="text-indigo-300 hover:text-indigo-200 underline"
+      title={p.name !== p.userSlug ? `${p.name} (@${p.userSlug})` : `@${p.userSlug}`}
+    >
+      {p.name}
+    </Link>
+  ) : (
+    p.name
+  )}
+</div>
+
                               </div>
 
                               {/* Deck Score pill */}
