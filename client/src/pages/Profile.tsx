@@ -24,9 +24,8 @@ import { useAuth } from "../context/AuthContext"
 import type { OwnedParts } from "../context/AuthContext"
 
 const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
-const API_BASE = RAW.replace(/\/api$/i, "")      // ⬅️ strip trailing /api if present
+const API_BASE = RAW
 const api = (path: string) => `${API_BASE}/${String(path).replace(/^\/+/, "")}`
-
 
 interface Combo {
   blade: string
