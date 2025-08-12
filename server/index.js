@@ -179,27 +179,25 @@ const startServer = async () => {
       return res.status(400).json({ error: "No valid fields to update" })
     }
 
-    // Build a robust filter that matches whether your _id is an ObjectId or a string,
-// and also falls back to the `id` field if that’s what you store.
-const idStr = String(me._id ?? me.id ?? "")
+// build a robust filter
+const idStr = String(req.me._id ?? req.me.id ?? "")
 const filter = {
   $or: [
-    { _id: me._id },          // exact _id (works if it's an ObjectId)
-    { _id: idStr },           // _id stored as string
-    { id: idStr },            // alternate "id" field stored as string
+    { _id: req.me._id },   // works if ObjectId
+    { _id: idStr },        // _id stored as string
+    { id: idStr },         // alt id field
   ],
 }
 
-const result = await users.findOneAndUpdate(
-  filter,
-  { $set },
-  { returnDocument: "after", projection: publicUserProjection }
-)
+// 1) apply update
+const upd = await users.updateOne(filter, { $set })
 
-const u = result.value
+// 2) read back the doc
+const u = await users.findOne(filter, { projection: publicUserProjection })
 if (!u) {
-  // optional: temporary logging while debugging
-  console.warn("PATCH /users/me: no match", { meId: String(me._id), altId: String(me.id), set: Object.keys($set) })
+  console.warn("PATCH /users/me: updated but not found", {
+    matched: upd.matchedCount, modified: upd.modifiedCount, filter,
+  })
   return res.status(404).json({ error: "User not found" })
 }
 

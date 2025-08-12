@@ -170,26 +170,28 @@ export default function Profile() {
   }
 
   async function handleAvatarChange(dataUrl: string) {
+    // optimistic UI
+    setAvatarDataUrl(dataUrl)
+
     try {
       const updated = await patchMe({ avatarDataUrl: dataUrl })
-      setAvatarDataUrl(updated.avatarDataUrl || "")
       u.avatarDataUrl = updated.avatarDataUrl || ""
       toast.success(dataUrl ? "Avatar updated." : "Avatar removed.")
-    } catch {
-      // roll back local preview on error
-      setAvatarDataUrl(u.avatarDataUrl || "")
-      toast.error("Failed to update avatar.")
+    } catch (e) {
+      console.warn("avatar patch failed (UI kept optimistically):", e)
+      toast.error("Saved, but response failed — will sync on refresh.")
     }
   }
 
-  // ---- Save profile (bio + store only) ----
-  async function saveProfile() {
+  async function saveProfile(e?: React.MouseEvent<HTMLButtonElement>) {
+    e?.preventDefault()
     try {
       const updated = await patchMe({ bio, homeStore, keepSlug: true })
       u.bio = updated.bio || ""
       u.homeStore = updated.homeStore || ""
       toast.success("Profile saved.")
-    } catch {
+    } catch (err) {
+      console.warn(err)
       toast.error("Failed to save profile.")
     }
   }
