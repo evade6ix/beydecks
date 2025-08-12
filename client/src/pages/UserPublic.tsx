@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
-import { motion, AnimatePresence } from "framer-motion"
+import { motion, } from "framer-motion"
 import type React from "react"
 import {
   Share2,
@@ -370,35 +370,26 @@ export default function UserPublic() {
                 })}
               </div>
 
-              {/* Items Grid */}
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={`${invTab}-${invSearch}`}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                >
-                  {invItems.length === 0 ? (
-                    <div className="text-sm text-white/70">
-                      No {tabs.find((t) => t.key === invTab)?.label.toLowerCase()} match your search.
-                    </div>
-                  ) : (
-                    <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                      {invItems.map((x, i) => (
-                        <li
-                          key={`${invTab}-${i}`}
-                          className="group rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 transition"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate">{x}</span>
-                            <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition" />
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </motion.div>
-              </AnimatePresence>
+              {invItems.length === 0 ? (
+  <div className="text-sm text-white/70">
+    No {tabs.find((t) => t.key === invTab)?.label.toLowerCase()} match your search.
+  </div>
+) : (
+  <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+    {invItems.map((x, i) => (
+      <li
+        key={`${invTab}-${i}`}
+        className="group rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 transition"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">{x}</span>
+          <ChevronRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition" />
+        </div>
+      </li>
+    ))}
+  </ul>
+)}
+
 
               {/* Fun ticker if they have lots of parts */}
               {totalPartsCount(parts) > 24 ? (
