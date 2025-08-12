@@ -27,14 +27,25 @@ const publicProjection = {
   avatarDataUrl: 1,
   bio: 1,
   homeStore: 1,
+
+  // old container (keep for back-compat)
   ownedParts: 1,
+
+  // NEW: top-level parts fields used by your DB
+  blades: 1,
+  assistBlades: 1,
+  ratchets: 1,
+  bits: 1,
+  partsUpdatedAt: 1,
+
+  // tournaments & counters
   tournamentsPlayed: 1,
-  // podium counters maintained by the event sync in index.js
   firsts: 1,
   seconds: 1,
   thirds: 1,
   topCutCount: 1,
 }
+
 
 function getBearerToken(req) {
   const h = req.headers.authorization || ""
