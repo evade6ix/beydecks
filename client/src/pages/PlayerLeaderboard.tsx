@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { Crown, Medal, Trophy, Users, Search, Sparkles } from "lucide-react"
+import { Crown, Medal, Trophy, Users, Search, ChevronDown, Sparkles } from "lucide-react"
 import { Link } from "react-router-dom"
 
 // --- API base (same helper pattern you use elsewhere) ---
@@ -39,19 +39,15 @@ export default function PlayerLeaderboard() {
   const [q, setQ] = useState("")
   const [sortKey, setSortKey] = useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
 
-  // NEW: pagination
-  const [page, setPage] = useState(1)
-  const pageSize = 20
-
   useEffect(() => {
     let live = true
     setLoading(true)
     setError(null)
 
-    // Try dedicated endpoint if you add it. Fallback to /api/users if not found.
+    // Try dedicated endpoint if you add it (below). Fallback to /api/users if not found.
     const tryFetch = async () => {
-      // 1) preferred: pre-aggregated leaderboard from server (no hard cap)
-      const res1 = await fetch(api("/api/users/leaderboard")).catch(() => null)
+      // 1) preferred: pre-aggregated leaderboard from server
+      const res1 = await fetch(api("/api/users/leaderboard?limit=200")).catch(() => null)
       if (res1 && res1.ok) {
         const data = await res1.json()
         if (live) setPlayers(data)
@@ -104,11 +100,6 @@ export default function PlayerLeaderboard() {
     return filtered.sort(sorter)
   }, [players, q, sortKey])
 
-  // NEW: page slicing
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
-  const pageClamped = Math.min(page, totalPages)
-  const pagedRows = rows.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
-
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       {/* HERO */}
@@ -134,25 +125,27 @@ export default function PlayerLeaderboard() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/60" />
               <input
                 value={q}
-                onChange={(e) => { setQ(e.target.value); setPage(1) }}  // reset page on search
+                onChange={(e) => setQ(e.target.value)}
                 placeholder="Search player…"
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
             </div>
             {/* sort */}
-            <select
-  value={sortKey}
-  onChange={(e) => { setSortKey(e.target.value as typeof sortKey); setPage(1) }}
-  className="rounded-xl bg-white/10 px-3 py-2 text-sm border border-white/10 focus:border-indigo-400/60"
-  aria-label="Sort by"
->
-  <option value="total">Total</option>
-  <option value="firsts">Firsts</option>
-  <option value="seconds">Seconds</option>
-  <option value="thirds">Thirds</option>
-  <option value="topcuts">Top Cuts</option>
-</select>
-
+            <button
+              onClick={() => {
+                const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
+                const next = order[(order.indexOf(sortKey) + 1) % order.length]
+                setSortKey(next)
+              }}
+              className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20 border border-white/10"
+              title="Change sort"
+            >
+              Sort:{" "}
+              <span className="font-semibold capitalize">
+                {sortKey === "total" ? "Total" : sortKey}
+              </span>
+              <ChevronDown className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </motion.div>
@@ -173,36 +166,7 @@ export default function PlayerLeaderboard() {
             No players found.
           </div>
         ) : (
-          <>
-            {pagedRows.map((p, idx) => (
-              <LeaderboardRow
-                key={p.slug || `${pageClamped}-${idx}`}
-                rank={(pageClamped - 1) * pageSize + idx + 1}
-                p={p}
-              />
-            ))}
-
-            {/* Pager */}
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={pageClamped <= 1}
-              >
-                Prev
-              </button>
-              <div className="text-sm text-white/80">
-                Page <span className="font-semibold">{pageClamped}</span> / {totalPages}
-              </div>
-              <button
-                className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={pageClamped >= totalPages}
-              >
-                Next
-              </button>
-            </div>
-          </>
+          rows.map((p, idx) => <LeaderboardRow key={p.slug || idx} rank={idx + 1} p={p} />)
         )}
       </div>
     </div>
@@ -211,7 +175,7 @@ export default function PlayerLeaderboard() {
 
 function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
-  const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#" // guard just in case
+  const sharePath = `/u/${encodeURIComponent(p.slug)}`
   const total =
     p._total ??
     p.tournamentsCount ??
@@ -247,7 +211,7 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
             alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
-          />
+        />
 
           <div className="min-w-0">
             <div className="truncate text-lg md:text-xl font-semibold group-hover:text-indigo-200">
