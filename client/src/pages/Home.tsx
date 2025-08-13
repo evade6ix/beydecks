@@ -61,6 +61,7 @@ type LeaderboardUser = {
   thirds?: number
   topCutCount?: number
   tournamentsCount?: number
+  tournamentsPlayed?: Array<{ placement?: string }>
 }
 function normalizeLB(payload: any): any[] {
   if (Array.isArray(payload)) return payload
@@ -76,17 +77,9 @@ function normalizeLB(payload: any): any[] {
   return []
 }
 
-// Coerce unknown shapes → LeaderboardUser
 function coerceUser(u: any): LeaderboardUser | null {
   const slug =
-    u?.slug ??
-    u?.userSlug ??
-    u?.username ??
-    u?.handle ??
-    u?.user?.slug ??
-    u?.user?.username ??
-    u?.id
-
+    u?.slug ?? u?.userSlug ?? u?.username ?? u?.handle ?? u?.user?.slug ?? u?.user?.username ?? u?.id
   if (!slug) return null
 
   return {
@@ -98,8 +91,8 @@ function coerceUser(u: any): LeaderboardUser | null {
     seconds: u?.seconds ?? u?.silver ?? 0,
     thirds: u?.thirds ?? u?.bronze ?? 0,
     topCutCount: u?.topCutCount ?? u?.topCuts ?? u?.tc ?? 0,
-    tournamentsCount:
-      u?.tournamentsCount ?? u?.events ?? u?.results ?? u?.total ?? u?.count ?? 0,
+    tournamentsCount: u?.tournamentsCount ?? u?.events ?? u?.results ?? u?.total ?? u?.count ?? 0,
+    tournamentsPlayed: u?.tournamentsPlayed ?? u?.resultsList ?? u?.entries ?? undefined,
   }
 }
 
@@ -984,7 +977,29 @@ function Skeleton({ height = "h-10" }: { height?: string }) {
 /* ---------- Mini leaderboard row ---------- */
 function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
-  const total = p.tournamentsCount ?? (p.firsts || 0) + (p.seconds || 0) + (p.thirds || 0) + (p.topCutCount || 0)
+
+  // Prefer event-backed entries if present
+  const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
+
+  let firsts = 0, seconds = 0, thirds = 0, topCutsOnly = 0
+  if (tp.length > 0) {
+    for (const t of tp) {
+      const plc = t?.placement
+      if (plc === "First Place") firsts++
+      else if (plc === "Second Place") seconds++
+      else if (plc === "Third Place") thirds++
+      else if (plc === "Top Cut") topCutsOnly++
+    }
+  } else {
+    // fallback to server counters; remove podiums from topCutCount
+    firsts = Number(p.firsts || 0)
+    seconds = Number(p.seconds || 0)
+    thirds = Number(p.thirds || 0)
+    const rawTopCuts = Number(p.topCutCount || 0)
+    topCutsOnly = Math.max(0, rawTopCuts - (firsts + seconds + thirds))
+  }
+
+  const total = firsts + seconds + thirds + topCutsOnly
 
   const tone =
     rank === 1
@@ -1003,6 +1018,7 @@ function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
       <div className="shrink-0 grid place-items-center h-8 w-8 rounded-lg bg-white/10 border border-white/10 font-bold">
         {rank}
       </div>
+
       <img
         src={p.avatarDataUrl || "/default-avatar.png"}
         alt={p.avatarDataUrl ? name : ""}
@@ -1014,18 +1030,19 @@ function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
         <div className="truncate text-sm font-semibold leading-tight">{name}</div>
         <div className="text-[11px] text-white/60">{total} results</div>
       </div>
+
       <div className="ml-auto flex items-center gap-1.5 text-xs">
         <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-2 py-0.5 text-yellow-200">
-          🏆 {p.firsts || 0}
+          🏆 {firsts}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-slate-300/40 bg-slate-300/10 px-2 py-0.5 text-slate-200">
-          🥈 {p.seconds || 0}
+          🥈 {seconds}
         </span>
         <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
-          🥉 {p.thirds || 0}
+          🥉 {thirds}
         </span>
         <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-indigo-200">
-          🎖️ {p.topCutCount || 0}
+          🎖️ {topCutsOnly}
         </span>
       </div>
     </Link>
