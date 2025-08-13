@@ -198,21 +198,27 @@ export default function Home() {
         setLoading(false)
       }
 
-      // NEW: fetch leaderboard
-      try {
-        setLeadersLoading(true)
-        const lb = await fetch(`${API}/api/users/leaderboard?limit=12`)
-        if (lb.ok) {
-          const arr = (await lb.json()) as LeaderboardUser[]
-          setLeaders(arr || [])
-        } else {
-          setLeaders([])
-        }
-      } catch {
-        setLeaders([])
-      } finally {
-        setLeadersLoading(false)
-      }
+      // NEW: fetch leaderboard (robust to payload shapes; same-origin path)
+try {
+  setLeadersLoading(true)
+  const res = await fetch(`/api/users/leaderboard?limit=12`, { credentials: "include" })
+  const payload = await res.json().catch(() => null)
+
+  // Normalize payload: support array or {users|items|data:[...]}
+  const list: LeaderboardUser[] =
+    Array.isArray(payload) ? payload :
+    Array.isArray(payload?.users) ? payload.users :
+    Array.isArray(payload?.items) ? payload.items :
+    Array.isArray(payload?.data)  ? payload.data  : []
+
+  setLeaders(list)
+} catch (e) {
+  console.warn("Leaderboard fetch failed", e)
+  setLeaders([])
+} finally {
+  setLeadersLoading(false)
+}
+
     }
     load()
   }, [])
