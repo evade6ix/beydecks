@@ -32,33 +32,44 @@ function tally(rows) {
 }
 
 
-async function syncEventToUsers(db, prevEvent, currEvent) {
+// --- replace your syncEventToUsers with this ---
+async function syncEventToUsers(db, _prevEvent, currEvent) {
   if (!currEvent) return
 
   const Users = db.collection("users")
   const eventId = String(currEvent.id)
 
-  const prevSlugs = new Set(
-    (prevEvent?.topCut || []).map((p) => norm(p?.userSlug)).filter(Boolean)
-  )
-
+  // Build the *current* set of slugs that should have this event on their profile
   const currPlayers = (currEvent?.topCut || []).map((p, i) => ({
-    slug: norm(p?.userSlug),
+    slug: norm(p?.userSlug || p?.slug),   // support both fields
     placement: placementForIndex(i),
     name: p?.name || "",
   }))
-  const currSlugs = new Set(currPlayers.map((p) => p.slug).filter(Boolean))
+  const currSlugs = new Set(currPlayers.map(p => p.slug).filter(Boolean))
 
-  for (const slug of prevSlugs) {
-    if (!slug || currSlugs.has(slug)) continue
-    const u = await Users.findOne({ slug })
-    if (!u) continue
-    await Users.updateOne({ _id: u._id }, { $pull: { tournamentsPlayed: { eventId } } })
-    const fresh = await Users.findOne({ _id: u._id }, { projection: { tournamentsPlayed: 1 } })
-    const counts = tally(fresh?.tournamentsPlayed)
-    await Users.updateOne({ _id: u._id }, { $set: counts })
+  // 1) Remove the event row from users who SHOULD NOT have it anymore
+  //    (i.e., anyone who currently has tournamentsPlayed.eventId == eventId but whose slug is not in currSlugs)
+  const slugsArray = Array.from(currSlugs)
+  const toClean = await Users
+    .find({ "tournamentsPlayed.eventId": eventId, slug: { $nin: slugsArray } }, { projection: { _id: 1 } })
+    .toArray()
+
+  if (toClean.length) {
+    const ids = toClean.map(u => u._id)
+    await Users.updateMany(
+      { _id: { $in: ids } },
+      { $pull: { tournamentsPlayed: { eventId } } }
+    )
+    // Recompute counters for the affected users
+    const cursor = Users.find({ _id: { $in: ids } }, { projection: { tournamentsPlayed: 1 } })
+    while (await cursor.hasNext()) {
+      const u = await cursor.next()
+      const counts = tally(u?.tournamentsPlayed)
+      await Users.updateOne({ _id: u._id }, { $set: counts })
+    }
   }
 
+  // 2) Upsert/update rows for the current players
   for (const player of currPlayers) {
     if (!player.slug) continue
     const u = await Users.findOne({ slug: player.slug })
@@ -66,6 +77,7 @@ async function syncEventToUsers(db, prevEvent, currEvent) {
 
     const row = buildTournamentRow(currEvent, player.placement)
 
+    // Update existing row by eventId (don't touch roundWins/roundLosses)
     const up = await Users.updateOne(
       { _id: u._id, "tournamentsPlayed.eventId": eventId },
       {
@@ -79,15 +91,18 @@ async function syncEventToUsers(db, prevEvent, currEvent) {
       }
     )
 
+    // If none existed, push a new one
     if (up.matchedCount === 0) {
       await Users.updateOne({ _id: u._id }, { $push: { tournamentsPlayed: row } })
     }
 
+    // Recompute counters for this user
     const fresh = await Users.findOne({ _id: u._id }, { projection: { tournamentsPlayed: 1 } })
     const counts = tally(fresh?.tournamentsPlayed)
     await Users.updateOne({ _id: u._id }, { $set: counts })
   }
 }
+
 
 router.put("/:id", async (req, res) => {
   const db = await getDb()
