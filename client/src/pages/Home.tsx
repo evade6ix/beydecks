@@ -1005,10 +1005,11 @@ function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
       </div>
       <img
         src={p.avatarDataUrl || "/default-avatar.png"}
-        alt={name}
+        alt={p.avatarDataUrl ? name : ""}
         className="h-10 w-10 rounded-lg object-cover ring-1 ring-white/10"
         draggable={false}
       />
+
       <div className="min-w-0">
         <div className="truncate text-sm font-semibold leading-tight">{name}</div>
         <div className="text-[11px] text-white/60">{total} results</div>
