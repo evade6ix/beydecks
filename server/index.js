@@ -188,6 +188,31 @@ async function backfillUserSlugs() {
   await ensureUserUsernameIndex()
   await backfillUserSlugs()
 
+  // --- One-time normalization: tag legacy tournaments (no eventId) as manual ---
+try {
+  await users.updateMany(
+    { tournamentsPlayed: { $elemMatch: { eventId: { $exists: false } } } },
+    { $set: { "tournamentsPlayed.$[t].source": "manual" } },
+    { arrayFilters: [ { "t.eventId": { $exists: false } } ] }
+  )
+  console.log("✅ Tagged legacy tournaments as source=manual (where missing eventId)")
+} catch (e) {
+  console.warn("⚠️ Tagging legacy tournaments failed (non-fatal):", e)
+}
+
+// --- Backfill counters for all users using the new event-only rule ---
+try {
+  const cur = users.find({}, { projection: { _id: 1, tournamentsPlayed: 1 } })
+  for await (const u of cur) {
+    await recomputeUserCounters(u)
+  }
+  console.log("✅ Recomputed counters for all users (event-backed only)")
+} catch (e) {
+  console.warn("⚠️ Counter backfill failed (non-fatal):", e)
+}
+
+
+
   // ---------- Inline auth + PATCH /users/me shim (covers both prefixes) ----------
   const publicUserProjection = {
     id: 1,
@@ -329,20 +354,25 @@ return res.json({
     return "Top Cut"
   }
 
-  async function recomputeUserCounters(userDoc) {
-    const arr = Array.isArray(userDoc.tournamentsPlayed) ? userDoc.tournamentsPlayed : []
-    let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
-    for (const t of arr) {
-      if (t.placement === "First Place") firsts++
-      if (t.placement === "Second Place") seconds++
-      if (t.placement === "Third Place") thirds++
-      if (["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)) topCutCount++
-    }
-    await users.updateOne(
-      { _id: userDoc._id },
-      { $set: { firsts, seconds, thirds, topCutCount } }
-    )
+async function recomputeUserCounters(userDoc) {
+  // ✅ Only count admin-synced (event-backed) entries
+  const arr = Array.isArray(userDoc.tournamentsPlayed)
+    ? userDoc.tournamentsPlayed.filter(t => t && (t.eventId || t.source === "event"))
+    : []
+
+  let firsts = 0, seconds = 0, thirds = 0, topCutCount = 0
+  for (const t of arr) {
+    if (t.placement === "First Place") firsts++
+    if (t.placement === "Second Place") seconds++
+    if (t.placement === "Third Place") thirds++
+    if (["First Place", "Second Place", "Third Place", "Top Cut"].includes(t.placement)) topCutCount++
   }
+  await users.updateOne(
+    { _id: userDoc._id },
+    { $set: { firsts, seconds, thirds, topCutCount } }
+  )
+}
+
 
   /**
    * Sync an event's topCut into users.tournamentsPlayed.
@@ -397,6 +427,7 @@ return res.json({
         roundWins: typeof p.roundWins === "number" ? p.roundWins : 0,
         roundLosses: typeof p.roundLosses === "number" ? p.roundLosses : 0,
         placement: placementFromIndex(i),
+        source: "event", // ✅ tag as event-backed
       }
 
       await users.updateOne(
