@@ -64,6 +64,97 @@ const startServer = async () => {
   await users.createIndex({ username: 1 }, { unique: true, sparse: true })
 }
 
+async function dedupeUsernames(users) {
+  // 1) Exact duplicates: group by username and rename all but the first
+  const dupGroups = await users.aggregate([
+    { $match: { username: { $type: "string" } } },
+    { $group: { _id: "$username", ids: { $push: "$_id" }, count: { $sum: 1 } } },
+    { $match: { count: { $gt: 1 } } },
+  ]).toArray()
+
+  for (const g of dupGroups) {
+    // keep the first; rename the rest
+    for (let i = 1; i < g.ids.length; i++) {
+      const doc = await users.findOne(
+        { _id: g.ids[i] },
+        { projection: { _id: 1, username: 1, email: 1, slug: 1 } }
+      )
+      if (!doc) continue
+
+      const baseUser = String(g._id || "user")
+      // find an available username like "<base>-2", "<base>-3", ...
+      let n = i + 1
+      let newUsername = `${baseUser}-${n}`
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ username: newUsername }, { projection: { _id: 1 } })) {
+        n += 1
+        newUsername = `${baseUser}-${n}`
+      }
+
+      // if slug missing, generate a non-colliding one (don’t touch existing slug)
+      let newSlug = null
+      if (!doc.slug || String(doc.slug).trim() === "") {
+        const base = slugify(newUsername) || `user-${String(doc._id).slice(-6)}`
+        let candidate = base
+        let k = 0
+        // eslint-disable-next-line no-await-in-loop
+        while (await users.findOne({ slug: candidate, _id: { $ne: doc._id } }, { projection: { _id: 1 } })) {
+          k += 1
+          candidate = `${base}-${k}`
+        }
+        newSlug = candidate
+      }
+
+      const $set = { username: newUsername, updatedAt: new Date() }
+      if (newSlug) $set.slug = newSlug
+
+      await users.updateOne({ _id: doc._id }, { $set })
+      console.log(`🔧 Renamed duplicate username "${g._id}" -> "${newUsername}" (_id=${doc._id})`)
+    }
+  }
+
+  // 2) (Optional) case-insensitive dupes (e.g., "Alice" vs "alice")
+  const all = await users.find(
+    { username: { $type: "string" } },
+    { projection: { _id: 1, username: 1, slug: 1, email: 1 } }
+  ).toArray()
+
+  const keeperByLower = new Map()
+  for (const u of all) {
+    const lc = String(u.username).toLowerCase()
+    if (!keeperByLower.has(lc)) {
+      keeperByLower.set(lc, u._id)
+      continue
+    }
+    // collision by case only → rename this one
+    let n = 2
+    let candidate = `${u.username}-${n}`
+    // eslint-disable-next-line no-await-in-loop
+    while (await users.findOne({ username: candidate }, { projection: { _id: 1 } })) {
+      n += 1
+      candidate = `${u.username}-${n}`
+    }
+
+    let newSlug = null
+    if (!u.slug || String(u.slug).trim() === "") {
+      const base = slugify(candidate) || `user-${String(u._id).slice(-6)}`
+      let s = base, k = 0
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: s, _id: { $ne: u._id } }, { projection: { _id: 1 } })) {
+        k += 1
+        s = `${base}-${k}`
+      }
+      newSlug = s
+    }
+
+    const $set = { username: candidate, updatedAt: new Date() }
+    if (newSlug) $set.slug = newSlug
+
+    await users.updateOne({ _id: u._id }, { $set })
+    console.log(`🔧 Normalized case-dup username -> "${candidate}" (_id=${u._id})`)
+  }
+}
+
 
 async function backfillUserSlugs() {
   const cursor = users.find({
@@ -93,6 +184,7 @@ async function backfillUserSlugs() {
 
 
   await ensureUserSlugIndex()
+  await dedupeUsernames(users)
   await ensureUserUsernameIndex()
   await backfillUserSlugs()
 
