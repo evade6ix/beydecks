@@ -63,6 +63,45 @@ type LeaderboardUser = {
   tournamentsCount?: number
   tournamentsPlayed?: Array<{ placement?: string }>
 }
+
+type LeaderboardUserD = LeaderboardUser & {
+  _firsts: number
+  _seconds: number
+  _thirds: number
+  _topcutsOnly: number
+  _total: number
+}
+
+function deriveUser(u: LeaderboardUser): LeaderboardUserD {
+  const tp = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
+  let f = 0, s = 0, t = 0, tcOnly = 0
+
+  if (tp.length) {
+    for (const e of tp) {
+      const plc = e?.placement
+      if (plc === "First Place") f++
+      else if (plc === "Second Place") s++
+      else if (plc === "Third Place") t++
+      else if (plc === "Top Cut") tcOnly++
+    }
+  } else {
+    f = Number(u.firsts || 0)
+    s = Number(u.seconds || 0)
+    t = Number(u.thirds || 0)
+    const raw = Number(u.topCutCount || 0)
+    tcOnly = Math.max(0, raw - (f + s + t))
+  }
+
+  return {
+    ...u,
+    _firsts: f,
+    _seconds: s,
+    _thirds: t,
+    _topcutsOnly: tcOnly,
+    _total: f + s + t + tcOnly,
+  }
+}
+
 function normalizeLB(payload: any): any[] {
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload?.users)) return payload.users
@@ -191,7 +230,7 @@ export default function Home() {
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
 
   // NEW: leaderboard state
-  const [leaders, setLeaders] = useState<LeaderboardUser[]>([])
+  const [leaders, setLeaders] = useState<LeaderboardUserD[]>([])  
   const [leadersLoading, setLeadersLoading] = useState(true)
 
   const navigate = useNavigate()
@@ -280,8 +319,20 @@ export default function Home() {
       // NEW: fetch leaderboard (multi-URL + shape normalization)
 try {
   setLeadersLoading(true)
-  const list = await fetchLeadersEverywhere(12) // uses the helper you added
-  setLeaders(list)
+const list = await fetchLeadersEverywhere(12)
+const derived = list.map(deriveUser)
+
+// sort by our computed total; tie-break by wins, then seconds, thirds, then slug for stability
+derived.sort((a, b) =>
+  (b._total - a._total) ||
+  (b._firsts - a._firsts) ||
+  (b._seconds - a._seconds) ||
+  (b._thirds - a._thirds) ||
+  a.slug.localeCompare(b.slug)
+)
+
+setLeaders(derived)
+
 } catch (e) {
   console.warn("[Home] Leaderboard fetch failed", e)
   setLeaders([])
@@ -975,31 +1026,15 @@ function Skeleton({ height = "h-10" }: { height?: string }) {
 }
 
 /* ---------- Mini leaderboard row ---------- */
-function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
+function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUserD }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
 
-  // Prefer event-backed entries if present
-  const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
-
-  let firsts = 0, seconds = 0, thirds = 0, topCutsOnly = 0
-  if (tp.length > 0) {
-    for (const t of tp) {
-      const plc = t?.placement
-      if (plc === "First Place") firsts++
-      else if (plc === "Second Place") seconds++
-      else if (plc === "Third Place") thirds++
-      else if (plc === "Top Cut") topCutsOnly++
-    }
-  } else {
-    // fallback to server counters; remove podiums from topCutCount
-    firsts = Number(p.firsts || 0)
-    seconds = Number(p.seconds || 0)
-    thirds = Number(p.thirds || 0)
-    const rawTopCuts = Number(p.topCutCount || 0)
-    topCutsOnly = Math.max(0, rawTopCuts - (firsts + seconds + thirds))
-  }
-
-  const total = firsts + seconds + thirds + topCutsOnly
+  // just read the precomputed numbers
+  const firsts = p._firsts
+  const seconds = p._seconds
+  const thirds = p._thirds
+  const topCutsOnly = p._topcutsOnly
+  const total = p._total
 
   const tone =
     rank === 1
