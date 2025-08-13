@@ -24,6 +24,7 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard"))
 const MatchupStats = lazy(() => import("./pages/MatchupStats"))
 const Admin = lazy(() => import("./pages/Admin"))
 const Contact = lazy(() => import("./pages/Contact"))
+const PlayerLeaderboard = lazy(() => import("./pages/PlayerLeaderboard"))
 const UserAuth = lazy(() => import("./pages/UserAuth"))
 const MemeGallery = lazy(() => import("./pages/Xj29sDrb"))
 const Login = lazy(() => import("./pages/Login"))
@@ -84,6 +85,7 @@ export default function App() {
           <Route path="/forum/:id" element={<ForumThread />} />
           <Route path="/user-auth" element={<UserAuth />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/players" element={<PlayerLeaderboard />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/build-from-my-parts" element={<BuildFromMyParts />} />
           <Route path="/stores" element={<StoreFinder />} />

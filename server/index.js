@@ -13,6 +13,7 @@ import userPartsRoutes from "./routes/userParts.js"
 import dotenv from "dotenv"
 import usersRoutes from "./routes/users.js"
 import jwt from "jsonwebtoken" //
+import usersLeaderboard from "./routes/users.leaderboard.js"
 
 dotenv.config()
 
@@ -38,6 +39,8 @@ const startServer = async () => {
 
   app.use(express.json({ limit: "10mb" }))
   app.use(fileUpload())
+
+  app.use("/api", usersLeaderboard)
 
   // ✅ Connect to DB first
   const { users, products, events, stores, prepDecks } = await connectDB()
