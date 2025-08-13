@@ -80,51 +80,49 @@ export default function PlayerLeaderboard() {
   }, [])
 
   const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
+  const needle = q.trim().toLowerCase()
 
-    const normalized = players.map((p) => {
-      // Only count event-backed entries:
-      const tp = Array.isArray(p.tournamentsPlayed)
-        ? p.tournamentsPlayed.filter(t => t && (t.eventId || t.source === "event"))
-        : []
+  const normalized = players.map((p) => {
+    const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
 
-      // Derive view-only counters from placements
-      let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
-      for (const t of tp) {
-        if (t.placement === "First Place") vFirsts++
-        else if (t.placement === "Second Place") vSeconds++
-        else if (t.placement === "Third Place") vThirds++
-        else if (t.placement === "Top Cut") vTopCutsOnly++
-      }
-
-      // Total “results” shown under the name:
-      const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
-
-      return {
-        ...p,
-        _firsts: vFirsts,
-        _seconds: vSeconds,
-        _thirds: vThirds,
-        _topcutsOnly: vTopCutsOnly,
-        _results: vResults,
-        _name: (p.username && p.username.trim()) || p.displayName || p.slug,
-      }
-    })
-
-    const filtered = needle
-      ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
-      : normalized
-
-    const sorter = (a: any, b: any) => {
-      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
-      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
-      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
-      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
-      return b._results - a._results || b._firsts - a._firsts
+    // mirror Profile.tsx behavior
+    let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
+    for (const t of tp) {
+      if (!t) continue
+      if (t.placement === "First Place") vFirsts++
+      else if (t.placement === "Second Place") vSeconds++
+      else if (t.placement === "Third Place") vThirds++
+      else if (t.placement === "Top Cut") vTopCutsOnly++
     }
 
-    return filtered.sort(sorter)
-  }, [players, q, sortKey])
+    const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+
+    return {
+      ...p,
+      _firsts: vFirsts,
+      _seconds: vSeconds,
+      _thirds: vThirds,
+      _topcutsOnly: vTopCutsOnly,
+      _results: vResults,
+      _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+    }
+  })
+
+  const filtered = needle
+    ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
+    : normalized
+
+  const sorter = (a: any, b: any) => {
+    if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
+    if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
+    if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
+    if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
+    return b._results - a._results || b._firsts - a._firsts
+  }
+
+  return filtered.sort(sorter)
+}, [players, q, sortKey])
+
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const pageClamped = Math.min(page, totalPages)
