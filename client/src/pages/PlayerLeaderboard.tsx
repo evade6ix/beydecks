@@ -39,15 +39,19 @@ export default function PlayerLeaderboard() {
   const [q, setQ] = useState("")
   const [sortKey, setSortKey] = useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
 
+  // NEW: pagination
+  const [page, setPage] = useState(1)
+  const pageSize = 20
+
   useEffect(() => {
     let live = true
     setLoading(true)
     setError(null)
 
-    // Try dedicated endpoint if you add it (below). Fallback to /api/users if not found.
+    // Try dedicated endpoint if you add it. Fallback to /api/users if not found.
     const tryFetch = async () => {
-      // 1) preferred: pre-aggregated leaderboard from server
-      const res1 = await fetch(api("/api/users/leaderboard?limit=200")).catch(() => null)
+      // 1) preferred: pre-aggregated leaderboard from server (no hard cap)
+      const res1 = await fetch(api("/api/users/leaderboard")).catch(() => null)
       if (res1 && res1.ok) {
         const data = await res1.json()
         if (live) setPlayers(data)
@@ -100,6 +104,11 @@ export default function PlayerLeaderboard() {
     return filtered.sort(sorter)
   }, [players, q, sortKey])
 
+  // NEW: page slicing
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const pageClamped = Math.min(page, totalPages)
+  const pagedRows = rows.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
+
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       {/* HERO */}
@@ -125,7 +134,7 @@ export default function PlayerLeaderboard() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/60" />
               <input
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => { setQ(e.target.value); setPage(1) }}  // reset page on search
                 placeholder="Search player…"
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
@@ -136,6 +145,7 @@ export default function PlayerLeaderboard() {
                 const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
                 const next = order[(order.indexOf(sortKey) + 1) % order.length]
                 setSortKey(next)
+                setPage(1) // reset page on sort
               }}
               className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20 border border-white/10"
               title="Change sort"
@@ -166,7 +176,36 @@ export default function PlayerLeaderboard() {
             No players found.
           </div>
         ) : (
-          rows.map((p, idx) => <LeaderboardRow key={p.slug || idx} rank={idx + 1} p={p} />)
+          <>
+            {pagedRows.map((p, idx) => (
+              <LeaderboardRow
+                key={p.slug || `${pageClamped}-${idx}`}
+                rank={(pageClamped - 1) * pageSize + idx + 1}
+                p={p}
+              />
+            ))}
+
+            {/* Pager */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              <button
+                className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pageClamped <= 1}
+              >
+                Prev
+              </button>
+              <div className="text-sm text-white/80">
+                Page <span className="font-semibold">{pageClamped}</span> / {totalPages}
+              </div>
+              <button
+                className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={pageClamped >= totalPages}
+              >
+                Next
+              </button>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -175,7 +214,7 @@ export default function PlayerLeaderboard() {
 
 function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
-  const sharePath = `/u/${encodeURIComponent(p.slug)}`
+  const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#" // guard just in case
   const total =
     p._total ??
     p.tournamentsCount ??
@@ -211,7 +250,7 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
             alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
-        />
+          />
 
           <div className="min-w-0">
             <div className="truncate text-lg md:text-xl font-semibold group-hover:text-indigo-200">
