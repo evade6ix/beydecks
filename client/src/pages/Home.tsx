@@ -62,6 +62,92 @@ type LeaderboardUser = {
   topCutCount?: number
   tournamentsCount?: number
 }
+function normalizeLB(payload: any): any[] {
+  if (Array.isArray(payload)) return payload
+  if (Array.isArray(payload?.users)) return payload.users
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.leaderboard)) return payload.leaderboard
+  if (Array.isArray(payload?.results)) return payload.results
+  if (Array.isArray(payload?.rows)) return payload.rows
+  if (Array.isArray(payload?.list)) return payload.list
+  // Some APIs respond { ok:true, data:{ items:[...] } }
+  if (Array.isArray(payload?.data?.items)) return payload.data.items
+  return []
+}
+
+// Coerce unknown shapes → LeaderboardUser
+function coerceUser(u: any): LeaderboardUser | null {
+  const slug =
+    u?.slug ??
+    u?.userSlug ??
+    u?.username ??
+    u?.handle ??
+    u?.user?.slug ??
+    u?.user?.username ??
+    u?.id
+
+  if (!slug) return null
+
+  return {
+    slug: String(slug),
+    username: u?.username ?? u?.handle ?? u?.user?.username ?? u?.name ?? u?.displayName,
+    displayName: u?.displayName ?? u?.name ?? u?.user?.displayName ?? u?.username ?? u?.handle,
+    avatarDataUrl: u?.avatarDataUrl ?? u?.avatarUrl ?? u?.avatar ?? u?.user?.avatarUrl,
+    firsts: u?.firsts ?? u?.gold ?? u?.wins ?? 0,
+    seconds: u?.seconds ?? u?.silver ?? 0,
+    thirds: u?.thirds ?? u?.bronze ?? 0,
+    topCutCount: u?.topCutCount ?? u?.topCuts ?? u?.tc ?? 0,
+    tournamentsCount:
+      u?.tournamentsCount ?? u?.events ?? u?.results ?? u?.total ?? u?.count ?? 0,
+  }
+}
+
+
+async function fetchLeadersEverywhere(limit = 12): Promise<LeaderboardUser[]> {
+  const base = import.meta.env.VITE_API_URL || ""
+  const qs = (q = "") => (q ? `&${q}` : "")
+  const tries = [
+    // Common patterns used across the app / API
+    `/api/users/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `/api/leaderboard/users?limit=${limit}${qs("sort=total")}`,
+    `/api/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `/users/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `/players/leaderboard?limit=${limit}${qs("sort=total")}`,
+
+    // With base URL (prod/staging/local API host)
+    `${base}/api/users/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `${base}/api/leaderboard/users?limit=${limit}${qs("sort=total")}`,
+    `${base}/api/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `${base}/users/leaderboard?limit=${limit}${qs("sort=total")}`,
+    `${base}/players/leaderboard?limit=${limit}${qs("sort=total")}`,
+
+    // No sort param fallbacks
+    `/api/users/leaderboard?limit=${limit}`,
+    `/api/leaderboard/users?limit=${limit}`,
+    `${base}/api/users/leaderboard?limit=${limit}`,
+    `${base}/api/leaderboard/users?limit=${limit}`,
+  ]
+
+  for (const url of tries) {
+    try {
+      const res = await fetch(url, { credentials: "include" })
+      if (!res.ok) continue
+      const payload = await res.json().catch(() => null)
+      const raw = normalizeLB(payload)
+      const coerced = raw.map(coerceUser).filter(Boolean) as LeaderboardUser[]
+      if (coerced.length) {
+        if (import.meta.env.DEV) console.info("[Home] Leaderboard via", url, "→", coerced.length, "rows")
+        return coerced
+      }
+    } catch {
+      // try next
+    }
+  }
+  if (import.meta.env.DEV) console.warn("[Home] Leaderboard: all endpoints returned empty/failed.")
+  return []
+}
+
 
 /* --------------------------------
    Small utils
@@ -198,22 +284,13 @@ export default function Home() {
         setLoading(false)
       }
 
-      // NEW: fetch leaderboard (robust to payload shapes; same-origin path)
+      // NEW: fetch leaderboard (multi-URL + shape normalization)
 try {
   setLeadersLoading(true)
-  const res = await fetch(`/api/users/leaderboard?limit=12`, { credentials: "include" })
-  const payload = await res.json().catch(() => null)
-
-  // Normalize payload: support array or {users|items|data:[...]}
-  const list: LeaderboardUser[] =
-    Array.isArray(payload) ? payload :
-    Array.isArray(payload?.users) ? payload.users :
-    Array.isArray(payload?.items) ? payload.items :
-    Array.isArray(payload?.data)  ? payload.data  : []
-
+  const list = await fetchLeadersEverywhere(12) // uses the helper you added
   setLeaders(list)
 } catch (e) {
-  console.warn("Leaderboard fetch failed", e)
+  console.warn("[Home] Leaderboard fetch failed", e)
   setLeaders([])
 } finally {
   setLeadersLoading(false)
