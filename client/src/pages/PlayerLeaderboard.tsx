@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
-import { Crown, Medal, Trophy, Users, Search, ChevronDown, Sparkles } from "lucide-react"
+import { Crown, Medal, Trophy, Users, Search, Sparkles } from "lucide-react"
 import { Link } from "react-router-dom"
 
 // --- API base (same helper pattern you use elsewhere) ---
@@ -140,22 +140,19 @@ export default function PlayerLeaderboard() {
               />
             </div>
             {/* sort */}
-            <button
-              onClick={() => {
-                const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
-                const next = order[(order.indexOf(sortKey) + 1) % order.length]
-                setSortKey(next)
-                setPage(1) // reset page on sort
-              }}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20 border border-white/10"
-              title="Change sort"
-            >
-              Sort:{" "}
-              <span className="font-semibold capitalize">
-                {sortKey === "total" ? "Total" : sortKey}
-              </span>
-              <ChevronDown className="h-4 w-4" />
-            </button>
+            <select
+  value={sortKey}
+  onChange={(e) => { setSortKey(e.target.value as typeof sortKey); setPage(1) }}
+  className="rounded-xl bg-white/10 px-3 py-2 text-sm border border-white/10 focus:border-indigo-400/60"
+  aria-label="Sort by"
+>
+  <option value="total">Total</option>
+  <option value="firsts">Firsts</option>
+  <option value="seconds">Seconds</option>
+  <option value="thirds">Thirds</option>
+  <option value="topcuts">Top Cuts</option>
+</select>
+
           </div>
         </div>
       </motion.div>
