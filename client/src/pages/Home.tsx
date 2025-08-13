@@ -1,3 +1,4 @@
+// File: src/pages/Home.tsx
 import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
@@ -36,8 +37,6 @@ type EventItem = {
   endTime: string
   store: string
   topCut?: Player[]
-
-  // attendee signals (various shapes)
   attendeeCount?: number
   participants?: number | any[]
   playerCount?: number
@@ -51,6 +50,18 @@ type EventItem = {
 
 type ProductItem = { id: number | string; title: string; imageUrl?: string }
 type TimeRange = "all" | "24h" | "7d" | "30d" | "month" | "90d" | "year" | "lastYear"
+
+type LeaderboardUser = {
+  slug: string
+  username?: string
+  displayName?: string
+  avatarDataUrl?: string
+  firsts?: number
+  seconds?: number
+  thirds?: number
+  topCutCount?: number
+  tournamentsCount?: number
+}
 
 /* --------------------------------
    Small utils
@@ -99,6 +110,11 @@ export default function Home() {
   const [stats, setStats] = useState({ totalUpcoming: 0, totalCompleted: 0, monthEvents: 0 })
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
+
+  // NEW: leaderboard state
+  const [leaders, setLeaders] = useState<LeaderboardUser[]>([])
+  const [leadersLoading, setLeadersLoading] = useState(true)
+
   const navigate = useNavigate()
 
   // auth → username for greeting
@@ -180,6 +196,22 @@ export default function Home() {
         console.warn("Home load failed", e)
       } finally {
         setLoading(false)
+      }
+
+      // NEW: fetch leaderboard
+      try {
+        setLeadersLoading(true)
+        const lb = await fetch(`${API}/api/users/leaderboard?limit=12`)
+        if (lb.ok) {
+          const arr = (await lb.json()) as LeaderboardUser[]
+          setLeaders(arr || [])
+        } else {
+          setLeaders([])
+        }
+      } catch {
+        setLeaders([])
+      } finally {
+        setLeadersLoading(false)
       }
     }
     load()
@@ -407,52 +439,50 @@ export default function Home() {
                 </div>
               </Section>
 
-              {/* Part Popularity Leaderboard (balanced desktop layout) */}
-<Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
-  <div className="mb-3 flex items-center justify-between gap-3">
-    <div className="inline-flex items-center gap-2 text-xs text-white/60">
-      <Filter className="h-4 w-4" /> Time range
-    </div>
-    <Segmented
-      value={timeRange}
-      onChange={setTimeRange}
-      options={[
-        { label: "All", value: "all" },
-        { label: "7d", value: "7d" },
-        { label: "30d", value: "30d" },
-        { label: "This Month", value: "month" },
-        { label: "90d", value: "90d" },
-        { label: "This Year", value: "year" },
-      ]}
-    />
-  </div>
+              {/* Part Popularity Leaderboard */}
+              <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="inline-flex items-center gap-2 text-xs text-white/60">
+                    <Filter className="h-4 w-4" /> Time range
+                  </div>
+                  <Segmented
+                    value={timeRange}
+                    onChange={setTimeRange}
+                    options={[
+                      { label: "All", value: "all" },
+                      { label: "7d", value: "7d" },
+                      { label: "30d", value: "30d" },
+                      { label: "This Month", value: "month" },
+                      { label: "90d", value: "90d" },
+                      { label: "This Year", value: "year" },
+                    ]}
+                  />
+                </div>
 
-  {/* Mobile: single column; Desktop: two balanced columns with equal row heights */}
-  <div className="min-h-64 grid gap-3 md:grid-cols-2">
-    <div className="grid gap-3 [grid-auto-rows:1fr]">
-      <PopularityList title="Blades"        items={popularity.blades}        className="h-full" />
-      <PopularityList title="Assist Blades" items={popularity.assistBlades}  className="h-full" />
-    </div>
-    <div className="grid gap-3 [grid-auto-rows:1fr]">
-      <PopularityList title="Ratchets"      items={popularity.ratchets}      className="h-full" />
-      <PopularityList title="Bits"          items={popularity.bits}          className="h-full" />
-    </div>
-  </div>
+                <div className="min-h-64 grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 [grid-auto-rows:1fr]">
+                    <PopularityList title="Blades"        items={popularity.blades}        className="h-full" />
+                    <PopularityList title="Assist Blades" items={popularity.assistBlades}  className="h-full" />
+                  </div>
+                  <div className="grid gap-3 [grid-auto-rows:1fr]">
+                    <PopularityList title="Ratchets"      items={popularity.ratchets}      className="h-full" />
+                    <PopularityList title="Bits"          items={popularity.bits}          className="h-full" />
+                  </div>
+                </div>
 
-  <div className="mt-4 text-sm text-white/60 space-y-1">
-    <div>Based on {popularity.totalCombos || 0} top-cut combos in the selected range.</div>
-    <div className="text-white/50">Assist Blade % based on {popularity.totalAssistCombos || 0} combos that used an assist.</div>
-  </div>
-</Section>
+                <div className="mt-4 text-sm text-white/60 space-y-1">
+                  <div>Based on {popularity.totalCombos || 0} top-cut combos in the selected range.</div>
+                  <div className="text-white/50">Assist Blade % based on {popularity.totalAssistCombos || 0} combos that used an assist.</div>
+                </div>
+              </Section>
 
-
-              {/* Tournament Lab (added Assist Blade) */}
+              {/* Tournament Lab */}
               <Section title="Tournament Lab" icon={<FlaskConical className="h-5 w-5" />}>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <ComboBox label="Blade"        value={tlBlade}   onChange={setTlBlade}   options={parts.blades}        placeholder="Any blade" />
-                  <ComboBox label="Assist Blade"  value={tlAssist}  onChange={setTlAssist}  options={parts.assistBlades}  placeholder="Any assist" />
-                  <ComboBox label="Ratchet"       value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets}      placeholder="Any ratchet" />
-                  <ComboBox label="Bit"           value={tlBit}     onChange={setTlBit}     options={parts.bits}          placeholder="Any bit" />
+                  <ComboBox label="Assist Blade" value={tlAssist}  onChange={setTlAssist}  options={parts.assistBlades}  placeholder="Any assist" />
+                  <ComboBox label="Ratchet"      value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets}      placeholder="Any ratchet" />
+                  <ComboBox label="Bit"          value={tlBit}     onChange={setTlBit}     options={parts.bits}          placeholder="Any bit" />
                 </div>
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div className="lg:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -502,7 +532,7 @@ export default function Home() {
               </Section>
             </div>
 
-            {/* Right: Recent & Shop */}
+            {/* Right: Recent, Player Leaderboard, Shop */}
             <div className="space-y-6">
               <Section title="Recent Events" icon={<Trophy className="h-5 w-5" />}>
                 {loading ? (
@@ -558,6 +588,30 @@ export default function Home() {
                 </div>
               </Section>
 
+              {/* NEW: Player Leaderboard snippet */}
+              <Section title="Player Leaderboard" icon={<BarChart3 className="h-5 w-5" />}>
+                {leadersLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton height="h-14" /><Skeleton height="h-14" /><Skeleton height="h-14" />
+                  </div>
+                ) : leaders.length === 0 ? (
+                  <div className="text-sm text-white/60">No player data yet.</div>
+                ) : (
+                  <ul className="space-y-2">
+                    {leaders.slice(0, 6).map((p, i) => (
+                      <LeaderboardMiniRow key={p.slug || i} rank={i + 1} p={p} />
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-4 flex items-center justify-between">
+                  <Link to="/players" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                    View full leaderboard <ChevronRight className="h-4 w-4" />
+                  </Link>
+                  <div className="text-xs text-white/50">Ranked by total results</div>
+                </div>
+              </Section>
+
+              {/* Shop Spotlight (pushed down) */}
               <Section title="Shop Spotlight" icon={<ShoppingBag className="h-5 w-5" />}>
                 {loading ? (
                   <div className="grid grid-cols-2 gap-3"><Skeleton height="h-36" /><Skeleton height="h-36" /></div>
@@ -618,7 +672,6 @@ export default function Home() {
    Reusable pieces
 ---------------------------------*/
 function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  // isolate + overflow-hidden eliminates the hover seam/flaring across siblings
   return (
     <section className="isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 md:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
       <div className="mb-3 flex items-center gap-2">
@@ -674,7 +727,6 @@ function PopularityList({
     </div>
   )
 }
-
 
 function TopCutRow({ players }: { players?: Player[] }) {
   if (!players?.length) return <div className="mt-2 text-xs text-white/50">Top cut not posted.</div>
@@ -798,8 +850,8 @@ function ComboBox({
               <button
                 key={o}
                 type="button"
-                onMouseDown={() => commit(o)}     // desktop: commit before blur
-                onTouchStart={() => commit(o)}    // mobile: commit on touch
+                onMouseDown={() => commit(o)}
+                onTouchStart={() => commit(o)}
                 className={cn("w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10", o === value && "bg-white/10")}
               >
                 {o}
@@ -844,4 +896,54 @@ function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label
 
 function Skeleton({ height = "h-10" }: { height?: string }) {
   return <div className={cn("w-full animate-pulse rounded-2xl bg-white/5", height)} />
+}
+
+/* ---------- Mini leaderboard row ---------- */
+function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUser }) {
+  const name = (p.username && p.username.trim()) || p.displayName || p.slug
+  const total = p.tournamentsCount ?? (p.firsts || 0) + (p.seconds || 0) + (p.thirds || 0) + (p.topCutCount || 0)
+
+  const tone =
+    rank === 1
+      ? "from-yellow-400/20 to-amber-500/10"
+      : rank === 2
+      ? "from-slate-300/15 to-slate-500/10"
+      : rank === 3
+      ? "from-amber-500/20 to-amber-700/10"
+      : "from-indigo-400/10 to-sky-500/5"
+
+  return (
+    <Link
+      to={`/u/${encodeURIComponent(p.slug)}`}
+      className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br ${tone} p-2.5 hover:bg-white/10 transition`}
+    >
+      <div className="shrink-0 grid place-items-center h-8 w-8 rounded-lg bg-white/10 border border-white/10 font-bold">
+        {rank}
+      </div>
+      <img
+        src={p.avatarDataUrl || "/default-avatar.png"}
+        alt={name}
+        className="h-10 w-10 rounded-lg object-cover ring-1 ring-white/10"
+        draggable={false}
+      />
+      <div className="min-w-0">
+        <div className="truncate text-sm font-semibold leading-tight">{name}</div>
+        <div className="text-[11px] text-white/60">{total} results</div>
+      </div>
+      <div className="ml-auto flex items-center gap-1.5 text-xs">
+        <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-2 py-0.5 text-yellow-200">
+          🏆 {p.firsts || 0}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-slate-300/40 bg-slate-300/10 px-2 py-0.5 text-slate-200">
+          🥈 {p.seconds || 0}
+        </span>
+        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+          🥉 {p.thirds || 0}
+        </span>
+        <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-indigo-200">
+          🎖️ {p.topCutCount || 0}
+        </span>
+      </div>
+    </Link>
+  )
 }
