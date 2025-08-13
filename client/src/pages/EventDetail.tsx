@@ -731,16 +731,17 @@ export default function EventDetail() {
                               <div className="min-w-0">
                                 <div className="truncate font-medium">
   {ordinal(i + 1)} — {p.userSlug ? (
-    <Link
-      to={`/users/${p.userSlug}`}
-      className="text-indigo-300 hover:text-indigo-200 underline"
-      title={p.name !== p.userSlug ? `${p.name} (@${p.userSlug})` : `@${p.userSlug}`}
-    >
-      {p.name}
-    </Link>
-  ) : (
-    p.name
-  )}
+  <Link
+    to={`/u/${encodeURIComponent(p.userSlug)}`}   // ← was `/users/${p.userSlug}`
+    className="text-indigo-300 hover:text-indigo-200 underline"
+    title={p.name !== p.userSlug ? `${p.name} (@${p.userSlug})` : `@${p.userSlug}`}
+  >
+    {p.name}
+  </Link>
+) : (
+  p.name
+)}
+
 </div>
 
                               </div>

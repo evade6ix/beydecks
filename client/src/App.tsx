@@ -1,10 +1,10 @@
 // File: src/App.tsx
 import { useEffect, useState, Suspense, lazy } from "react"
-import { Routes, Route, useLocation } from "react-router-dom"
+import { Routes, Route, useLocation, Navigate, useParams } from "react-router-dom"
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 
-// Eager (as you had)
+// Eager
 import ForumThread from "./pages/ForumThread"
 import Forum from "./pages/Forum"
 import BuildFromMyParts from "./pages/BuildFromMyParts"
@@ -41,8 +41,14 @@ const RatchetDetail = lazy(() => import("./pages/RatchetDetail"))
 const BitDetail = lazy(() => import("./pages/BitDetail"))
 const AssistDetail = lazy(() => import("./pages/AssistDetail"))
 
-// ✅ Lazy load UserPublic (was eager)
+// ✅ Lazy load UserPublic (public profile)
 const UserPublic = lazy(() => import("./pages/UserPublic"))
+
+// --- Redirect helper for legacy /users/:slug links ---
+function LegacyUsersRedirect() {
+  const { slug } = useParams()
+  return <Navigate to={`/u/${encodeURIComponent(slug || "")}`} replace />
+}
 
 export default function App() {
   const [isAdmin, setIsAdmin] = useState(false)
@@ -66,6 +72,8 @@ export default function App() {
         <Routes>
           {/* Public shareable user profile */}
           <Route path="/u/:slug" element={<UserPublic />} />
+          {/* Legacy support */}
+          <Route path="/users/:slug" element={<LegacyUsersRedirect />} />
 
           <Route path="/" element={<Landing />} />
           <Route path="/home" element={<Home />} />
