@@ -252,6 +252,23 @@ export default function usersRoutes({ users }) {
 
     // Intentionally ignore ownedParts here — managed elsewhere
 
+    // --- Self-heal: if this account has no slug yet, create one (do NOT override an existing slug) ---
+if ((!me.slug || me.slug.trim() === "") && typeof $set.slug === "undefined") {
+  const base =
+    slugify($set.username || me.username || me.displayName || me.email?.split?.("@")?.[0]) ||
+    `user-${String(me._id).slice(-6)}`
+  let candidate = base
+  let n = 0
+  // ensure uniqueness without touching other users' slugs
+  // eslint-disable-next-line no-await-in-loop
+  while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
+    n += 1
+    candidate = `${base}-${n}`
+  }
+  $set.slug = candidate
+}
+
+
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" })
     }

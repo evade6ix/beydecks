@@ -6,6 +6,20 @@ import { body, validationResult } from "express-validator"
 import crypto from "crypto"
 import nodemailer from "nodemailer"
 
+const slugify = (s) =>
+  (s || "")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 60)
+
+const usernameOk = (s) => /^[a-zA-Z0-9_.]{3,24}$/.test(String(s || ""))
+
+
 const router = express.Router()
 const resetTokens = {}
 const JWT_SECRET = process.env.JWT_SECRET
@@ -13,38 +27,68 @@ const JWT_SECRET = process.env.JWT_SECRET
 export default (collections) => {
   const users = collections.users
 
-  router.post(
-    "/register",
-    body("username").notEmpty(),
-    body("email").isEmail(),
-    body("password").isLength({ min: 6 }),
-    async (req, res) => {
-      const errors = validationResult(req)
-      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
+  // --- Register (validates username, ensures uniqueness, and sets a unique slug) ---
+router.post(
+  "/register",
+  body("username").notEmpty(),
+  body("email").isEmail(),
+  body("password").isLength({ min: 6 }),
+  async (req, res) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
 
-      const { username, email, password } = req.body
-      const existing = await users.findOne({ email })
-      if (existing) return res.status(400).json({ error: "User already exists" })
+    const { username, email, password } = req.body
 
-      const passwordHash = await bcrypt.hash(password, 10)
-      const user = {
-        id: Date.now().toString(),
-        username,
-        email,
-        passwordHash,
-        profileImage: "",
-        tournamentsPlayed: [],
-        matchupHistory: [],
-        topCutCount: 0,
-        firsts: 0,
-        seconds: 0,
-        thirds: 0,
-      }
-
-      await users.insertOne(user)
-      res.status(201).json({ message: "Registered" })
+    // Username validation + uniqueness
+    if (!usernameOk(username)) {
+      return res.status(400).json({
+        error: "Username must be 3–24 chars: letters, numbers, underscores, dots.",
+      })
     }
-  )
+    const byUsername = await users.findOne({ username })
+    if (byUsername) return res.status(409).json({ error: "Username already taken" })
+
+    // Email uniqueness (kept as-is)
+    const byEmail = await users.findOne({ email })
+    if (byEmail) return res.status(400).json({ error: "User already exists" })
+
+    // Build a unique slug from username
+    const base = slugify(username) || `user-${Date.now().toString().slice(-6)}`
+    let candidate = base
+    let n = 0
+    // ensure slug uniqueness
+    // eslint-disable-next-line no-await-in-loop
+    while (await users.findOne({ slug: candidate })) {
+      n += 1
+      candidate = `${base}-${n}`
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10)
+
+    const user = {
+      id: Date.now().toString(),
+      username,
+      slug: candidate,          // 👈 ensure future users always have a slug
+      email,
+      passwordHash,
+      displayName: username,    // optional default
+      profileImage: "",
+      tournamentsPlayed: [],
+      matchupHistory: [],
+      topCutCount: 0,
+      firsts: 0,
+      seconds: 0,
+      thirds: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    await users.insertOne(user)
+    return res.status(201).json({ message: "Registered" })
+  }
+)
+
+  
 
   router.post("/login", async (req, res) => {
     const { email, password } = req.body

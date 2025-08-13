@@ -60,28 +60,40 @@ const startServer = async () => {
   async function ensureUserSlugIndex() {
     await users.createIndex({ slug: 1 }, { unique: true, sparse: true })
   }
+  async function ensureUserUsernameIndex() {
+  await users.createIndex({ username: 1 }, { unique: true, sparse: true })
+}
 
-  async function backfillUserSlugs() {
-    const cursor = users.find({ $or: [{ slug: { $exists: false } }, { slug: "" }] })
-    const toFix = await cursor.toArray()
-    for (const u of toFix) {
-      const base =
-        slugify(u.username) ||
-        slugify(u.displayName) ||
-        slugify(u.email?.split?.("@")?.[0]) ||
-        `user-${String(u._id).slice(-6)}`
-      let candidate = base || `user-${String(u._id).slice(-6)}`
-      let n = 0
-      // eslint-disable-next-line no-await-in-loop
-      while (await users.findOne({ slug: candidate, _id: { $ne: u._id } })) {
-        n += 1
-        candidate = `${base}-${n}`
-      }
-      await users.updateOne({ _id: u._id }, { $set: { slug: candidate } })
+
+async function backfillUserSlugs() {
+  const cursor = users.find({
+    $or: [
+      { slug: { $exists: false } },
+      { slug: null },
+      { slug: "" },
+    ],
+  })
+  const toFix = await cursor.toArray()
+  for (const u of toFix) {
+    const base =
+      slugify(u.username) ||
+      slugify(u.displayName) ||
+      slugify(u.email?.split?.("@")?.[0]) ||
+      `user-${String(u._id).slice(-6)}`
+    let candidate = base || `user-${String(u._id).slice(-6)}`
+    let n = 0
+    // eslint-disable-next-line no-await-in-loop
+    while (await users.findOne({ slug: candidate, _id: { $ne: u._id } })) {
+      n += 1
+      candidate = `${base}-${n}`
     }
+    await users.updateOne({ _id: u._id }, { $set: { slug: candidate } })
   }
+}
+
 
   await ensureUserSlugIndex()
+  await ensureUserUsernameIndex()
   await backfillUserSlugs()
 
   // ---------- Inline auth + PATCH /users/me shim (covers both prefixes) ----------
