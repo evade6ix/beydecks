@@ -13,22 +13,15 @@ type PlayerRow = {
   username?: string
   displayName?: string
   avatarDataUrl?: string
-
-  // server-side counters (ignored for display when tournamentsPlayed is present)
   firsts?: number
   seconds?: number
   thirds?: number
   topCutCount?: number
-
-  tournamentsCount?: number
-
-  tournamentsPlayed?: Array<{
-    eventId?: string | number | null
-    source?: string
-    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
-  }>
+  tournamentsCount?: number // fallback if provided by API
+  tournamentsPlayed?: Array<any> // for local length fallback
 }
 
+// UI helpers
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
   silver: "border-slate-300/40 text-slate-200 bg-slate-300/10",
@@ -46,7 +39,7 @@ export default function PlayerLeaderboard() {
   const [q, setQ] = useState("")
   const [sortKey, setSortKey] = useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
 
-  // pagination
+  // NEW: pagination
   const [page, setPage] = useState(1)
   const pageSize = 20
 
@@ -55,8 +48,9 @@ export default function PlayerLeaderboard() {
     setLoading(true)
     setError(null)
 
+    // Try dedicated endpoint if you add it. Fallback to /api/users if not found.
     const tryFetch = async () => {
-      // preferred pre-aggregated endpoint if you have it
+      // 1) preferred: pre-aggregated leaderboard from server (no hard cap)
       const res1 = await fetch(api("/api/users/leaderboard")).catch(() => null)
       if (res1 && res1.ok) {
         const data = await res1.json()
@@ -64,7 +58,7 @@ export default function PlayerLeaderboard() {
         return
       }
 
-      // fallback: all users
+      // 2) fallback: fetch all users and compute totals client-side
       const res2 = await fetch(api("/api/users")).catch(() => null)
       if (!res2 || !res2.ok) throw new Error("Failed to fetch users")
       const all = (await res2.json()) as PlayerRow[]
@@ -75,34 +69,22 @@ export default function PlayerLeaderboard() {
       .catch((e) => live && setError(e.message || "Failed to load leaderboard"))
       .finally(() => live && setLoading(false))
 
-    return () => { live = false }
+    return () => {
+      live = false
+    }
   }, [])
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
-
+    // derive totals if server didn’t send them
     const normalized = players.map((p) => {
-      const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
-
-      // mirror Profile.tsx: count by placement (manual/event both included)
-      let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
-      for (const t of tp) {
-        const place = t?.placement
-        if (place === "First Place") vFirsts++
-        else if (place === "Second Place") vSeconds++
-        else if (place === "Third Place") vThirds++
-        else if (place === "Top Cut") vTopCutsOnly++
-      }
-
-      const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
-
+      const total =
+        p.tournamentsCount ??
+        (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
+        (Number(p.firsts || 0) + Number(p.seconds || 0) + Number(p.thirds || 0) + Number(p.topCutCount || 0))
       return {
         ...p,
-        _firsts: vFirsts,
-        _seconds: vSeconds,
-        _thirds: vThirds,
-        _topcutsOnly: vTopCutsOnly,
-        _results: vResults,
+        _total: total,
         _name: (p.username && p.username.trim()) || p.displayName || p.slug,
       }
     })
@@ -112,17 +94,17 @@ export default function PlayerLeaderboard() {
       : normalized
 
     const sorter = (a: any, b: any) => {
-      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
-      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
-      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
-      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
-      return b._results - a._results || b._firsts - a._firsts
+      if (sortKey === "firsts") return (b.firsts || 0) - (a.firsts || 0) || b._total - a._total
+      if (sortKey === "seconds") return (b.seconds || 0) - (a.seconds || 0) || b._total - a._total
+      if (sortKey === "thirds") return (b.thirds || 0) - (a.thirds || 0) || b._total - a._total
+      if (sortKey === "topcuts") return (b.topCutCount || 0) - (a.topCutCount || 0) || b._total - a._total
+      return b._total - a._total || (b.firsts || 0) - (a.firsts || 0)
     }
 
     return filtered.sort(sorter)
   }, [players, q, sortKey])
 
-  // page slice
+  // NEW: page slicing
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const pageClamped = Math.min(page, totalPages)
   const pagedRows = rows.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
@@ -152,24 +134,25 @@ export default function PlayerLeaderboard() {
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-white/60" />
               <input
                 value={q}
-                onChange={(e) => { setQ(e.target.value); setPage(1) }}
+                onChange={(e) => { setQ(e.target.value); setPage(1) }}  // reset page on search
                 placeholder="Search player…"
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
             </div>
             {/* sort */}
             <select
-              value={sortKey}
-              onChange={(e) => { setSortKey(e.target.value as typeof sortKey); setPage(1) }}
-              className="rounded-xl bg-white/10 px-3 py-2 text-sm border border-white/10 focus:border-indigo-400/60"
-              aria-label="Sort by"
-            >
-              <option value="total">Total</option>
-              <option value="firsts">Firsts</option>
-              <option value="seconds">Seconds</option>
-              <option value="thirds">Thirds</option>
-              <option value="topcuts">Top Cuts</option>
-            </select>
+  value={sortKey}
+  onChange={(e) => { setSortKey(e.target.value as typeof sortKey); setPage(1) }}
+  className="rounded-xl bg-white/10 px-3 py-2 text-sm border border-white/10 focus:border-indigo-400/60"
+  aria-label="Sort by"
+>
+  <option value="total">Total</option>
+  <option value="firsts">Firsts</option>
+  <option value="seconds">Seconds</option>
+  <option value="thirds">Thirds</option>
+  <option value="topcuts">Top Cuts</option>
+</select>
+
           </div>
         </div>
       </motion.div>
@@ -177,6 +160,7 @@ export default function PlayerLeaderboard() {
       {/* LIST */}
       <div className="mt-5 space-y-3">
         {loading ? (
+          // skeletons
           Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className={`h-[86px] ${shimmer}`} />
           ))
@@ -227,13 +211,12 @@ export default function PlayerLeaderboard() {
 
 function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
-  const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
-
-  const total = p._results ?? 0
-  const firsts = p._firsts ?? 0
-  const seconds = p._seconds ?? 0
-  const thirds = p._thirds ?? 0
-  const topCutsOnly = p._topcutsOnly ?? 0
+  const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#" // guard just in case
+  const total =
+    p._total ??
+    p.tournamentsCount ??
+    (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
+    (Number(p.firsts || 0) + Number(p.seconds || 0) + Number(p.thirds || 0) + Number(p.topCutCount || 0))
 
   const rankTone =
     rank === 1
@@ -279,10 +262,10 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
 
         {/* Right-side stat pills */}
         <div className="ml-auto grid grid-cols-2 md:flex md:flex-row gap-2">
-          <Pill tone="gold" icon={<Crown className="h-4 w-4" />} value={firsts} label="Champion" />
-          <Pill tone="silver" icon={<Medal className="h-4 w-4" />} value={seconds} label="Second" />
-          <Pill tone="bronze" icon={<Medal className="h-4 w-4" />} value={thirds} label="Third" />
-          <Pill tone="indigo" icon={<Trophy className="h-4 w-4" />} value={topCutsOnly} label="Top Cuts" />
+          <Pill tone="gold" icon={<Crown className="h-4 w-4" />} value={p.firsts || 0} label="Champion" />
+          <Pill tone="silver" icon={<Medal className="h-4 w-4" />} value={p.seconds || 0} label="Second" />
+          <Pill tone="bronze" icon={<Medal className="h-4 w-4" />} value={p.thirds || 0} label="Third" />
+          <Pill tone="indigo" icon={<Trophy className="h-4 w-4" />} value={p.topCutCount || 0} label="Top Cuts" />
         </div>
       </div>
     </motion.div>
