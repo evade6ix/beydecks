@@ -14,16 +14,14 @@ type PlayerRow = {
   displayName?: string
   avatarDataUrl?: string
 
-  // server-side counters (we'll ignore for display if tournamentsPlayed is present)
+  // server-side counters (ignored for display when tournamentsPlayed is present)
   firsts?: number
   seconds?: number
   thirds?: number
   topCutCount?: number
 
-  // sometimes a server total (ignored for display now)
   tournamentsCount?: number
 
-  // we will derive view-only counts from here (event-backed only)
   tournamentsPlayed?: Array<{
     eventId?: string | number | null
     source?: string
@@ -31,7 +29,6 @@ type PlayerRow = {
   }>
 }
 
-// UI helpers
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
   silver: "border-slate-300/40 text-slate-200 bg-slate-300/10",
@@ -59,6 +56,7 @@ export default function PlayerLeaderboard() {
     setError(null)
 
     const tryFetch = async () => {
+      // preferred pre-aggregated endpoint if you have it
       const res1 = await fetch(api("/api/users/leaderboard")).catch(() => null)
       if (res1 && res1.ok) {
         const data = await res1.json()
@@ -66,6 +64,7 @@ export default function PlayerLeaderboard() {
         return
       }
 
+      // fallback: all users
       const res2 = await fetch(api("/api/users")).catch(() => null)
       if (!res2 || !res2.ok) throw new Error("Failed to fetch users")
       const all = (await res2.json()) as PlayerRow[]
@@ -80,50 +79,50 @@ export default function PlayerLeaderboard() {
   }, [])
 
   const rows = useMemo(() => {
-  const needle = q.trim().toLowerCase()
+    const needle = q.trim().toLowerCase()
 
-  const normalized = players.map((p) => {
-    const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
+    const normalized = players.map((p) => {
+      const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
 
-    // mirror Profile.tsx behavior
-    let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
-    for (const t of tp) {
-      if (!t) continue
-      if (t.placement === "First Place") vFirsts++
-      else if (t.placement === "Second Place") vSeconds++
-      else if (t.placement === "Third Place") vThirds++
-      else if (t.placement === "Top Cut") vTopCutsOnly++
+      // mirror Profile.tsx: count by placement (manual/event both included)
+      let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
+      for (const t of tp) {
+        const place = t?.placement
+        if (place === "First Place") vFirsts++
+        else if (place === "Second Place") vSeconds++
+        else if (place === "Third Place") vThirds++
+        else if (place === "Top Cut") vTopCutsOnly++
+      }
+
+      const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+
+      return {
+        ...p,
+        _firsts: vFirsts,
+        _seconds: vSeconds,
+        _thirds: vThirds,
+        _topcutsOnly: vTopCutsOnly,
+        _results: vResults,
+        _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+      }
+    })
+
+    const filtered = needle
+      ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
+      : normalized
+
+    const sorter = (a: any, b: any) => {
+      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
+      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
+      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
+      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
+      return b._results - a._results || b._firsts - a._firsts
     }
 
-    const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+    return filtered.sort(sorter)
+  }, [players, q, sortKey])
 
-    return {
-      ...p,
-      _firsts: vFirsts,
-      _seconds: vSeconds,
-      _thirds: vThirds,
-      _topcutsOnly: vTopCutsOnly,
-      _results: vResults,
-      _name: (p.username && p.username.trim()) || p.displayName || p.slug,
-    }
-  })
-
-  const filtered = needle
-    ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
-    : normalized
-
-  const sorter = (a: any, b: any) => {
-    if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
-    if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
-    if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
-    if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
-    return b._results - a._results || b._firsts - a._firsts
-  }
-
-  return filtered.sort(sorter)
-}, [players, q, sortKey])
-
-
+  // page slice
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const pageClamped = Math.min(page, totalPages)
   const pagedRows = rows.slice((pageClamped - 1) * pageSize, pageClamped * pageSize)
@@ -230,7 +229,6 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
   const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
 
-  // use derived view-only numbers
   const total = p._results ?? 0
   const firsts = p._firsts ?? 0
   const seconds = p._seconds ?? 0
