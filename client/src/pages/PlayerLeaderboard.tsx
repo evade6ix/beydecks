@@ -13,12 +13,20 @@ type PlayerRow = {
   username?: string
   displayName?: string
   avatarDataUrl?: string
+
+  // server-provided counters (fallbacks)
   firsts?: number
   seconds?: number
   thirds?: number
   topCutCount?: number
-  tournamentsCount?: number // fallback if provided by API
-  tournamentsPlayed?: Array<any> // for local length fallback
+  tournamentsCount?: number
+
+  // client can derive from this when present
+  tournamentsPlayed?: Array<{
+    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
+    eventId?: string | number | null
+    source?: string
+  }>
 }
 
 // UI helpers
@@ -72,16 +80,44 @@ export default function PlayerLeaderboard() {
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    // derive totals if server didn’t send them
+
     const normalized = players.map((p) => {
-      const total =
-        p.tournamentsCount ??
-        (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
-        (Number(p.firsts || 0) + Number(p.seconds || 0) + Number(p.thirds || 0) + Number(p.topCutCount || 0))
+      const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
+
+      // Derive from tournamentsPlayed when present (mirrors Profile logic)
+      let vFirsts = 0,
+        vSeconds = 0,
+        vThirds = 0,
+        vTopCutsOnly = 0
+      for (const t of tp) {
+        const place = t?.placement
+        if (place === "First Place") vFirsts++
+        else if (place === "Second Place") vSeconds++
+        else if (place === "Third Place") vThirds++
+        else if (place === "Top Cut") vTopCutsOnly++
+      }
+
+      // If tournamentsPlayed missing, fall back to server counters
+      const dFirsts = tp.length ? vFirsts : Number(p.firsts || 0)
+      const dSeconds = tp.length ? vSeconds : Number(p.seconds || 0)
+      const dThirds = tp.length ? vThirds : Number(p.thirds || 0)
+      const dTopCutsOnly = tp.length ? vTopCutsOnly : Number(p.topCutCount || 0)
+
+      const dResults = dFirsts + dSeconds + dThirds + dTopCutsOnly
+
       return {
         ...p,
-        _total: total,
+        _firsts: dFirsts,
+        _seconds: dSeconds,
+        _thirds: dThirds,
+        _topCutsOnly: dTopCutsOnly,
+        _results: dResults,
         _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+        // keep a generic total for legacy sort fallback
+        _total:
+          p.tournamentsCount ??
+          (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
+          dResults,
       }
     })
 
@@ -90,11 +126,12 @@ export default function PlayerLeaderboard() {
       : normalized
 
     const sorter = (a: any, b: any) => {
-      if (sortKey === "firsts") return (b.firsts || 0) - (a.firsts || 0) || b._total - a._total
-      if (sortKey === "seconds") return (b.seconds || 0) - (a.seconds || 0) || b._total - a._total
-      if (sortKey === "thirds") return (b.thirds || 0) - (a.thirds || 0) || b._total - a._total
-      if (sortKey === "topcuts") return (b.topCutCount || 0) - (a.topCutCount || 0) || b._total - a._total
-      return b._total - a._total || (b.firsts || 0) - (a.firsts || 0)
+      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
+      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
+      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
+      if (sortKey === "topcuts") return b._topCutsOnly - a._topCutsOnly || b._results - a._results
+      // "total" = our derived results
+      return b._results - a._results || b._firsts - a._firsts
     }
 
     return filtered.sort(sorter)
@@ -114,9 +151,7 @@ export default function PlayerLeaderboard() {
               <Sparkles className="h-6 w-6 text-indigo-300" />
               Player Leaderboard
             </h1>
-            <p className="mt-1 text-white/80">
-              Ranked by total tournament results (Top Cut + Podium).
-            </p>
+            <p className="mt-1 text-white/80">Ranked by total tournament results (Top Cut + Podium).</p>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -130,7 +165,7 @@ export default function PlayerLeaderboard() {
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
             </div>
-            {/* sort */}
+            {/* sort (cycle button) */}
             <button
               onClick={() => {
                 const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
@@ -154,17 +189,13 @@ export default function PlayerLeaderboard() {
       <div className="mt-5 space-y-3">
         {loading ? (
           // skeletons
-          Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className={`h-[86px] ${shimmer}`} />
-          ))
+          Array.from({ length: 8 }).map((_, i) => <div key={i} className={`h-[86px] ${shimmer}`} />)
         ) : error ? (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">
             Failed to load leaderboard.
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-            No players found.
-          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">No players found.</div>
         ) : (
           rows.map((p, idx) => <LeaderboardRow key={p.slug || idx} rank={idx + 1} p={p} />)
         )}
@@ -176,11 +207,11 @@ export default function PlayerLeaderboard() {
 function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
   const sharePath = `/u/${encodeURIComponent(p.slug)}`
-  const total =
-    p._total ??
-    p.tournamentsCount ??
-    (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
-    (Number(p.firsts || 0) + Number(p.seconds || 0) + Number(p.thirds || 0) + Number(p.topCutCount || 0))
+  const total = p._results ?? 0
+  const firsts = p._firsts ?? 0
+  const seconds = p._seconds ?? 0
+  const thirds = p._thirds ?? 0
+  const topCutsOnly = p._topCutsOnly ?? 0
 
   const rankTone =
     rank === 1
@@ -211,7 +242,7 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
             alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
-        />
+          />
 
           <div className="min-w-0">
             <div className="truncate text-lg md:text-xl font-semibold group-hover:text-indigo-200">
@@ -226,10 +257,10 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
 
         {/* Right-side stat pills */}
         <div className="ml-auto grid grid-cols-2 md:flex md:flex-row gap-2">
-          <Pill tone="gold" icon={<Crown className="h-4 w-4" />} value={p.firsts || 0} label="Champion" />
-          <Pill tone="silver" icon={<Medal className="h-4 w-4" />} value={p.seconds || 0} label="Second" />
-          <Pill tone="bronze" icon={<Medal className="h-4 w-4" />} value={p.thirds || 0} label="Third" />
-          <Pill tone="indigo" icon={<Trophy className="h-4 w-4" />} value={p.topCutCount || 0} label="Top Cuts" />
+          <Pill tone="gold" icon={<Crown className="h-4 w-4" />} value={firsts} label="Champion" />
+          <Pill tone="silver" icon={<Medal className="h-4 w-4" />} value={seconds} label="Second" />
+          <Pill tone="bronze" icon={<Medal className="h-4 w-4" />} value={thirds} label="Third" />
+          <Pill tone="indigo" icon={<Trophy className="h-4 w-4" />} value={topCutsOnly} label="Top Cuts" />
         </div>
       </div>
     </motion.div>
@@ -255,4 +286,3 @@ function Pill({
     </div>
   )
 }
-
