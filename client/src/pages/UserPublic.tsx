@@ -122,18 +122,31 @@ export default function UserPublic() {
 
   const shareUrl = `${window.location.origin}/u/${u.slug}`
 
-  const tournaments =
-    Array.isArray(u.tournamentsPlayed)
-      ? [...u.tournamentsPlayed]
-          .filter(Boolean)
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      : []
+// 1) Start from tournamentsPlayed, sort, then FILTER to only curated rows
+//    (heuristics: must have a real placement AND positive player count OR an explicit eventId)
+const tournamentsRaw =
+  Array.isArray(u.tournamentsPlayed)
+    ? [...u.tournamentsPlayed]
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    : []
 
-  const tournamentsCount = u.stats?.tournamentsCount ?? tournaments.length
-  const firsts = u.firsts ?? 0
-  const seconds = u.seconds ?? 0
-  const thirds = u.thirds ?? 0
-  const topCuts = tournaments.filter((t) => t.placement === "Top Cut").length
+const isCurated = (t: TournamentEntry | any) => {
+  const placementOK = ["First Place", "Second Place", "Third Place", "Top Cut"].includes(t?.placement)
+  const hasPlayers = typeof t?.totalPlayers === "number" && t.totalPlayers > 0
+  const hasEventId = Boolean(t?.eventId || t?.id) // if your new entries always carry an event id
+  return (placementOK && hasPlayers) || hasEventId
+}
+
+const tournaments = tournamentsRaw.filter(isCurated)
+
+// 2) Derive ALL counters from the filtered list
+const tournamentsCount = tournaments.length
+const firsts  = tournaments.filter(t => t.placement === "First Place").length
+const seconds = tournaments.filter(t => t.placement === "Second Place").length
+const thirds  = tournaments.filter(t => t.placement === "Third Place").length
+const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
+
 
   // Performance snapshot (right column)
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
