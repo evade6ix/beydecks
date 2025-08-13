@@ -14,18 +14,16 @@ type PlayerRow = {
   displayName?: string
   avatarDataUrl?: string
 
-  // server-provided counters (fallbacks)
+  // server-provided counters (may be misleading for top cuts)
   firsts?: number
   seconds?: number
   thirds?: number
   topCutCount?: number
-  tournamentsCount?: number
 
-  // client can derive from this when present
+  tournamentsCount?: number
   tournamentsPlayed?: Array<{
-    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
     eventId?: string | number | null
-    source?: string
+    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
   }>
 }
 
@@ -45,14 +43,14 @@ export default function PlayerLeaderboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState("")
-  const [sortKey, setSortKey] = useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
+  const [sortKey, setSortKey] =
+    useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
 
   useEffect(() => {
     let live = true
     setLoading(true)
     setError(null)
 
-    // Try dedicated endpoint if you add it (below). Fallback to /api/users if not found.
     const tryFetch = async () => {
       // 1) preferred: pre-aggregated leaderboard from server
       const res1 = await fetch(api("/api/users/leaderboard?limit=200")).catch(() => null)
@@ -62,7 +60,7 @@ export default function PlayerLeaderboard() {
         return
       }
 
-      // 2) fallback: fetch all users and compute totals client-side
+      // 2) fallback: fetch all users
       const res2 = await fetch(api("/api/users")).catch(() => null)
       if (!res2 || !res2.ok) throw new Error("Failed to fetch users")
       const all = (await res2.json()) as PlayerRow[]
@@ -73,9 +71,7 @@ export default function PlayerLeaderboard() {
       .catch((e) => live && setError(e.message || "Failed to load leaderboard"))
       .finally(() => live && setLoading(false))
 
-    return () => {
-      live = false
-    }
+    return () => { live = false }
   }, [])
 
   const rows = useMemo(() => {
@@ -84,40 +80,46 @@ export default function PlayerLeaderboard() {
     const normalized = players.map((p) => {
       const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
 
-      // Derive from tournamentsPlayed when present (mirrors Profile logic)
-      let vFirsts = 0,
-        vSeconds = 0,
-        vThirds = 0,
-        vTopCutsOnly = 0
-      for (const t of tp) {
-        const place = t?.placement
-        if (place === "First Place") vFirsts++
-        else if (place === "Second Place") vSeconds++
-        else if (place === "Third Place") vThirds++
-        else if (place === "Top Cut") vTopCutsOnly++
+      // If we have tournamentsPlayed, derive exactly like Profile.tsx
+      if (tp.length > 0) {
+        let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
+        for (const t of tp) {
+          if (!t) continue
+          if (t.placement === "First Place") vFirsts++
+          else if (t.placement === "Second Place") vSeconds++
+          else if (t.placement === "Third Place") vThirds++
+          else if (t.placement === "Top Cut") vTopCutsOnly++
+        }
+        const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+        return {
+          ...p,
+          _firsts: vFirsts,
+          _seconds: vSeconds,
+          _thirds: vThirds,
+          _topcutsOnly: vTopCutsOnly,
+          _results: vResults,
+          _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+        }
       }
 
-      // If tournamentsPlayed missing, fall back to server counters
-      const dFirsts = tp.length ? vFirsts : Number(p.firsts || 0)
-      const dSeconds = tp.length ? vSeconds : Number(p.seconds || 0)
-      const dThirds = tp.length ? vThirds : Number(p.thirds || 0)
-      const dTopCutsOnly = tp.length ? vTopCutsOnly : Number(p.topCutCount || 0)
+      // Fallback: no tournamentsPlayed available; use server counters
+      const sFirsts = Number(p.firsts || 0)
+      const sSeconds = Number(p.seconds || 0)
+      const sThirds = Number(p.thirds || 0)
+      const sTopCutCount = Number(p.topCutCount || 0)
 
-      const dResults = dFirsts + dSeconds + dThirds + dTopCutsOnly
+      // Server topCutCount often includes podiums; remove them to get Top Cut (not top 3)
+      const sTopCutsOnly = Math.max(0, sTopCutCount - (sFirsts + sSeconds + sThirds))
+      const sResults = sFirsts + sSeconds + sThirds + sTopCutsOnly
 
       return {
         ...p,
-        _firsts: dFirsts,
-        _seconds: dSeconds,
-        _thirds: dThirds,
-        _topCutsOnly: dTopCutsOnly,
-        _results: dResults,
+        _firsts: sFirsts,
+        _seconds: sSeconds,
+        _thirds: sThirds,
+        _topcutsOnly: sTopCutsOnly,
+        _results: sResults,
         _name: (p.username && p.username.trim()) || p.displayName || p.slug,
-        // keep a generic total for legacy sort fallback
-        _total:
-          p.tournamentsCount ??
-          (Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed.length : 0) ??
-          dResults,
       }
     })
 
@@ -129,8 +131,7 @@ export default function PlayerLeaderboard() {
       if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
       if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
       if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
-      if (sortKey === "topcuts") return b._topCutsOnly - a._topCutsOnly || b._results - a._results
-      // "total" = our derived results
+      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
       return b._results - a._results || b._firsts - a._firsts
     }
 
@@ -151,7 +152,9 @@ export default function PlayerLeaderboard() {
               <Sparkles className="h-6 w-6 text-indigo-300" />
               Player Leaderboard
             </h1>
-            <p className="mt-1 text-white/80">Ranked by total tournament results (Top Cut + Podium).</p>
+            <p className="mt-1 text-white/80">
+              Ranked by total tournament results (Top Cut + Podium).
+            </p>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -165,7 +168,7 @@ export default function PlayerLeaderboard() {
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
             </div>
-            {/* sort (cycle button) */}
+            {/* sort (cycle) */}
             <button
               onClick={() => {
                 const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
@@ -175,10 +178,7 @@ export default function PlayerLeaderboard() {
               className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20 border border-white/10"
               title="Change sort"
             >
-              Sort:{" "}
-              <span className="font-semibold capitalize">
-                {sortKey === "total" ? "Total" : sortKey}
-              </span>
+              Sort: <span className="font-semibold capitalize">{sortKey === "total" ? "Total" : sortKey}</span>
               <ChevronDown className="h-4 w-4" />
             </button>
           </div>
@@ -188,14 +188,17 @@ export default function PlayerLeaderboard() {
       {/* LIST */}
       <div className="mt-5 space-y-3">
         {loading ? (
-          // skeletons
-          Array.from({ length: 8 }).map((_, i) => <div key={i} className={`h-[86px] ${shimmer}`} />)
+          Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className={`h-[86px] ${shimmer}`} />
+          ))
         ) : error ? (
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">
             Failed to load leaderboard.
           </div>
         ) : rows.length === 0 ? (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">No players found.</div>
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+            No players found.
+          </div>
         ) : (
           rows.map((p, idx) => <LeaderboardRow key={p.slug || idx} rank={idx + 1} p={p} />)
         )}
@@ -206,12 +209,14 @@ export default function PlayerLeaderboard() {
 
 function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
-  const sharePath = `/u/${encodeURIComponent(p.slug)}`
+  const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
+
+  // use derived view-only numbers
   const total = p._results ?? 0
   const firsts = p._firsts ?? 0
   const seconds = p._seconds ?? 0
   const thirds = p._thirds ?? 0
-  const topCutsOnly = p._topCutsOnly ?? 0
+  const topCutsOnly = p._topcutsOnly ?? 0
 
   const rankTone =
     rank === 1
