@@ -46,6 +46,10 @@ export default function PlayerLeaderboard() {
   const [sortKey, setSortKey] =
     useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
 
+  // NEW: pagination
+  const PAGE_SIZE = 20
+  const [page, setPage] = useState(1)
+
   useEffect(() => {
     let live = true
     setLoading(true)
@@ -73,6 +77,9 @@ export default function PlayerLeaderboard() {
 
     return () => { live = false }
   }, [])
+
+  // Reset to first page when filters/sorts change
+  useEffect(() => { setPage(1) }, [q, sortKey])
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
@@ -138,6 +145,13 @@ export default function PlayerLeaderboard() {
     return filtered.sort(sorter)
   }, [players, q, sortKey])
 
+  // --- paginate AFTER filtering/sorting ---
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return rows.slice(start, start + PAGE_SIZE)
+  }, [rows, page])
+
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       {/* HERO */}
@@ -200,7 +214,23 @@ export default function PlayerLeaderboard() {
             No players found.
           </div>
         ) : (
-          rows.map((p, idx) => <LeaderboardRow key={p.slug || idx} rank={idx + 1} p={p} />)
+          <>
+            {pageRows.map((p, idx) => (
+              <LeaderboardRow
+                key={p.slug || idx}
+                rank={(page - 1) * PAGE_SIZE + idx + 1}  // global rank number
+                p={p}
+              />
+            ))}
+
+            {/* Pagination footer */}
+            <div className="mt-4 flex items-center justify-between gap-2">
+              <div className="text-xs text-white/60">
+                Page {page} of {totalPages} · Showing {Math.min(rows.length, page * PAGE_SIZE)} of {rows.length} players
+              </div>
+              <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -288,6 +318,62 @@ function Pill({
       {icon}
       <span className="text-xs md:text-sm">{label}</span>
       <span className="ml-1 text-sm md:text-base font-semibold">{value}</span>
+    </div>
+  )
+}
+
+/* ---------- Pagination ---------- */
+function Pagination({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number
+  totalPages: number
+  onChange: (p: number) => void
+}) {
+  // Build compact page list: 1 … (p-1) p (p+1) … last
+  const pages: (number | "...")[] = []
+  const push = (v: number | "...") => pages.push(v)
+  const clamp = (n: number) => Math.max(1, Math.min(totalPages, n))
+
+  const addRange = (s: number, e: number) => {
+    for (let i = s; i <= e; i++) push(i)
+  }
+
+  push(1)
+  if (page > 3) push("...")
+  addRange(Math.max(2, page - 1), Math.min(totalPages - 1, page + 1))
+  if (page < totalPages - 2) push("...")
+  if (totalPages > 1) push(totalPages)
+
+  const btnBase =
+    "h-9 min-w-9 px-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm disabled:opacity-40 disabled:pointer-events-none"
+
+  return (
+    <div className="flex items-center gap-2">
+      <button className={btnBase} disabled={page === 1} onClick={() => onChange(clamp(page - 1))}>
+        Prev
+      </button>
+
+      {pages.map((p, i) =>
+        p === "..." ? (
+          <span key={`e-${i}`} className="px-2 text-white/50 select-none">…</span>
+        ) : (
+          <button
+            key={p}
+            onClick={() => onChange(p)}
+            className={`${btnBase} ${p === page ? "bg-indigo-600/90 hover:bg-indigo-500 border-indigo-500/50 text-white" : ""}`}
+            aria-current={p === page ? "page" : undefined}
+          >
+            {p}
+          </button>
+        )
+      )}
+
+      <button className={btnBase} disabled={page === totalPages} onClick={() => onChange(clamp(page + 1))}>
+        Next
+      </button>
     </div>
   )
 }
