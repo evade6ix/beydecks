@@ -34,6 +34,7 @@ type TournamentEntry = {
   roundWins: number
   roundLosses: number
   placement: string
+  eventId?: string | number // curated rows have this
 }
 
 type PublicUser = {
@@ -45,7 +46,7 @@ type PublicUser = {
   bio?: string
   homeStore?: string
   ownedParts?: OwnedParts
-  // NEW: prefer these top-level arrays provided by Mongo
+  // Prefer top-level arrays provided by Mongo
   blades?: string[]
   assistBlades?: string[]
   ratchets?: string[]
@@ -79,16 +80,11 @@ export default function UserPublic() {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
       })
-      .then((data) => {
-        if (!mounted) return
-        setU(data)
-      })
+      .then((data) => { if (mounted) setU(data) })
       .catch((e) => mounted && setError(e?.message || "Failed to load profile"))
       .finally(() => mounted && setLoading(false))
 
-    return () => {
-      mounted = false
-    }
+    return () => { mounted = false }
   }, [slug])
 
   if (loading) {
@@ -122,33 +118,24 @@ export default function UserPublic() {
 
   const shareUrl = `${window.location.origin}/u/${u.slug}`
 
-// 1) Start from tournamentsPlayed, sort, then FILTER to only curated rows
-//    (heuristics: must have a real placement AND positive player count OR an explicit eventId)
-const tournamentsRaw =
-  Array.isArray(u.tournamentsPlayed)
-    ? [...u.tournamentsPlayed]
-        .filter(Boolean)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    : []
+  // ── Tournaments: use ONLY curated rows (must have eventId) ────────────────────
+  const tournamentsRaw =
+    Array.isArray(u.tournamentsPlayed)
+      ? [...u.tournamentsPlayed]
+          .filter(Boolean)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      : []
 
-const isCurated = (t: TournamentEntry | any) => {
-  const placementOK = ["First Place", "Second Place", "Third Place", "Top Cut"].includes(t?.placement)
-  const hasPlayers = typeof t?.totalPlayers === "number" && t.totalPlayers > 0
-  const hasEventId = Boolean(t?.eventId || t?.id) // if your new entries always carry an event id
-  return (placementOK && hasPlayers) || hasEventId
-}
+  const tournaments = tournamentsRaw.filter((t) => Boolean((t as TournamentEntry).eventId))
 
-const tournaments = tournamentsRaw.filter(isCurated)
+  // All counters derived from the filtered list
+  const tournamentsCount = tournaments.length
+  const firsts  = tournaments.filter(t => t.placement === "First Place").length
+  const seconds = tournaments.filter(t => t.placement === "Second Place").length
+  const thirds  = tournaments.filter(t => t.placement === "Third Place").length
+  const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
 
-// 2) Derive ALL counters from the filtered list
-const tournamentsCount = tournaments.length
-const firsts  = tournaments.filter(t => t.placement === "First Place").length
-const seconds = tournaments.filter(t => t.placement === "Second Place").length
-const thirds  = tournaments.filter(t => t.placement === "Third Place").length
-const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
-
-
-  // Performance snapshot (right column)
+  // Performance snapshot
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
   const totalLosses = tournaments.reduce((a, t) => a + (t.roundLosses || 0), 0)
   const totalMatches = totalWins + totalLosses
@@ -187,7 +174,6 @@ const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
                 <h1 className="truncate text-2xl md:text-3xl font-bold tracking-tight">{nameForDisplay}</h1>
-                {/* Removed the '@username' subline to show username only */}
               </div>
               <button
                 onClick={() => navigator.clipboard.writeText(shareUrl).catch(() => {})}
@@ -249,7 +235,7 @@ const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
             ) : (
               <ul className="divide-y divide-white/10">
                 {tournaments.slice(0, 8).map((t, i) => {
-                  const eventId = (t as any).eventId ?? (t as any).id
+                  const eventId = (t as TournamentEntry).eventId
 
                   const row = (
                     <div className="py-3 flex items-start justify-between gap-3">
