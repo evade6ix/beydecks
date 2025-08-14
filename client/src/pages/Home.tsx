@@ -516,7 +516,7 @@ setLeaders(derived)
                   ? <>Welcome back <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">{username}</span></>
                   : <>Welcome to <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">MetaBeys</span></>}
               </h1>
-              <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and shop highlights.</p>
+              <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and player leaderboards.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Link to="/events" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
