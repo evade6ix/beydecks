@@ -27,6 +27,15 @@ type PlayerRow = {
   }>
 }
 
+const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "thirds" | "topcuts" }[] = [
+  { label: "Total",  value: "total" },
+  { label: "Firsts", value: "firsts" },
+  { label: "Seconds", value: "seconds" },
+  { label: "Thirds", value: "thirds" },
+  { label: "Top Cuts", value: "topcuts" },
+]
+
+
 // UI helpers
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
@@ -182,19 +191,22 @@ export default function PlayerLeaderboard() {
                 className="w-full sm:w-64 rounded-xl bg-white/10 pl-9 pr-3 py-2 outline-none border border-white/10 focus:border-indigo-400/60"
               />
             </div>
-            {/* sort (cycle) */}
-            <button
-              onClick={() => {
-                const order: typeof sortKey[] = ["total", "firsts", "seconds", "thirds", "topcuts"]
-                const next = order[(order.indexOf(sortKey) + 1) % order.length]
-                setSortKey(next)
-              }}
-              className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-sm hover:bg-white/20 border border-white/10"
-              title="Change sort"
-            >
-              Sort: <span className="font-semibold capitalize">{sortKey === "total" ? "Total" : sortKey}</span>
-              <ChevronDown className="h-4 w-4" />
-            </button>
+            {/* sort (dropdown) */}
+<div className="relative">
+  <label className="sr-only" htmlFor="sortBy">Sort</label>
+  <select
+    id="sortBy"
+    value={sortKey}
+    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+    className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
+  >
+    {SORT_OPTIONS.map(o => (
+      <option key={o.value} value={o.value}>{o.label}</option>
+    ))}
+  </select>
+  <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
+</div>
+
           </div>
         </div>
       </motion.div>
