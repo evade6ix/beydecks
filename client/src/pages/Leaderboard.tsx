@@ -67,13 +67,15 @@ function windowStartFor(tf: Timeframe, now = new Date()) {
 }
 
 // ---------- Detail linking helpers ----------
+// ---------- Detail linking helpers ----------
 const ROUTES = {
-  blade: "/blade",
-  assist: "/assist",
-  ratchet: "/ratchet",
-  bit: "/bit",
+  blade: "/blades", 
+  assist: "/assist-blades",  
+  ratchet: "/ratchets",     
+  bit: "/bits",           
   leaderboard: "/leaderboard",
 } as const
+
 
 const enc = (s: string) => encodeURIComponent(s || "")
 
