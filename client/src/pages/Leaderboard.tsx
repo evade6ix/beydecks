@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Link, useSearchParams } from "react-router-dom"
+import { Link, useSearchParams, useNavigate } from "react-router-dom" // ← added useNavigate
 import { Helmet } from "react-helmet-async"
 import {
   BarChart3,
@@ -66,9 +66,45 @@ function windowStartFor(tf: Timeframe, now = new Date()) {
   return new Date(0)
 }
 
+// ---------- Detail linking helpers ----------
+const ROUTES = {
+  blade: "/blade",
+  assist: "/assist",
+  ratchet: "/ratchet",
+  bit: "/bit",
+  leaderboard: "/leaderboard",
+} as const
+
+const enc = (s: string) => encodeURIComponent(s || "")
+
+/** Build href for a row, based on current tab (kind) and the row.key */
+function hrefFor(kind: PartKind, rowKey: string): string {
+  if (kind === "combo") {
+    // rowKey format: "blade|||ratchet|||bit|||assist?"
+    const [b, r, t, a] = (rowKey || "").split("|||")
+    const qs = new URLSearchParams({
+      kind: "combo",
+      blade: b || "",
+      ratchet: r || "",
+      bit: t || "",
+    })
+    if (a) qs.set("assist", a)
+    return `${ROUTES.leaderboard}?${qs.toString()}`
+  }
+
+  const base =
+    kind === "blade"  ? ROUTES.blade  :
+    kind === "assist" ? ROUTES.assist :
+    kind === "ratchet"? ROUTES.ratchet:
+                        ROUTES.bit
+
+  return `${base}/${enc(rowKey)}`
+}
+
 // ---------- Page ----------
 export default function Leaderboard() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate() // ← for row click
 
   // deep-link filters for combo view
   const bladeFilter = searchParams.get("blade") || ""
@@ -258,33 +294,30 @@ export default function Leaderboard() {
     })
   }, [rows, kind, bladeFilter, assistFilter, ratchetFilter, bitFilter])
 
-  // ---------- Search (contains; assist included for combos) ----------
   // ---------- Search (predictive in combo; exact when there's a full match) ----------
-const filteredRows = useMemo(() => {
-  const q = norm(query)
-  if (!q) return rowsWithPartFilter
+  const filteredRows = useMemo(() => {
+    const q = norm(query)
+    if (!q) return rowsWithPartFilter
 
-  return rowsWithPartFilter.filter(r => {
-    if (kind !== "combo") {
-      // non-combo tabs keep partial/contains
-      const hay = norm(`${r.primary} ${r.secondary || ""} ${r.assist || ""}`)
-      return hay.includes(q)
-    }
+    return rowsWithPartFilter.filter(r => {
+      if (kind !== "combo") {
+        // non-combo tabs keep partial/contains
+        const hay = norm(`${r.primary} ${r.secondary || ""} ${r.assist || ""}`)
+        return hay.includes(q)
+      }
 
-    // r.key in combo: blade|||ratchet|||bit|||assist?
-    const parts = r.key.split("|||").map(norm).filter(Boolean)
+      // r.key in combo: blade|||ratchet|||bit|||assist?
+      const parts = r.key.split("|||").map(norm).filter(Boolean)
 
-    // if user has typed an exact full part name -> exact mode
-    const exactHit = parts.some(p => p === q)
-    if (exactHit) return true
+      // if user has typed an exact full part name -> exact mode
+      const exactHit = parts.some(p => p === q)
+      if (exactHit) return true
 
-    // otherwise predictive: prefix match on the *full* part names
-    // (prevents "low rush" from matching when typing "ru")
-    const prefixHit = parts.some(p => p.startsWith(q))
-    return prefixHit
-  })
-}, [rowsWithPartFilter, query, kind])
-
+      // otherwise predictive: prefix match on the *full* part names
+      const prefixHit = parts.some(p => p.startsWith(q))
+      return prefixHit
+    })
+  }, [rowsWithPartFilter, query, kind])
 
   // ---------- Pagination ----------
   const totalItems = filteredRows.length
@@ -489,47 +522,66 @@ const filteredRows = useMemo(() => {
                 {!loading && pageRows.length === 0 && (
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-white/70">No results</td></tr>
                 )}
-                {!loading && pageRows.map((r, i) => (
-                  <tr key={r.key} className="border-t border-white/10 hover:bg-white/[0.04] transition">
-                    <td className="px-4 py-3 sticky left-0 bg-[#0b1020] z-10">{pageStart + i + 1}</td>
-                    <td className="px-4 py-3 align-middle">
-  {/* main item name slightly larger */}
-  <div className="text-sm md:text-base font-semibold text-white">{r.primary}</div>
+                {!loading && pageRows.map((r, i) => {
+                  const href = hrefFor(kind, r.key)
+                  const go = () => navigate(href)
+                  const onKey = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault()
+                      go()
+                    }
+                  }
+                  return (
+                    <tr
+                      key={r.key}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`Open ${kind === "combo" ? "combo" : kind} "${r.primary}"`}
+                      onClick={go}
+                      onKeyDown={onKey}
+                      className="cursor-pointer border-t border-white/10 hover:bg-white/[0.06] transition outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50"
+                      title="Open details"
+                    >
+                      <td className="px-4 py-3 sticky left-0 bg-[#0b1020] z-10">{pageStart + i + 1}</td>
+                      <td className="px-4 py-3 align-middle">
+                        {/* main item name slightly larger */}
+                        <div className="text-sm md:text-base font-semibold text-white">{r.primary}</div>
 
-  {kind === "combo" && (
-    <>
-      {/* ratchet • bit slightly larger too */}
-      {r.secondary && (
-        <div className="text-[11px] md:text-xs text-white/80 mt-0.5">
-          {r.secondary}
-        </div>
-      )}
+                        {kind === "combo" && (
+                          <>
+                            {/* ratchet • bit slightly larger too */}
+                            {r.secondary && (
+                              <div className="text-[11px] md:text-xs text-white/80 mt-0.5">
+                                {r.secondary}
+                              </div>
+                            )}
 
-      {/* assist tag slightly larger */}
-      {r.assist && (
-        <div className="mt-1">
-          <span className="inline-flex items-center rounded bg-white/10 px-1.5 py-0.5 text-[10px] md:text-xs font-medium leading-none">
-            Assist: {r.assist}
-          </span>
-        </div>
-      )}
-    </>
-  )}
-</td>
+                            {/* assist tag slightly larger */}
+                            {r.assist && (
+                              <div className="mt-1">
+                                <span className="inline-flex items-center rounded bg-white/10 px-1.5 py-0.5 text-[10px] md:text-xs font-medium leading-none">
+                                  Assist: {r.assist}
+                                </span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </td>
 
-                    <td className="px-4 py-3 font-semibold">{r.appearances.toLocaleString()}</td>
-                    <td className="px-4 py-3 w-56">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 flex-1 rounded bg-white/10 overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-indigo-400 to-cyan-400" style={{ width: `${(r.share * 100).toFixed(2)}%` }} />
+                      <td className="px-4 py-3 font-semibold">{r.appearances.toLocaleString()}</td>
+                      <td className="px-4 py-3 w-56">
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 flex-1 rounded bg-white/10 overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-indigo-400 to-cyan-400" style={{ width: `${(r.share * 100).toFixed(2)}%` }} />
+                          </div>
+                          <span className="tabular-nums text-white/80 min-w-[3.5rem] text-right">{fmtPct(r.share)}</span>
                         </div>
-                        <span className="tabular-nums text-white/80 min-w-[3.5rem] text-right">{fmtPct(r.share)}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{r.uniqueEvents}</td>
-                    <td className="px-4 py-3">{r.uniquePlayers}</td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-4 py-3">{r.uniqueEvents}</td>
+                      <td className="px-4 py-3">{r.uniquePlayers}</td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
