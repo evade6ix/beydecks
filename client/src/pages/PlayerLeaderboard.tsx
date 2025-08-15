@@ -95,30 +95,30 @@ export default function PlayerLeaderboard() {
 
     const normalized = players.map((p) => {
       const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
-      const curated = tp.filter(t => t && t.eventId) // ← match UserPublic.tsx
 
-      if (curated.length > 0) {
-        let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
-        for (const t of curated) {
-          if (t.placement === "First Place") vFirsts++
-          else if (t.placement === "Second Place") vSeconds++
-          else if (t.placement === "Third Place") vThirds++
-          else if (t.placement === "Top Cut") vTopCutsOnly++
-        }
-        const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
-        return { ...p, _firsts: vFirsts, _seconds: vSeconds, _thirds: vThirds,
-                    _topcutsOnly: vTopCutsOnly, _results: vResults,
-                    _name: (p.username && p.username.trim()) || p.displayName || p.slug }
-      }
+if (tp.length > 0) {
+  let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
+  for (const t of tp) {
+    const plc = t?.placement
+    if (plc === "First Place") vFirsts++
+    else if (plc === "Second Place") vSeconds++
+    else if (plc === "Third Place") vThirds++
+    else if (plc === "Top Cut") vTopCutsOnly++
+  }
+  const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+  return { ...p, _firsts: vFirsts, _seconds: vSeconds, _thirds: vThirds,
+           _topcutsOnly: vTopCutsOnly, _results: vResults,
+           _name: (p.username && p.username.trim()) || p.displayName || p.slug }
+}
 
-      // Fallback: no tournamentsPlayed available; use server counters
       const sFirsts = Number(p.firsts || 0)
       const sSeconds = Number(p.seconds || 0)
       const sThirds = Number(p.thirds || 0)
 
-      // topCutCount is already "Top Cuts (not top 3)"
-      const sTopCutsOnly = Number(p.topCutCount || 0)
+      const rawTopCuts = Number(p.topCutCount || 0)
+      const sTopCutsOnly = Math.max(0, rawTopCuts - (sFirsts + sSeconds + sThirds))
       const sResults = sFirsts + sSeconds + sThirds + sTopCutsOnly
+
 
 
 
