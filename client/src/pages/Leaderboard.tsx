@@ -18,6 +18,9 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 type Timeframe = "all" | "year" | "month" | "week"
 type PartKind = "blade" | "assist" | "ratchet" | "bit" | "combo"
 
+// for modal focus (exclude "combo")
+type FocusKind = Exclude<PartKind, "combo">
+
 interface Combo {
   blade: string
   assistBlade?: string
@@ -67,15 +70,13 @@ function windowStartFor(tf: Timeframe, now = new Date()) {
 }
 
 // ---------- Detail linking helpers ----------
-// ---------- Detail linking helpers ----------
 const ROUTES = {
-  blade: "/blades", 
-  assist: "/assist-blades",  
-  ratchet: "/ratchets",     
-  bit: "/bits",           
+  blade: "/blades",
+  assist: "/assist-blades",
+  ratchet: "/ratchets",
+  bit: "/bits",
   leaderboard: "/leaderboard",
 } as const
-
 
 const enc = (s: string) => encodeURIComponent(s || "")
 
@@ -113,6 +114,10 @@ export default function Leaderboard() {
   const assistFilter = searchParams.get("assist") || ""
   const ratchetFilter = searchParams.get("ratchet") || ""
   const bitFilter = searchParams.get("bit") || ""
+
+  // modal focus via URL
+  const focus = (searchParams.get("focus") as FocusKind | null) || null
+  const focusName = searchParams.get("name") || null
 
   const urlKind = (searchParams.get("kind") as PartKind) || "blade"
   const urlTf = (searchParams.get("tf") as Timeframe) || "all"
@@ -386,6 +391,20 @@ export default function Leaderboard() {
     }).catch(() => {})
   }
 
+  // ---------- Modal open/close helpers ----------
+  const openFocus = (fk: FocusKind, displayName: string) => {
+    const next = new URLSearchParams(searchParams)
+    next.set("focus", fk)
+    next.set("name", displayName)
+    setSearchParams(next, { replace: false })
+  }
+  const closeFocus = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete("focus")
+    next.delete("name")
+    setSearchParams(next, { replace: true })
+  }
+
   return (
     <div className="relative min-h-screen bg-[#0b1020] text-white">
       <Helmet>
@@ -526,7 +545,15 @@ export default function Leaderboard() {
                 )}
                 {!loading && pageRows.map((r, i) => {
                   const href = hrefFor(kind, r.key)
-                  const go = () => navigate(href)
+                  const go = () => {
+                    if (kind === "combo") {
+                      // Still deep-link within leaderboard
+                      navigate(href)
+                    } else {
+                      // Open modal for part detail
+                      openFocus(kind as FocusKind, r.primary)
+                    }
+                  }
                   const onKey = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault()
@@ -546,19 +573,15 @@ export default function Leaderboard() {
                     >
                       <td className="px-4 py-3 sticky left-0 bg-[#0b1020] z-10">{pageStart + i + 1}</td>
                       <td className="px-4 py-3 align-middle">
-                        {/* main item name slightly larger */}
                         <div className="text-sm md:text-base font-semibold text-white">{r.primary}</div>
 
                         {kind === "combo" && (
                           <>
-                            {/* ratchet • bit slightly larger too */}
                             {r.secondary && (
                               <div className="text-[11px] md:text-xs text-white/80 mt-0.5">
                                 {r.secondary}
                               </div>
                             )}
-
-                            {/* assist tag slightly larger */}
                             {r.assist && (
                               <div className="mt-1">
                                 <span className="inline-flex items-center rounded bg-white/10 px-1.5 py-0.5 text-[10px] md:text-xs font-medium leading-none">
@@ -614,6 +637,19 @@ export default function Leaderboard() {
           </div>
         </div>
       </section>
+
+      {/* -------- Modal (URL-driven) -------- */}
+{focus && focusName && (
+  <Modal onClose={closeFocus}>
+    <PartDetailPanel
+      focus={focus}
+      name={focusName}
+      events={events}
+      timeframe={timeframe}
+    />
+  </Modal>
+)}
+
     </div>
   )
 }
@@ -723,6 +759,181 @@ function DropdownSelect<T extends string | number>({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+/* =========================
+   Modal + Inline Detail Panel
+   ========================= */
+
+function Modal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+    document.addEventListener("keydown", onKey)
+    return () => document.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="bg-[#0f172a] border border-white/10 rounded-2xl shadow-2xl w-full max-w-3xl relative"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 btn btn-xs btn-ghost"
+          aria-label="Close details"
+        >
+          ✕
+        </button>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+function PartDetailPanel({
+  focus,
+  name,
+  events,
+  timeframe,
+}: {
+  focus: FocusKind
+  name: string
+  events: EventItem[]
+  timeframe: Timeframe
+}) {
+  const readable = titleCase(name)
+
+  // 1) Focused row shapes
+  type BladeRow   = { ratchet: string; bit: string; count: number }
+  type RatchetRow = { blade: string;   bit: string; count: number }
+  type BitRow     = { blade: string;   ratchet: string; count: number }
+  type AssistRow  = { blade: string;   ratchet: string; bit: string; count: number }
+
+  // 2) Build rows with a precise return type per focus
+  const rows = useMemo<BladeRow[] | RatchetRow[] | BitRow[] | AssistRow[]>(() => {
+    const now = new Date()
+    const start = windowStartFor(timeframe, now)
+    const within = (d: Date, s: Date, e?: Date) => (e ? d >= s && d <= e : d >= s)
+    const currentEvents = events.filter(e => within(new Date(e.startTime || e.date || 0), start))
+    const nameNorm = norm(name)
+
+    if (focus === "blade") {
+      const map = new Map<string, BladeRow>() // key: ratchet::bit
+      currentEvents.forEach(ev => ev.topCut?.forEach(p => p.combos?.forEach(({ blade, ratchet, bit }) => {
+        if (norm(blade) === nameNorm) {
+          const kr = titleCase(ratchet.trim())
+          const kb = titleCase(bit.trim())
+          const key = `${kr}::${kb}`
+          const curr = map.get(key) || { ratchet: kr, bit: kb, count: 0 }
+          curr.count++
+          map.set(key, curr)
+        }
+      })))
+      return [...map.values()].sort((a, b) => b.count - a.count)
+    }
+
+    if (focus === "ratchet") {
+      const map = new Map<string, RatchetRow>() // key: blade::bit
+      currentEvents.forEach(ev => ev.topCut?.forEach(p => p.combos?.forEach(({ blade, ratchet, bit }) => {
+        if (norm(ratchet) === nameNorm) {
+          const kb = titleCase(blade.trim())
+          const kt = titleCase(bit.trim())
+          const key = `${kb}::${kt}`
+          const curr = map.get(key) || { blade: kb, bit: kt, count: 0 }
+          curr.count++
+          map.set(key, curr)
+        }
+      })))
+      return [...map.values()].sort((a, b) => b.count - a.count)
+    }
+
+    if (focus === "bit") {
+      const map = new Map<string, BitRow>() // key: blade::ratchet
+      currentEvents.forEach(ev => ev.topCut?.forEach(p => p.combos?.forEach(({ blade, ratchet, bit }) => {
+        if (norm(bit) === nameNorm) {
+          const kb = titleCase(blade.trim())
+          const kr = titleCase(ratchet.trim())
+          const key = `${kb}::${kr}`
+          const curr = map.get(key) || { blade: kb, ratchet: kr, count: 0 }
+          curr.count++
+          map.set(key, curr)
+        }
+      })))
+      return [...map.values()].sort((a, b) => b.count - a.count)
+    }
+
+    // assist
+    const map = new Map<string, AssistRow>() // key: blade::ratchet::bit
+    currentEvents.forEach(ev => ev.topCut?.forEach(p => p.combos?.forEach(({ blade, ratchet, bit, assistBlade }) => {
+      if (norm(assistBlade || "") === nameNorm) {
+        const kb = titleCase(blade.trim())
+        const kr = titleCase(ratchet.trim())
+        const kt = titleCase(bit.trim())
+        const key = `${kb}::${kr}::${kt}`
+        const curr = map.get(key) || { blade: kb, ratchet: kr, bit: kt, count: 0 }
+        curr.count++
+        map.set(key, curr)
+      }
+    })))
+    return [...map.values()].sort((a, b) => b.count - a.count)
+  }, [focus, name, events, timeframe])
+
+  // 3) Convert to display items with safe narrowing
+  const items = useMemo(() => {
+    if (focus === "blade") {
+      const list = rows as BladeRow[]
+      return list.map(r => ({ label: `${r.ratchet} / ${r.bit}`, count: r.count }))
+    }
+    if (focus === "ratchet") {
+      const list = rows as RatchetRow[]
+      return list.map(r => ({ label: `${r.blade} / ${r.bit}`, count: r.count }))
+    }
+    if (focus === "bit") {
+      const list = rows as BitRow[]
+      return list.map(r => ({ label: `${r.blade} / ${r.ratchet}`, count: r.count }))
+    }
+    const list = rows as AssistRow[]
+    return list.map(r => ({ label: `${r.blade} / ${r.ratchet} / ${r.bit}`, count: r.count }))
+  }, [rows, focus])
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-1">{readable}</h2>
+      <div className="text-white/70 text-sm mb-4">
+        {focus === "blade" && "Top combos for this blade"}
+        {focus === "ratchet" && "Top combos for this ratchet"}
+        {focus === "bit" && "Top combos for this bit"}
+        {focus === "assist" && "Top combos using this assist blade"}
+        {" · "}
+        Timeframe: <span className="font-medium">{{
+          all: "All time", year: "Past year", month: "Past month", week: "Past week"
+        }[timeframe]}</span>
+      </div>
+
+      <div className="space-y-2">
+        {items.length === 0 && (
+          <div className="text-white/70">No combos found.</div>
+        )}
+
+        {items.length > 0 && items.slice(0, 20).map((r, idx) => (
+          <div key={idx} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <div className="font-medium">{r.label}</div>
+            <div className="text-white/70 text-sm">uses: <span className="font-semibold">{r.count}</span></div>
+          </div>
+        ))}
+
+        {items.length > 20 && (
+          <div className="text-white/60 text-xs mt-2">Showing top 20.</div>
+        )}
+      </div>
     </div>
   )
 }
