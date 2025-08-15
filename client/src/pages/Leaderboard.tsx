@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Link, useSearchParams, useNavigate } from "react-router-dom" // ← added useNavigate
+import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import {
   BarChart3,
@@ -104,7 +104,7 @@ function hrefFor(kind: PartKind, rowKey: string): string {
 // ---------- Page ----------
 export default function Leaderboard() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate() // ← for row click
+  const navigate = useNavigate()
 
   // deep-link filters for combo view
   const bladeFilter = searchParams.get("blade") || ""
