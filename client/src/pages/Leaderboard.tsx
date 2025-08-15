@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Link, useSearchParams, useNavigate } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import {
   BarChart3,
@@ -17,6 +17,8 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 // ---------- Types ----------
 type Timeframe = "all" | "year" | "month" | "week"
 type PartKind = "blade" | "assist" | "ratchet" | "bit" | "combo"
+// for targeting a single part kind (not combo)
+type FocusKind = Exclude<PartKind, "combo">
 
 interface Combo {
   blade: string
@@ -66,45 +68,9 @@ function windowStartFor(tf: Timeframe, now = new Date()) {
   return new Date(0)
 }
 
-// ---------- Detail linking helpers ----------
-const ROUTES = {
-  blade: "/blades",
-  assist: "/assist-blades",
-  ratchet: "/ratchets",
-  bit: "/bits",
-  leaderboard: "/leaderboard",
-} as const
-
-const enc = (s: string) => encodeURIComponent(s || "")
-
-/** Build href for a row, based on current tab (kind) and the row.key */
-function hrefFor(kind: PartKind, rowKey: string): string {
-  if (kind === "combo") {
-    // rowKey format: "blade|||ratchet|||bit|||assist?"
-    const [b, r, t, a] = (rowKey || "").split("|||")
-    const qs = new URLSearchParams({
-      kind: "combo",
-      blade: b || "",
-      ratchet: r || "",
-      bit: t || "",
-    })
-    if (a) qs.set("assist", a)
-    return `${ROUTES.leaderboard}?${qs.toString()}`
-  }
-
-  const base =
-    kind === "blade"  ? ROUTES.blade  :
-    kind === "assist" ? ROUTES.assist :
-    kind === "ratchet"? ROUTES.ratchet:
-                        ROUTES.bit
-
-  return `${base}/${enc(rowKey)}`
-}
-
 // ---------- Page ----------
 export default function Leaderboard() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const navigate = useNavigate()
 
   // deep-link filters for combo view
   const bladeFilter = searchParams.get("blade") || ""
@@ -384,6 +350,23 @@ export default function Leaderboard() {
     }).catch(() => {})
   }
 
+  // ---------- Navigate to same-page combo view from a part ----------
+  function goToComboFromPart(fk: FocusKind, displayName: string) {
+    const value = norm(displayName)
+    const next = new URLSearchParams(searchParams)
+    next.set("kind", "combo")
+    // clear all part filters first
+    next.delete("blade"); next.delete("assist"); next.delete("ratchet"); next.delete("bit")
+    // set the one we’re focusing
+    if (fk === "blade")  next.set("blade", value)
+    if (fk === "assist") next.set("assist", value)
+    if (fk === "ratchet") next.set("ratchet", value)
+    if (fk === "bit")    next.set("bit", value)
+    setKind("combo")      // ensure UI switches tabs immediately
+    setPage(1)
+    setSearchParams(next, { replace: false })
+  }
+
   return (
     <div className="relative min-h-screen bg-[#0b1020] text-white">
       <Helmet>
@@ -523,14 +506,12 @@ export default function Leaderboard() {
                   <tr><td colSpan={6} className="px-4 py-8 text-center text-white/70">No results</td></tr>
                 )}
                 {!loading && pageRows.map((r, i) => {
-                  const href = hrefFor(kind, r.key)
                   const clickable = kind !== "combo" // ⚠️ Combos rows are NOT clickable
-
-                  const onClick = clickable ? () => navigate(href) : undefined
+                  const onClick = clickable ? () => goToComboFromPart(kind as FocusKind, r.primary) : undefined
                   const onKey = clickable ? (e: React.KeyboardEvent<HTMLTableRowElement>) => {
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault()
-                      navigate(href)
+                      goToComboFromPart(kind as FocusKind, r.primary)
                     }
                   } : undefined
 
@@ -539,7 +520,7 @@ export default function Leaderboard() {
                       key={r.key}
                       role={clickable ? "link" : undefined}
                       tabIndex={clickable ? 0 : -1}
-                      aria-label={clickable ? `Open ${kind} "${r.primary}"` : undefined}
+                      aria-label={clickable ? `Open ${kind} "${r.primary}" in combos` : undefined}
                       onClick={onClick}
                       onKeyDown={onKey}
                       className={
@@ -548,23 +529,11 @@ export default function Leaderboard() {
                           ? "cursor-pointer hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-indigo-400/50"
                           : "cursor-default")
                       }
-                      title={clickable ? "Open details" : undefined}
+                      title={clickable ? "Show combos using this item" : undefined}
                     >
                       <td className="px-4 py-3 sticky left-0 bg-[#0b1020] z-10">{pageStart + i + 1}</td>
                       <td className="px-4 py-3 align-middle">
-                        <div className="text-sm md:text-base font-semibold text-white">
-                          {clickable ? (
-                            <Link
-                              to={href}
-                              onClick={(e) => e.stopPropagation()}
-                              className="underline-offset-2 hover:underline"
-                            >
-                              {r.primary}
-                            </Link>
-                          ) : (
-                            r.primary
-                          )}
-                        </div>
+                        <div className="text-sm md:text-base font-semibold text-white">{r.primary}</div>
 
                         {kind === "combo" && (
                           <>
