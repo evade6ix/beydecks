@@ -310,7 +310,7 @@ export default function CompletedEvents() {
           <AnimatePresence mode="popLayout">
             {current.map((e) => {
               const attendees = getAttendeeCount(e)
-              const top1 = e.topCut?.[0]?.name
+              const topCutCount = Array.isArray(e.topCut) ? e.topCut.length : undefined
               return (
                 <motion.div
                   key={e.id}
@@ -358,9 +358,9 @@ export default function CompletedEvents() {
                           <Users className="h-3.5 w-3.5" /> {attendees} players attended
                         </span>
                       )}
-                      {top1 && (
+                      {typeof topCutCount === "number" && topCutCount > 0 && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs">
-                          <Trophy className="h-3.5 w-3.5" /> Top: {top1}
+                          <Trophy className="h-3.5 w-3.5" /> Top Cut {topCutCount}
                         </span>
                       )}
                     </div>
