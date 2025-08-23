@@ -787,7 +787,7 @@ setLeaders(derived)
           </div>
 
           <div className="mt-10 text-center text-xs text-white/40">
-            MetaBeys is built by @Aysus & @Karl6ix
+            MetaBeys is Developed by @Karl6ix & Ran by @Aysus (@ on Discord)
           </div>
         </motion.div>
       </div>
