@@ -269,70 +269,85 @@ export default function TournamentLab() {
     revalidate(next)
   }
 
-  const analyzeCombos = async () => {
-    setHasTriedAnalyze(true)
+ const analyzeCombos = async () => {
+  setHasTriedAnalyze(true)
 
-    // Validate on click
-    const v = validateDeck({
-      combos,
-      visibleCombos,
-      blades,
-      ratchets,
-      bits,
-      bladeFreq,
-      ratchetFreq,
-      bitFreq,
-      topCutCombosSorted: globalMeta.topCutCombosSorted,
-    })
-    setValidation(v)
+  // Validate on click
+  const v = validateDeck({
+    combos,
+    visibleCombos,
+    blades,
+    ratchets,
+    bits,
+    bladeFreq,
+    ratchetFreq,
+    bitFreq,
+    topCutCombosSorted: globalMeta.topCutCombosSorted,
+  })
+  setValidation(v)
 
-    if (v.status !== "ok") {
-      window.scrollTo({ top: 0, behavior: "smooth" })
-      return
-    }
-
-    const validCombos = combos.slice(0, 3).filter(c => c.blade && c.ratchet && c.bit)
-    if (validCombos.length !== 3) {
-      alert("Please enter three full combos.")
-      return
-    }
-
-        setLoadingAnalysis(true)
-    try {
-      // Build EventDetail-style results locally from comboIndex
-      const localResults = validCombos.map(c => {
-        const k = tlKey(c)
-        const rec = comboIndex[k]
-        return {
-          submittedCombo: c,
-          topCutAppearances: rec?.appearances ?? 0,
-          uniqueEvents: rec?.uniqueEvents?.size ?? 0,
-          mostRecentAppearance: rec?.mostRecent,
-          firstSeen: rec?.firstSeen,
-        }
-      })
-
-      setResults(localResults)
-
-      setDeckGrade(
-        computeDeckGrade({
-          results: localResults,
-          combos: validCombos,
-          visibleCombos: 3,
-          // Use the parity p95 baseline computed above
-          globalMeta: {
-            ...globalMeta, // keep your existing fields for other features
-            comboAppearancesAll: tlGlobalMeta.comboAppearancesAll,
-          },
-        })
-      )
-    } catch (err) {
-      console.error(err)
-      alert("Error analyzing combos")
-    } finally {
-      setLoadingAnalysis(false)
-    }
+  if (v.status !== "ok") {
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    return
   }
+
+  const validCombos = combos.slice(0, 3).filter(c => c.blade && c.ratchet && c.bit)
+  if (validCombos.length !== 3) {
+    alert("Please enter three full combos.")
+    return
+  }
+
+  setLoadingAnalysis(true)
+  try {
+    // ===== EventDetail parity =====
+    // Build results locally from the same comboIndex + add a "self" appearance today.
+    const nowIso = new Date().toISOString()
+
+    const localResults = validCombos.map(c => {
+      const k = tlKey(c)
+      const rec = comboIndex[k]
+
+      let appearances = rec?.appearances ?? 0
+      let uniqueEvents = rec?.uniqueEvents?.size ?? 0
+      let mostRecent = rec?.mostRecent
+      let firstSeen = rec?.firstSeen
+
+      // Inject 1 appearance dated now — matches how EventDetail includes the current event.
+      appearances += 1
+      uniqueEvents += 1
+      mostRecent = nowIso
+      if (!firstSeen) firstSeen = nowIso
+
+      return {
+        submittedCombo: c,
+        topCutAppearances: appearances,
+        uniqueEvents,
+        mostRecentAppearance: mostRecent,
+        firstSeen,
+      }
+    })
+
+    setResults(localResults)
+
+    // Use the same p95 pool EventDetail uses
+    setDeckGrade(
+      computeDeckGrade({
+        results: localResults,
+        combos: validCombos,
+        visibleCombos: 3,
+        globalMeta: {
+          ...globalMeta, // keep other fields for recs
+          comboAppearancesAll: tlGlobalMeta.comboAppearancesAll,
+        },
+      })
+    )
+  } catch (err) {
+    console.error(err)
+    alert("Error analyzing combos")
+  } finally {
+    setLoadingAnalysis(false)
+  }
+} // ← keep this closing brace; it fixes the red-underline issue
 
   /* =======================================
      Auth Gates
