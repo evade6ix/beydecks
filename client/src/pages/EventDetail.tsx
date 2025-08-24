@@ -131,12 +131,7 @@ function clamp01(x: number) {
 function mean(xs: number[]) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
 }
-function harmonicMean(xs: number[]) {
-  const pos = xs.filter(v => v > 0)
-  if (pos.length === 0) return 0
-  const denom = pos.reduce((a, b) => a + 1 / b, 0)
-  return pos.length / denom
-}
+
 function percentile(arr: number[], p: number) {
   if (!arr.length) return 1
   const sorted = [...arr].sort((a, b) => a - b)
@@ -184,7 +179,7 @@ function computeDeckGrade({
   }
 
   const deckStrength = 0.60 * Math.min(...comboScores) + 0.40 * mean(comboScores)
-  const deckRecency  = Math.max(0, Math.min(100, harmonicMean(recencies)))
+  const deckRecency  = Math.max(0, Math.min(100, 0.60 * Math.min(...recencies) + 0.40 * mean(recencies)))
 
   // diversity
   const slice = combos.slice(0, Math.min(3, visibleCombos))

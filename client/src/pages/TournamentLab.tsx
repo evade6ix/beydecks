@@ -961,12 +961,6 @@ function percentile(arr: number[], p: number) {
 function mean(xs: number[]) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
 }
-function harmonicMean(xs: number[]) {
-  const pos = xs.filter(v => v > 0)
-  if (pos.length === 0) return 0
-  const denom = pos.reduce((a, b) => a + 1 / b, 0)
-  return pos.length / denom
-}
 function computeDeckGrade({
   results,
   combos,
@@ -1001,7 +995,7 @@ function computeDeckGrade({
   // Weakest-link penalty + average
   const deckStrength = 0.60 * Math.min(...comboScores) + 0.40 * mean(comboScores)
   // Stale combo drags the deck (also clamp to [0,100] to be safe)
-  const deckRecency = Math.max(0, Math.min(100, harmonicMean(recencies)))
+  const deckRecency = 0.60 * Math.min(...recencies) + 0.40 * mean(recencies)
 
   // Diversity
   const slice = combos.slice(0, Math.min(3, visibleCombos))
