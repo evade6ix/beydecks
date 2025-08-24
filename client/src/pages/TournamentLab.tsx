@@ -65,11 +65,26 @@ export default function TournamentLab() {
   const [ratchetFreq, setRatchetFreq] = useState<Record<string, number>>({})
   const [bitFreq, setBitFreq] = useState<Record<string, number>>({})
 
-  // Global meta (for recs + normalization)
+    // Global meta (for recs + normalization)
   const [globalMeta, setGlobalMeta] = useState<GlobalMeta>({
     topCutCombosSorted: [],
     comboAppearancesAll: [],
   })
+
+  // === NEW: EventDetail-parity evidence ===
+  // Index of combos across all events (appearances, unique events, recency)
+  const [comboIndex, setComboIndex] = useState<Record<string, {
+    appearances: number
+    uniqueEvents: Set<string>
+    mostRecent?: string
+    firstSeen?: string
+  }>>({})
+
+  // p95 baseline input for grading (from appearances across all combos)
+  const [tlGlobalMeta, setTlGlobalMeta] = useState<{ comboAppearancesAll: number[] }>({
+    comboAppearancesAll: [],
+  })
+
 
   // Legality + grade
   const [validation, setValidation] = useState<ValidationResult | null>(null)
@@ -148,9 +163,47 @@ export default function TournamentLab() {
           .sort((a, b) => b[1] - a[1])
           .map(([k]) => parseComboKey(k))
 
-        const comboAppearancesAll = Object.values(comboFreq)
+                const comboAppearancesAll = Object.values(comboFreq)
 
         setGlobalMeta({ topCutCombosSorted, comboAppearancesAll })
+
+        // ---- NEW: Build EventDetail-parity evidence (appearances, recency, p95 inputs) ----
+        const idx: Record<string, {
+          appearances: number
+          uniqueEvents: Set<string>
+          mostRecent?: string
+          firstSeen?: string
+        }> = {}
+        const appCounts: number[] = []
+
+        for (const ev of data) {
+          const evId = String(ev.id)
+          const evDate = ev.endTime || ev.startTime // parity with EventDetail
+          ev?.topCut?.forEach((p: any) => {
+            p?.combos?.forEach((c: any) => {
+              if (!c?.blade || !c?.ratchet || !c?.bit) return
+              const key = tlKey({ blade: c.blade, ratchet: c.ratchet, bit: c.bit })
+              if (!idx[key]) idx[key] = { appearances: 0, uniqueEvents: new Set<string>() }
+              idx[key].appearances += 1
+              idx[key].uniqueEvents.add(evId)
+
+              if (evDate) {
+                if (!idx[key].mostRecent || new Date(evDate) > new Date(idx[key].mostRecent)) {
+                  idx[key].mostRecent = evDate
+                }
+                if (!idx[key].firstSeen || new Date(evDate) < new Date(idx[key].firstSeen)) {
+                  idx[key].firstSeen = evDate
+                }
+              }
+            })
+          })
+        }
+
+        for (const k of Object.keys(idx)) appCounts.push(idx[k].appearances)
+
+        setComboIndex(idx)
+        setTlGlobalMeta({ comboAppearancesAll: appCounts })
+        // ---- /NEW ----
       })
       .catch(err => console.error("Failed to load parts", err))
   }, [])
@@ -244,23 +297,33 @@ export default function TournamentLab() {
       return
     }
 
-    setLoadingAnalysis(true)
+        setLoadingAnalysis(true)
     try {
-      const res = await fetch(`${API}/prep-decks/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ combos: validCombos }),
+      // Build EventDetail-style results locally from comboIndex
+      const localResults = validCombos.map(c => {
+        const k = tlKey(c)
+        const rec = comboIndex[k]
+        return {
+          submittedCombo: c,
+          topCutAppearances: rec?.appearances ?? 0,
+          uniqueEvents: rec?.uniqueEvents?.size ?? 0,
+          mostRecentAppearance: rec?.mostRecent,
+          firstSeen: rec?.firstSeen,
+        }
       })
 
-      const data = await res.json()
-      setResults(data.analysis)
+      setResults(localResults)
 
       setDeckGrade(
         computeDeckGrade({
-          results: data.analysis || [],
+          results: localResults,
           combos: validCombos,
           visibleCombos: 3,
-          globalMeta,
+          // Use the parity p95 baseline computed above
+          globalMeta: {
+            ...globalMeta, // keep your existing fields for other features
+            comboAppearancesAll: tlGlobalMeta.comboAppearancesAll,
+          },
         })
       )
     } catch (err) {
@@ -602,6 +665,10 @@ function normalize(s: string) {
 function comboKey(c: Combo) {
   return `${normalize(c.blade)}|${normalize(c.ratchet)}|${normalize(c.bit)}`
 }
+
+// EventDetail-parity key (same normalization here; alias keeps intent clear)
+const tlKey = comboKey
+
 
 function parseComboKey(key: string): Combo {
   const [blade, ratchet, bit] = key.split("|")
