@@ -95,6 +95,41 @@ export default function TournamentLab() {
 
   const resultsRef = useRef<HTMLDivElement | null>(null)
 
+  // Build results from the precomputed comboIndex.
+// includeSelf = true → add a "self" appearance dated now (EventDetail parity)
+// includeSelf = false → show only historical appearances (truthful cards & component pills)
+function buildResultsFromIndex(
+  combos: Combo[],
+  index: Record<string, { appearances: number; uniqueEvents: Set<string>; mostRecent?: string; firstSeen?: string }>,
+  includeSelf: boolean
+) {
+  const nowIso = new Date().toISOString()
+  return combos.map(c => {
+    const k = tlKey(c)
+    const rec = index[k]
+    let appearances = rec?.appearances ?? 0
+    let uniqueEvents = rec?.uniqueEvents?.size ?? 0
+    let mostRecent = rec?.mostRecent
+    let firstSeen = rec?.firstSeen
+
+    if (includeSelf) {
+      appearances += 1
+      uniqueEvents += 1
+      mostRecent = nowIso
+      if (!firstSeen) firstSeen = nowIso
+    }
+
+    return {
+      submittedCombo: c,
+      topCutAppearances: appearances,
+      uniqueEvents,
+      mostRecentAppearance: mostRecent,
+      firstSeen,
+    }
+  })
+}
+
+
   /* =======================================
      Effects
   ======================================= */
@@ -297,57 +332,54 @@ export default function TournamentLab() {
     return
   }
 
-  setLoadingAnalysis(true)
-  try {
-    // ===== EventDetail parity =====
-    // Build results locally from the same comboIndex + add a "self" appearance today.
-    const nowIso = new Date().toISOString()
+ setLoadingAnalysis(true)
+try {
+  // A) What users SEE in the cards & component pills (truthful history only)
+  const displayResults = buildResultsFromIndex(validCombos, comboIndex, /* includeSelf */ false)
+  setResults(displayResults)
 
-    const localResults = validCombos.map(c => {
-      const k = tlKey(c)
-      const rec = comboIndex[k]
+  // B) What we GRADE by (EventDetail parity = add "self" today)
+  const gradeResults = buildResultsFromIndex(validCombos, comboIndex, /* includeSelf */ true)
 
-      let appearances = rec?.appearances ?? 0
-      let uniqueEvents = rec?.uniqueEvents?.size ?? 0
-      let mostRecent = rec?.mostRecent
-      let firstSeen = rec?.firstSeen
-
-      // Inject 1 appearance dated now — matches how EventDetail includes the current event.
-      appearances += 1
-      uniqueEvents += 1
-      mostRecent = nowIso
-      if (!firstSeen) firstSeen = nowIso
-
-      return {
-        submittedCombo: c,
-        topCutAppearances: appearances,
-        uniqueEvents,
-        mostRecentAppearance: mostRecent,
-        firstSeen,
-      }
-    })
-
-    setResults(localResults)
-
-    // Use the same p95 pool EventDetail uses
-    setDeckGrade(
-      computeDeckGrade({
-        results: localResults,
-        combos: validCombos,
-        visibleCombos: 3,
-        globalMeta: {
-          ...globalMeta, // keep other fields for recs
-          comboAppearancesAll: tlGlobalMeta.comboAppearancesAll,
-        },
-      })
-    )
-  } catch (err) {
-    console.error(err)
-    alert("Error analyzing combos")
-  } finally {
-    setLoadingAnalysis(false)
+  const commonMeta = {
+    ...globalMeta,
+    comboAppearancesAll: tlGlobalMeta.comboAppearancesAll, // EventDetail p95 pool
   }
-} // ← keep this closing brace; it fixes the red-underline issue
+
+  // Compute both — components from display, score/letter from parity
+  const dgForDisplay = computeDeckGrade({
+    results: displayResults,
+    combos: validCombos,
+    visibleCombos: 3,
+    globalMeta: commonMeta,
+  })
+
+  const dgForGrade = computeDeckGrade({
+    results: gradeResults,
+    combos: validCombos,
+    visibleCombos: 3,
+    globalMeta: commonMeta,
+  })
+
+  if (dgForDisplay && dgForGrade) {
+    setDeckGrade({
+      score: dgForGrade.score,            // EventDetail-matching number
+      grade: dgForGrade.grade,            // EventDetail letter
+      confidence: dgForGrade.confidence,  // confidence from parity too
+      components: dgForDisplay.components, // truthful Strength/Recency/Diversity
+      reasons: dgForDisplay.reasons,       // reasons based on history
+      partsUniqueRatio: dgForDisplay.partsUniqueRatio,
+    })
+  } else {
+    setDeckGrade(null)
+  }
+} catch (err) {
+  console.error(err)
+  alert("Error analyzing combos")
+} finally {
+  setLoadingAnalysis(false)
+}
+ }
 
   /* =======================================
      Auth Gates
