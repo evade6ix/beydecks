@@ -1,35 +1,43 @@
-// forgotpassword.tsx — this is the page that sends the email
+// forgotpassword.tsx
 import { useState } from "react"
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
+const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
+// strip a trailing /api from env if present, so we don’t get /api/api
+const ROOT = RAW.replace(/\/api\/?$/i, "")
+const api = (path: string) => `${ROOT}/api/${String(path).replace(/^\/+/, "")}`
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("")
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  const [sending, setSending] = useState(false)
 
   const handleSubmit = async () => {
     if (!email) return setError("Email is required.")
+    setSending(true)
+    setError(""); setMessage("")
     try {
-      const res = await fetch(`${API}/auth/forgot-password`, {
+      const res = await fetch(api("auth/forgot-password"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       })
 
       if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || "Failed to send email.")
+        // try to read a JSON error if the API provided one
+        let msg = "Failed to send email."
+        try {
+          const data = await res.json()
+          msg = data.error || data.message || msg
+        } catch {}
+        throw new Error(msg)
       }
 
       setMessage("✅ Reset link sent! Check your email.")
-      setError("")
     } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError("An unknown error occurred.")
-      }
+      setError(err instanceof Error ? err.message : "An unknown error occurred.")
+    } finally {
+      setSending(false)
     }
   }
 
@@ -43,8 +51,8 @@ export default function ForgotPassword() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
-      <button className="btn btn-primary w-full" onClick={handleSubmit}>
-        Send Reset Link
+      <button className="btn btn-primary w-full" onClick={handleSubmit} disabled={sending}>
+        {sending ? "Sending..." : "Send Reset Link"}
       </button>
       {message && <p className="text-green-500">{message}</p>}
       {error && <p className="text-red-500">{error}</p>}
