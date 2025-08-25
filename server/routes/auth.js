@@ -121,35 +121,63 @@ router.post(
     const token = crypto.randomBytes(32).toString("hex")
     resetTokens[token] = { userId: user.id, expires: Date.now() + 1000 * 60 * 10 }
 
-    const resetLink = `https://metabeys.com/reset-password?token=${token}`
+    const webOrigin = process.env.PUBLIC_WEB_ORIGIN || "https://metabeys.com"
+    const resetLink = `${webOrigin.replace(/\/+$/, "")}/reset-password?token=${token}`
 
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    })
+
+    const SMTP_USER = process.env.EMAIL_USER
+const SMTP_PASS = process.env.EMAIL_PASS
+if (!SMTP_USER || !SMTP_PASS) {
+  console.error("❌ EMAIL_USER or EMAIL_PASS missing")
+  return res.status(500).json({ error: "Email config missing on server" })
+}
+
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,            // keep 587 + secure:false for Gmail STARTTLS
+  secure: false,
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
+  // 👇 prevent indefinite hangs
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+  // Optional if IPv6 is flaky:
+  // family: 4,
+})
 
     try {
-      await transporter.sendMail({
-        from: `"Metabeys" <${process.env.EMAIL_USER}>`,
-        to: email,
-        subject: "Reset your Metabeys password",
-        html: `<p>Hello ${user.username},</p>
-          <p>Click below to reset your password:</p>
-          <p><a href="${resetLink}">${resetLink}</a></p>
-          <p>This link will expire in 10 minutes.</p>`,
-      })
+      const withTimeout = (promise, ms = 12000, label = "operation") => {
+  let t
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+    ),
+  ]).finally(() => clearTimeout(t))
+}
+
+await withTimeout(
+  transporter.sendMail({
+    from: `"Metabeys" <${SMTP_USER}>`,
+    to: email,
+    subject: "Reset your Metabeys password",
+    html: `<p>Hello ${user.username},</p>
+      <p>Click below to reset your password:</p>
+      <p><a href="${resetLink}">${resetLink}</a></p>
+      <p>This link will expire in 10 minutes.</p>`,
+  }),
+  12000,
+  "SMTP send"
+)
+
 
       console.log(`✅ Sent reset link: ${resetLink}`)
       res.json({ message: "Reset link sent" })
     } catch (err) {
-      console.error("❌ Email failed:", err)
-      res.status(500).json({ error: "Failed to send reset email." })
-    }
+  console.error("❌ Email failed:", err)
+  return res.status(500).json({ error: err?.message || "Failed to send reset email." })
+}
+
   })
 
   router.post("/reset-password", async (req, res) => {
