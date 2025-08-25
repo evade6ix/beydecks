@@ -125,28 +125,45 @@ router.post(
     const resetLink = `${webOrigin.replace(/\/+$/, "")}/reset-password?token=${token}`
 
 
-    const SMTP_USER = process.env.EMAIL_USER
+// inside router.post("/forgot-password", ...)
+const SMTP_USER = process.env.EMAIL_USER
 const SMTP_PASS = process.env.EMAIL_PASS
 if (!SMTP_USER || !SMTP_PASS) {
   console.error("❌ EMAIL_USER or EMAIL_PASS missing")
   return res.status(500).json({ error: "Email config missing on server" })
 }
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,            // keep 587 + secure:false for Gmail STARTTLS
-  secure: false,
-  auth: { user: SMTP_USER, pass: SMTP_PASS },
-  // 👇 prevent indefinite hangs
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-  // Optional if IPv6 is flaky:
-  // family: 4,
-})
+// ---- transport builders ----
+function makeGmail587(user, pass) {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 587,          // STARTTLS
+    secure: false,
+    auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    family: 4,          // force IPv4 (avoid IPv6 blackhole)
+    // tls: { servername: "smtp.gmail.com" }, // optional if SNI/cert quirks
+  })
+}
 
-    try {
-      const withTimeout = (promise, ms = 12000, label = "operation") => {
+function makeGmail465(user, pass) {
+  return nodemailer.createTransport({
+    host: "smtp.gmail.com",
+    port: 465,          // implicit TLS
+    secure: true,
+    auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    family: 4,
+    // tls: { servername: "smtp.gmail.com" },
+  })
+}
+
+// tiny timeout wrapper so we never hang
+const withTimeout = (promise, ms = 12000, label = "operation") => {
   let t
   return Promise.race([
     promise,
@@ -156,27 +173,45 @@ const transporter = nodemailer.createTransport({
   ]).finally(() => clearTimeout(t))
 }
 
-await withTimeout(
-  transporter.sendMail({
-    from: `"Metabeys" <${SMTP_USER}>`,
-    to: email,
-    subject: "Reset your Metabeys password",
-    html: `<p>Hello ${user.username},</p>
-      <p>Click below to reset your password:</p>
-      <p><a href="${resetLink}">${resetLink}</a></p>
-      <p>This link will expire in 10 minutes.</p>`,
-  }),
-  12000,
-  "SMTP send"
-)
-
-
-      console.log(`✅ Sent reset link: ${resetLink}`)
-      res.json({ message: "Reset link sent" })
-    } catch (err) {
-  console.error("❌ Email failed:", err)
-  return res.status(500).json({ error: err?.message || "Failed to send reset email." })
+// try 587 first; on connection timeout, fall back to 465
+let lastErr
+for (const make of [makeGmail587, makeGmail465]) {
+  const transporter = make(SMTP_USER, SMTP_PASS)
+  try {
+    await withTimeout(
+      transporter.sendMail({
+        from: `"Metabeys" <${SMTP_USER}>`,
+        to: email,
+        subject: "Reset your Metabeys password",
+        html: `<p>Hello ${user.username},</p>
+               <p>Click below to reset your password:</p>
+               <p><a href="${resetLink}">${resetLink}</a></p>
+               <p>This link will expire in 10 minutes.</p>`,
+      }),
+      12000,
+      "SMTP send"
+    )
+    console.log("✅ SMTP OK via", transporter.options.port, transporter.options.secure ? "TLS" : "STARTTLS")
+    return res.json({ message: "Reset link sent" })
+  } catch (e) {
+    lastErr = e
+    console.warn(
+      "⚠️ SMTP attempt failed on port",
+      transporter.options.port,
+      "-",
+      (e && (e.code || e.name)) || "",
+      String(e?.message || e)
+    )
+    // Only try next port on connection-type failures
+    if (!/timed out|ETIMEDOUT|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH/i.test(String(e?.message || ""))) {
+      break
+    }
+  }
 }
+
+console.error("❌ Email failed:", lastErr)
+return res.status(500).json({ error: lastErr?.message || "Failed to send reset email." })
+
 
   })
 
