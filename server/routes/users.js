@@ -253,21 +253,20 @@ export default function usersRoutes({ users }) {
     // Intentionally ignore ownedParts here — managed elsewhere
 
     // --- Self-heal: if this account has no slug yet, create one (do NOT override an existing slug) ---
-if ((!me.slug || me.slug.trim() === "") && typeof $set.slug === "undefined") {
-  const base =
-    slugify($set.username || me.username || me.displayName || me.email?.split?.("@")?.[0]) ||
-    `user-${String(me._id).slice(-6)}`
-  let candidate = base
-  let n = 0
-  // ensure uniqueness without touching other users' slugs
-  // eslint-disable-next-line no-await-in-loop
-  while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
-    n += 1
-    candidate = `${base}-${n}`
-  }
-  $set.slug = candidate
-}
-
+    if ((!me.slug || me.slug.trim() === "") && typeof $set.slug === "undefined") {
+      const base =
+        slugify($set.username || me.username || me.displayName || me.email?.split?.("@")?.[0]) ||
+        `user-${String(me._id).slice(-6)}`
+      let candidate = base
+      let n = 0
+      // ensure uniqueness without touching other users' slugs
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: candidate, _id: { $ne: me._id } })) {
+        n += 1
+        candidate = `${base}-${n}`
+      }
+      $set.slug = candidate
+    }
 
     if (Object.keys($set).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" })
@@ -282,6 +281,170 @@ if ((!me.slug || me.slug.trim() === "") && typeof $set.slug === "undefined") {
     const u = result.value
     return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
+/* ---------- Player leaderboard (fast aggregation) ---------- */
+router.get("/leaderboard", async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1)
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20))
+    const q = String(req.query.q || "").trim()
+    const sort = String(req.query.sort || "total")
+
+    // Build a consistent display name to search on
+    const nameExpr = {
+      $ifNull: ["$username", { $ifNull: ["$displayName", "$slug"] }],
+    }
+
+    // Do we already have server-side counters?
+    const haveCounters = {
+      $and: [
+        { $ne: ["$firsts", null] },
+        { $ne: ["$seconds", null] },
+        { $ne: ["$thirds", null] },
+        { $ne: ["$topCutCount", null] },
+      ],
+    }
+
+    // If counters are missing, derive from tournamentsPlayed
+    const deriveFromTP = {
+      $let: {
+        vars: { tp: { $ifNull: ["$tournamentsPlayed", []] } },
+        in: {
+          firsts: {
+            $size: {
+              $filter: {
+                input: "$$tp",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "First Place"] },
+              },
+            },
+          },
+          seconds: {
+            $size: {
+              $filter: {
+                input: "$$tp",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Second Place"] },
+              },
+            },
+          },
+          thirds: {
+            $size: {
+              $filter: {
+                input: "$$tp",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Third Place"] },
+              },
+            },
+          },
+          topcutsOnly: {
+            $size: {
+              $filter: {
+                input: "$$tp",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Top Cut"] },
+              },
+            },
+          },
+        },
+      },
+    }
+
+    // Add derived fields (choose server counters when present, else derived)
+    const addDerived = {
+      $addFields: {
+        __DERIVED: deriveFromTP,
+        _name: nameExpr,
+
+        _firsts: { $cond: [haveCounters, { $ifNull: ["$firsts", 0] }, "$__DERIVED.firsts"] },
+        _seconds: { $cond: [haveCounters, { $ifNull: ["$seconds", 0] }, "$__DERIVED.seconds"] },
+        _thirds: { $cond: [haveCounters, { $ifNull: ["$thirds", 0] }, "$__DERIVED.thirds"] },
+
+        // If we have topCutCount, compute topCutsOnly = max(0, topCutCount - (podiums))
+        _topcutsOnly: {
+          $cond: [
+            haveCounters,
+            {
+              $max: [
+                0,
+                {
+                  $subtract: [
+                    { $ifNull: ["$topCutCount", 0] },
+                    {
+                      $add: [
+                        { $ifNull: ["$firsts", 0] },
+                        { $ifNull: ["$seconds", 0] },
+                        { $ifNull: ["$thirds", 0] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            "$__DERIVED.topcutsOnly",
+          ],
+        },
+      },
+    }
+
+    const addTotals = {
+      $addFields: {
+        _results: { $add: ["$_firsts", "$_seconds", "$_thirds", "$_topcutsOnly"] },
+      },
+    }
+
+    const pipeline = [addDerived, addTotals]
+
+    // Search by name if q present (escape regex specials)
+    if (q) {
+      const safe = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      pipeline.push({ $match: { _name: { $regex: safe, $options: "i" } } })
+    }
+
+    // Sorting
+    const sortSpec =
+      sort === "firsts" ? { _firsts: -1, _results: -1 } :
+      sort === "seconds" ? { _seconds: -1, _results: -1 } :
+      sort === "thirds" ? { _thirds: -1, _results: -1 } :
+      sort === "topcuts" ? { _topcutsOnly: -1, _results: -1 } :
+      { _results: -1, _firsts: -1 }
+
+    pipeline.push({ $sort: sortSpec })
+
+    // Paginate + count in one pass
+    pipeline.push({
+      $facet: {
+        rows: [
+          {
+            $project: {
+              slug: 1,
+              username: 1,
+              displayName: 1,
+              avatarDataUrl: 1,
+              _firsts: 1,
+              _seconds: 1,
+              _thirds: 1,
+              _topcutsOnly: 1,
+              _results: 1,
+              _name: 1,
+            },
+          },
+          { $skip: (page - 1) * pageSize },
+          { $limit: pageSize },
+        ],
+        meta: [{ $count: "total" }],
+      },
+    })
+
+    const docs = await users.aggregate(pipeline, { allowDiskUse: true }).toArray()
+    const doc = docs[0] || {}
+    const total = doc?.meta?.[0]?.total || 0
+    const rows = doc?.rows || []
+
+    return res.json({ rows, total, page, pageSize })
+  } catch (err) {
+    return next(err)
+  }
+})
 
   return router
 }
