@@ -133,93 +133,66 @@ export default (collections) => {
 
     const resetLink = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(token)}`
 
-    // Fire-and-forget email (non-blocking)
-    ;(async () => {
-      const SMTP_USER = process.env.EMAIL_USER
-      const SMTP_PASS = process.env.EMAIL_PASS
-      if (!SMTP_USER || !SMTP_PASS) {
-        return console.error("❌ EMAIL_USER or EMAIL_PASS missing")
-      }
+   // Fire-and-forget email (non-blocking)
+;(async () => {
+  const SMTP_USER = process.env.EMAIL_USER
+  const SMTP_PASS = process.env.EMAIL_PASS
+  const FROM_EMAIL = process.env.FROM_EMAIL || `MetaBeys <${SMTP_USER}>`
 
-      function makeGmail587(user, pass) {
-        return nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 587,
-          secure: false,
-          auth: { user, pass },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
-          family: 4, // prefer IPv4 (avoid some carrier IPv6 issues)
-          pool: true,
-          maxConnections: 2,
-          maxMessages: 20,
-        })
-      }
-      function makeGmail465(user, pass) {
-        return nodemailer.createTransport({
-          host: "smtp.gmail.com",
-          port: 465,
-          secure: true,
-          auth: { user, pass },
-          connectionTimeout: 10000,
-          greetingTimeout: 10000,
-          socketTimeout: 15000,
-          family: 4,
-          pool: true,
-          maxConnections: 2,
-          maxMessages: 20,
-        })
-      }
-      const withTimeout = (promise, ms = 12000, label = "operation") => {
-        let t
-        return Promise.race([
-          promise,
-          new Promise((_, reject) =>
-            (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-          ),
-        ]).finally(() => clearTimeout(t))
-      }
+  if (!SMTP_USER || !SMTP_PASS) {
+    return console.error("❌ EMAIL_USER or EMAIL_PASS missing")
+  }
 
-      let lastErr
-      for (const make of [makeGmail587, makeGmail465]) {
-        const transporter = make(SMTP_USER, SMTP_PASS)
-        try {
-          await withTimeout(
-            transporter.sendMail({
-              from: `"MetaBeys" <${SMTP_USER}>`,
-              to: email,
-              subject: "Reset your MetaBeys password",
-              html: `<p>Hello ${user.username},</p>
-                     <p>Click below to reset your password:</p>
-                     <p><a href="${resetLink}">${resetLink}</a></p>
-                     <p>This link will expire in 10 minutes.</p>`,
-            }),
-            12000,
-            "SMTP send"
-          )
-          console.log(
-            "✅ SMTP OK via",
-            transporter.options.port,
-            transporter.options.secure ? "TLS" : "STARTTLS"
-          )
-          return
-        } catch (e) {
-          lastErr = e
-          console.warn(
-            "⚠️ SMTP attempt failed on port",
-            transporter.options.port,
-            "-",
-            (e && (e.code || e.name)) || "",
-            String(e?.message || e)
-          )
-          if (!/timed out|ETIMEDOUT|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH/i.test(String(e?.message || ""))) {
-            break
-          }
-        }
-      }
-      console.error("❌ Email failed (post-202):", lastErr)
-    })().catch((e) => console.error("Forgot-password bg task error:", e))
+  // Use implicit TLS on port 465 only (many hosts block 587)
+  function makeGmail465(user, pass) {
+    return nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,         // ✅ implicit TLS
+      secure: true,      // ✅ required for 465
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      family: 4,         // ✅ force IPv4 (some carriers/hosts break IPv6)
+      pool: true,
+      maxConnections: 2,
+      maxMessages: 20,
+      tls: { servername: "smtp.gmail.com" }, // helps with SNI quirks
+    })
+  }
+
+  const withTimeout = (promise, ms = 12000, label = "operation") => {
+    let t
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+      ),
+    ]).finally(() => clearTimeout(t))
+  }
+
+  try {
+    const transporter = makeGmail465(SMTP_USER, SMTP_PASS)
+    await withTimeout(
+      transporter.sendMail({
+        from: FROM_EMAIL,
+        to: email,
+        subject: "Reset your MetaBeys password",
+        html: `<p>Hello ${user.username},</p>
+               <p>Click below to reset your password:</p>
+               <p><a href="${resetLink}">${resetLink}</a></p>
+               <p>This link will expire in 10 minutes.</p>`,
+      }),
+      12000,
+      "SMTP send"
+    )
+    console.log("✅ SMTP OK via 465 (implicit TLS)")
+    return
+  } catch (e) {
+    console.error("❌ SMTP via 465 failed:", e?.code || e?.name || "", String(e?.message || e))
+  }
+})().catch((e) => console.error("Forgot-password bg task error:", e))
+
   })
 
   // --- Reset Password ---
