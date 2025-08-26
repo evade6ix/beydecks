@@ -19,7 +19,6 @@ const slugify = (s) =>
 
 const usernameOk = (s) => /^[a-zA-Z0-9_.]{3,24}$/.test(String(s || ""))
 
-
 const router = express.Router()
 const resetTokens = {}
 const JWT_SECRET = process.env.JWT_SECRET
@@ -28,193 +27,202 @@ export default (collections) => {
   const users = collections.users
 
   // --- Register (validates username, ensures uniqueness, and sets a unique slug) ---
-router.post(
-  "/register",
-  body("username").notEmpty(),
-  body("email").isEmail(),
-  body("password").isLength({ min: 6 }),
-  async (req, res) => {
-    const errors = validationResult(req)
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
+  router.post(
+    "/register",
+    body("username").notEmpty(),
+    body("email").isEmail(),
+    body("password").isLength({ min: 6 }),
+    async (req, res) => {
+      const errors = validationResult(req)
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() })
 
-    const { username, email, password } = req.body
+      const { username, email, password } = req.body
+      const emailNorm = String(email || "").trim().toLowerCase()
 
-    // Username validation + uniqueness
-    if (!usernameOk(username)) {
-      return res.status(400).json({
-        error: "Username must be 3–24 chars: letters, numbers, underscores, dots.",
-      })
+      // Username validation + uniqueness
+      if (!usernameOk(username)) {
+        return res.status(400).json({
+          error: "Username must be 3–24 chars: letters, numbers, underscores, dots.",
+        })
+      }
+      const byUsername = await users.findOne({ username })
+      if (byUsername) return res.status(409).json({ error: "Username already taken" })
+
+      // Email uniqueness
+      const byEmail = await users.findOne({ email: emailNorm })
+      if (byEmail) return res.status(400).json({ error: "User already exists" })
+
+      // Build a unique slug from username
+      const base = slugify(username) || `user-${Date.now().toString().slice(-6)}`
+      let candidate = base
+      let n = 0
+      // ensure slug uniqueness
+      // eslint-disable-next-line no-await-in-loop
+      while (await users.findOne({ slug: candidate })) {
+        n += 1
+        candidate = `${base}-${n}`
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10)
+
+      const user = {
+        id: Date.now().toString(),
+        username,
+        slug: candidate,
+        email: emailNorm,
+        passwordHash,
+        displayName: username,
+        profileImage: "",
+        tournamentsPlayed: [],
+        matchupHistory: [],
+        topCutCount: 0,
+        firsts: 0,
+        seconds: 0,
+        thirds: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      await users.insertOne(user)
+      return res.status(201).json({ message: "Registered" })
     }
-    const byUsername = await users.findOne({ username })
-    if (byUsername) return res.status(409).json({ error: "Username already taken" })
+  )
 
-    // Email uniqueness (kept as-is)
-    const byEmail = await users.findOne({ email })
-    if (byEmail) return res.status(400).json({ error: "User already exists" })
-
-    // Build a unique slug from username
-    const base = slugify(username) || `user-${Date.now().toString().slice(-6)}`
-    let candidate = base
-    let n = 0
-    // ensure slug uniqueness
-    // eslint-disable-next-line no-await-in-loop
-    while (await users.findOne({ slug: candidate })) {
-      n += 1
-      candidate = `${base}-${n}`
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10)
-
-    const user = {
-      id: Date.now().toString(),
-      username,
-      slug: candidate,          // 👈 ensure future users always have a slug
-      email,
-      passwordHash,
-      displayName: username,    // optional default
-      profileImage: "",
-      tournamentsPlayed: [],
-      matchupHistory: [],
-      topCutCount: 0,
-      firsts: 0,
-      seconds: 0,
-      thirds: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }
-
-    await users.insertOne(user)
-    return res.status(201).json({ message: "Registered" })
-  }
-)
-
-  
-
+  // --- Login ---
   router.post("/login", async (req, res) => {
     const { email, password } = req.body
-    const user = await users.findOne({ email })
+    const user = await users.findOne({ email: String(email || "").trim().toLowerCase() })
     if (!user) return res.status(401).json({ error: "Invalid credentials" })
 
     const match = await bcrypt.compare(password, user.passwordHash)
     if (!match) return res.status(401).json({ error: "Invalid credentials" })
 
     const token = jwt.sign(
-  {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    badge: user.badge || null,
-    storeAccess: user.storeAccess || null,
-  },
-  JWT_SECRET,
-  { expiresIn: "7d" }
-)
+      {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        badge: user.badge || null,
+        storeAccess: user.storeAccess || null,
+      },
+      JWT_SECRET,
+      { expiresIn: "7d" }
+    )
 
     res.json({ token })
   })
 
+  // --- Forgot Password (mobile-safe: immediate 202 + background email) ---
   router.post("/forgot-password", async (req, res) => {
-    const { email } = req.body
+    const email = String(req.body?.email || "").trim().toLowerCase()
     const user = await users.findOne({ email })
-    if (!user) return res.status(404).json({ error: "User not found" })
 
+    // Respond immediately to avoid mobile timeouts + enumeration
+    res.status(202).json({ ok: true, message: "If that email exists, a reset link is on the way." })
+    if (!user) return
+
+    // Token in memory (10 min)
     const token = crypto.randomBytes(32).toString("hex")
-    resetTokens[token] = { userId: user.id, expires: Date.now() + 1000 * 60 * 10 }
+    resetTokens[token] = { userId: user.id, expires: Date.now() + 10 * 60 * 1000 }
 
-    const webOrigin = process.env.PUBLIC_WEB_ORIGIN || "https://metabeys.com"
-    const resetLink = `${webOrigin.replace(/\/+$/, "")}/reset-password?token=${token}`
+    // Canonical public base URL (pick www or apex in env)
+    const PUBLIC_BASE_URL =
+      process.env.PUBLIC_BASE_URL ||
+      process.env.PUBLIC_WEB_ORIGIN ||
+      "https://www.metabeys.com"
 
+    const resetLink = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(token)}`
 
-// inside router.post("/forgot-password", ...)
-const SMTP_USER = process.env.EMAIL_USER
-const SMTP_PASS = process.env.EMAIL_PASS
-if (!SMTP_USER || !SMTP_PASS) {
-  console.error("❌ EMAIL_USER or EMAIL_PASS missing")
-  return res.status(500).json({ error: "Email config missing on server" })
-}
+    // Fire-and-forget email (non-blocking)
+    ;(async () => {
+      const SMTP_USER = process.env.EMAIL_USER
+      const SMTP_PASS = process.env.EMAIL_PASS
+      if (!SMTP_USER || !SMTP_PASS) {
+        return console.error("❌ EMAIL_USER or EMAIL_PASS missing")
+      }
 
-// ---- transport builders ----
-function makeGmail587(user, pass) {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,          // STARTTLS
-    secure: false,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-    family: 4,          // force IPv4 (avoid IPv6 blackhole)
-    // tls: { servername: "smtp.gmail.com" }, // optional if SNI/cert quirks
+      function makeGmail587(user, pass) {
+        return nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false,
+          auth: { user, pass },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000,
+          family: 4, // prefer IPv4 (avoid some carrier IPv6 issues)
+          pool: true,
+          maxConnections: 2,
+          maxMessages: 20,
+        })
+      }
+      function makeGmail465(user, pass) {
+        return nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true,
+          auth: { user, pass },
+          connectionTimeout: 10000,
+          greetingTimeout: 10000,
+          socketTimeout: 15000,
+          family: 4,
+          pool: true,
+          maxConnections: 2,
+          maxMessages: 20,
+        })
+      }
+      const withTimeout = (promise, ms = 12000, label = "operation") => {
+        let t
+        return Promise.race([
+          promise,
+          new Promise((_, reject) =>
+            (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
+          ),
+        ]).finally(() => clearTimeout(t))
+      }
+
+      let lastErr
+      for (const make of [makeGmail587, makeGmail465]) {
+        const transporter = make(SMTP_USER, SMTP_PASS)
+        try {
+          await withTimeout(
+            transporter.sendMail({
+              from: `"MetaBeys" <${SMTP_USER}>`,
+              to: email,
+              subject: "Reset your MetaBeys password",
+              html: `<p>Hello ${user.username},</p>
+                     <p>Click below to reset your password:</p>
+                     <p><a href="${resetLink}">${resetLink}</a></p>
+                     <p>This link will expire in 10 minutes.</p>`,
+            }),
+            12000,
+            "SMTP send"
+          )
+          console.log(
+            "✅ SMTP OK via",
+            transporter.options.port,
+            transporter.options.secure ? "TLS" : "STARTTLS"
+          )
+          return
+        } catch (e) {
+          lastErr = e
+          console.warn(
+            "⚠️ SMTP attempt failed on port",
+            transporter.options.port,
+            "-",
+            (e && (e.code || e.name)) || "",
+            String(e?.message || e)
+          )
+          if (!/timed out|ETIMEDOUT|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH/i.test(String(e?.message || ""))) {
+            break
+          }
+        }
+      }
+      console.error("❌ Email failed (post-202):", lastErr)
+    })().catch((e) => console.error("Forgot-password bg task error:", e))
   })
-}
 
-function makeGmail465(user, pass) {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,          // implicit TLS
-    secure: true,
-    auth: { user, pass },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-    family: 4,
-    // tls: { servername: "smtp.gmail.com" },
-  })
-}
-
-// tiny timeout wrapper so we never hang
-const withTimeout = (promise, ms = 12000, label = "operation") => {
-  let t
-  return Promise.race([
-    promise,
-    new Promise((_, reject) =>
-      (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-    ),
-  ]).finally(() => clearTimeout(t))
-}
-
-// try 587 first; on connection timeout, fall back to 465
-let lastErr
-for (const make of [makeGmail587, makeGmail465]) {
-  const transporter = make(SMTP_USER, SMTP_PASS)
-  try {
-    await withTimeout(
-      transporter.sendMail({
-        from: `"Metabeys" <${SMTP_USER}>`,
-        to: email,
-        subject: "Reset your Metabeys password",
-        html: `<p>Hello ${user.username},</p>
-               <p>Click below to reset your password:</p>
-               <p><a href="${resetLink}">${resetLink}</a></p>
-               <p>This link will expire in 10 minutes.</p>`,
-      }),
-      12000,
-      "SMTP send"
-    )
-    console.log("✅ SMTP OK via", transporter.options.port, transporter.options.secure ? "TLS" : "STARTTLS")
-    return res.json({ message: "Reset link sent" })
-  } catch (e) {
-    lastErr = e
-    console.warn(
-      "⚠️ SMTP attempt failed on port",
-      transporter.options.port,
-      "-",
-      (e && (e.code || e.name)) || "",
-      String(e?.message || e)
-    )
-    // Only try next port on connection-type failures
-    if (!/timed out|ETIMEDOUT|ECONNREFUSED|ENETUNREACH|EHOSTUNREACH/i.test(String(e?.message || ""))) {
-      break
-    }
-  }
-}
-
-console.error("❌ Email failed:", lastErr)
-return res.status(500).json({ error: lastErr?.message || "Failed to send reset email." })
-
-
-  })
-
+  // --- Reset Password ---
   router.post("/reset-password", async (req, res) => {
     const { token, newPassword } = req.body
     const data = resetTokens[token]
@@ -228,6 +236,7 @@ return res.status(500).json({ error: lastErr?.message || "Failed to send reset e
     res.json({ message: "Password reset successfully" })
   })
 
+  // --- Me ---
   router.get("/me", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.sendStatus(401)
@@ -245,69 +254,66 @@ return res.status(500).json({ error: lastErr?.message || "Failed to send reset e
     }
   })
 
-  // UPDATE profile: PATCH /api/auth/me
-router.patch("/me", async (req, res) => {
-  const auth = req.headers.authorization
-  if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
+  // --- Update profile ---
+  router.patch("/me", async (req, res) => {
+    const auth = req.headers.authorization
+    if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
 
-  try {
-    const token = auth.split(" ")[1]
-    const payload = jwt.verify(token, JWT_SECRET)
+    try {
+      const token = auth.split(" ")[1]
+      const payload = jwt.verify(token, JWT_SECRET)
 
-    // collections is closed over above; same users collection
-    const { displayName, bio, homeStore, avatarDataUrl, ownedParts, slug } = req.body || {}
+      const { displayName, bio, homeStore, avatarDataUrl, ownedParts, slug } = req.body || {}
+      const $set = { updatedAt: new Date() }
+      if (typeof displayName === "string") $set.displayName = displayName.trim()
+      if (typeof bio === "string") $set.bio = bio.slice(0, 500)
+      if (typeof homeStore === "string") $set.homeStore = homeStore.slice(0, 120)
+      if (typeof avatarDataUrl === "string") $set.avatarDataUrl = avatarDataUrl
 
-    const $set = { updatedAt: new Date() }
-    if (typeof displayName === "string") $set.displayName = displayName.trim()
-    if (typeof bio === "string") $set.bio = bio.slice(0, 500)
-    if (typeof homeStore === "string") $set.homeStore = homeStore.slice(0, 120)
-    if (typeof avatarDataUrl === "string") $set.avatarDataUrl = avatarDataUrl
-
-    if (ownedParts && typeof ownedParts === "object") {
-      const norm = (a) => (Array.isArray(a) ? a.map(String).slice(0, 300) : [])
-      $set.ownedParts = {
-        blades: norm(ownedParts.blades),
-        assistBlades: norm(ownedParts.assistBlades),
-        ratchets: norm(ownedParts.ratchets),
-        bits: norm(ownedParts.bits),
+      if (ownedParts && typeof ownedParts === "object") {
+        const norm = (a) => (Array.isArray(a) ? a.map(String).slice(0, 300) : [])
+        $set.ownedParts = {
+          blades: norm(ownedParts.blades),
+          assistBlades: norm(ownedParts.assistBlades),
+          ratchets: norm(ownedParts.ratchets),
+          bits: norm(ownedParts.bits),
+        }
       }
+
+      if (typeof slug === "string") $set.slug = slug
+
+      const r = await users.updateOne({ id: String(payload.id) }, { $set })
+      if (r.matchedCount === 0) return res.status(404).json({ error: "User not found" })
+
+      const updated = await users.findOne(
+        { id: String(payload.id) },
+        {
+          projection: {
+            id: 1,
+            username: 1,
+            displayName: 1,
+            slug: 1,
+            avatarDataUrl: 1,
+            bio: 1,
+            homeStore: 1,
+            ownedParts: 1,
+            tournamentsPlayed: 1,
+            matchupHistory: 1,
+            topCutCount: 1,
+            firsts: 1,
+            seconds: 1,
+            thirds: 1,
+          },
+        }
+      )
+
+      return res.json(updated)
+    } catch {
+      return res.status(401).json({ error: "Invalid token" })
     }
+  })
 
-    // optional — only set if you intend to allow client to pass slug directly
-    if (typeof slug === "string") $set.slug = slug
-
-    const r = await users.updateOne({ id: String(payload.id) }, { $set })
-    if (r.matchedCount === 0) return res.status(404).json({ error: "User not found" })
-
-    const updated = await users.findOne(
-      { id: String(payload.id) },
-      {
-        projection: {
-          id: 1,
-          username: 1,
-          displayName: 1,
-          slug: 1,
-          avatarDataUrl: 1,
-          bio: 1,
-          homeStore: 1,
-          ownedParts: 1,
-          tournamentsPlayed: 1,
-          matchupHistory: 1,
-          topCutCount: 1,
-          firsts: 1,
-          seconds: 1,
-          thirds: 1,
-        },
-      }
-    )
-
-    return res.json(updated)
-  } catch {
-    return res.status(401).json({ error: "Invalid token" })
-  }
-})
-
-
+  // --- Submit matchup ---
   router.post("/submit-matchup", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
@@ -340,6 +346,7 @@ router.patch("/me", async (req, res) => {
     }
   })
 
+  // --- Delete matchup ---
   router.delete("/matchup/:matchupId", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
@@ -351,9 +358,9 @@ router.patch("/me", async (req, res) => {
       if (!user) return res.status(404).json({ error: "User not found" })
 
       const { matchupId } = req.params
-      const updated = (user.matchupHistory || []).filter(m => m.id !== matchupId)
+      const updated = (user.matchupHistory || []).filter((m) => m.id !== matchupId)
 
-      if (updated.length === user.matchupHistory.length)
+      if (updated.length === (user.matchupHistory || []).length)
         return res.status(404).json({ error: "Matchup not found" })
 
       await users.updateOne({ id: payload.id }, { $set: { matchupHistory: updated } })
@@ -363,6 +370,7 @@ router.patch("/me", async (req, res) => {
     }
   })
 
+  // --- Delete tournament ---
   router.delete("/tournament/:index", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
@@ -388,15 +396,18 @@ router.patch("/me", async (req, res) => {
         user.topCutCount = Math.max((user.topCutCount || 0) - 1, 0)
       }
 
-      await users.updateOne({ id: payload.id }, {
-        $set: {
-          tournamentsPlayed: updated,
-          firsts: user.firsts,
-          seconds: user.seconds,
-          thirds: user.thirds,
-          topCutCount: user.topCutCount,
-        },
-      })
+      await users.updateOne(
+        { id: payload.id },
+        {
+          $set: {
+            tournamentsPlayed: updated,
+            firsts: user.firsts,
+            seconds: user.seconds,
+            thirds: user.thirds,
+            topCutCount: user.topCutCount,
+          },
+        }
+      )
 
       res.status(200).json({ message: "Tournament deleted" })
     } catch {
@@ -404,6 +415,7 @@ router.patch("/me", async (req, res) => {
     }
   })
 
+  // --- Get user by identifier (username/email) ---
   router.get("/user/:identifier", async (req, res) => {
     const { identifier } = req.params
     const user = await users.findOne({
@@ -418,6 +430,7 @@ router.patch("/me", async (req, res) => {
     res.json(safeUser)
   })
 
+  // --- Submit tournament ---
   router.post("/submit-tournament", async (req, res) => {
     const auth = req.headers.authorization
     if (!auth?.startsWith("Bearer ")) return res.status(401).json({ error: "Unauthorized" })
@@ -444,15 +457,18 @@ router.patch("/me", async (req, res) => {
         user.topCutCount = (user.topCutCount || 0) + 1
       }
 
-      await users.updateOne({ id: payload.id }, {
-        $set: {
-          tournamentsPlayed,
-          firsts: user.firsts,
-          seconds: user.seconds,
-          thirds: user.thirds,
-          topCutCount: user.topCutCount,
-        },
-      })
+      await users.updateOne(
+        { id: payload.id },
+        {
+          $set: {
+            tournamentsPlayed,
+            firsts: user.firsts,
+            seconds: user.seconds,
+            thirds: user.thirds,
+            topCutCount: user.topCutCount,
+          },
+        }
+      )
 
       res.status(200).json(tournament)
     } catch {

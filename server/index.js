@@ -14,6 +14,7 @@ import dotenv from "dotenv"
 import usersRoutes from "./routes/users.js"
 import jwt from "jsonwebtoken" //
 import usersLeaderboard from "./routes/users.leaderboard.js"
+import helmet from "helmet"
 
 dotenv.config()
 
@@ -27,15 +28,25 @@ const startServer = async () => {
   const uploadDir = join(__dirname, "../client/public/uploads")
   if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true })
 
-  app.use(
-    cors({
-      origin: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Content-Type", "Authorization"],
-      credentials: true,
-    })
-  )
-  app.options("*", cors())
+// trust proxy (important if behind Vercel/Render/NGINX/Cloudflare)
+app.set("trust proxy", 1)
+
+// secure headers + HSTS preload
+app.use(
+  helmet({
+    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true }, // 2 years
+  })
+)
+
+// lock CORS to one front-end origin
+const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
+app.use(
+  cors({
+    origin: FRONTEND_ORIGIN,
+    credentials: true,
+  })
+)
+
 
   app.use(express.json({ limit: "10mb" }))
   app.use(fileUpload())
