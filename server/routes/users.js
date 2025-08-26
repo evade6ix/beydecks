@@ -445,6 +445,163 @@ router.get("/leaderboard", async (req, res, next) => {
     return next(err)
   }
 })
+/* ---------- Player leaderboard (paginated, server-derived) ---------- */
+// GET /users/leaderboard?page=1&pageSize=20&sort=total&q=needle
+router.get("/leaderboard", async (req, res) => {
+  try {
+    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1)
+    const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize || "20"), 10) || 20))
+    const sortKey = String(req.query.sort || "total").toLowerCase()
+    const q = String(req.query.q || "").trim()
+
+    const sortMap = {
+      total: { _results: -1, _firsts: -1, _seconds: -1, _thirds: -1, slug: 1 },
+      firsts: { _firsts: -1, _results: -1, _seconds: -1, _thirds: -1, slug: 1 },
+      seconds: { _seconds: -1, _results: -1, _firsts: -1, _thirds: -1, slug: 1 },
+      thirds: { _thirds: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
+      topcuts: { _topcutsOnly: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
+    }
+    const sortStage = sortMap[sortKey] || sortMap.total
+
+    // Text filter on username/displayName/slug
+    const match = q
+      ? {
+          $or: [
+            { username: { $regex: q, $options: "i" } },
+            { displayName: { $regex: q, $options: "i" } },
+            { slug: { $regex: q, $options: "i" } },
+          ],
+        }
+      : {}
+
+    // Build derived counters from tournamentsPlayed when present
+    // Otherwise fall back to firsts/seconds/thirds/topCutCount
+    const pipeline = [
+      { $match: match },
+
+      // Safety defaults so expressions don't explode on nulls
+      {
+        $addFields: {
+          tournamentsPlayed: { $ifNull: ["$tournamentsPlayed", []] },
+          firsts: { $toInt: { $ifNull: ["$firsts", 0] } },
+          seconds: { $toInt: { $ifNull: ["$seconds", 0] } },
+          thirds: { $toInt: { $ifNull: ["$thirds", 0] } },
+          topCutCount: { $toInt: { $ifNull: ["$topCutCount", 0] } },
+        },
+      },
+
+      // Compute per-placement counts from tournamentsPlayed
+      {
+        $addFields: {
+          tpLen: { $size: "$tournamentsPlayed" },
+          tpFirsts: {
+            $size: {
+              $filter: {
+                input: "$tournamentsPlayed",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "First Place"] },
+              },
+            },
+          },
+          tpSeconds: {
+            $size: {
+              $filter: {
+                input: "$tournamentsPlayed",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Second Place"] },
+              },
+            },
+          },
+          tpThirds: {
+            $size: {
+              $filter: {
+                input: "$tournamentsPlayed",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Third Place"] },
+              },
+            },
+          },
+          tpTopCutsOnly: {
+            $size: {
+              $filter: {
+                input: "$tournamentsPlayed",
+                as: "t",
+                cond: { $eq: ["$$t.placement", "Top Cut"] },
+              },
+            },
+          },
+        },
+      },
+
+      // Choose source: tournamentsPlayed-derived vs stored counters
+      {
+        $addFields: {
+          _firsts: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpFirsts", "$firsts"] },
+          _seconds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpSeconds", "$seconds"] },
+          _thirds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpThirds", "$thirds"] },
+          _topcutsOnly: {
+            $cond: [
+              { $gt: ["$tpLen", 0] },
+              "$tpTopCutsOnly",
+              {
+                $let: {
+                  vars: {
+                    podium: { $add: ["$firsts", "$seconds", "$thirds"] },
+                  },
+                  in: {
+                    $cond: [
+                      { $lte: ["$topCutCount", "$$podium"] },
+                      0,
+                      { $subtract: ["$topCutCount", "$$podium"] },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+
+      // Totals, display name fallback
+      {
+        $addFields: {
+          _results: { $add: ["$_firsts", "$_seconds", "$_thirds", "$_topcutsOnly"] },
+          _name: { $ifNull: [{ $trim: { input: "$username" } }, { $ifNull: ["$displayName", "$slug"] }] },
+        },
+      },
+
+      // Final projection
+      {
+        $project: {
+          _id: 0,
+          slug: 1,
+          username: 1,
+          displayName: 1,
+          avatarDataUrl: 1,
+          _firsts: 1,
+          _seconds: 1,
+          _thirds: 1,
+          _topcutsOnly: 1,
+          _results: 1,
+          _name: 1,
+        },
+      },
+
+      { $sort: sortStage },
+      { $skip: (page - 1) * pageSize },
+      { $limit: pageSize },
+    ]
+
+    // total count for pagination (match only, not sort/skip/limit)
+    const total = await users.countDocuments(match)
+    const rows = await users.aggregate(pipeline).toArray()
+
+    return res.json({ ok: true, page, pageSize, sort: sortKey, total, rows })
+  } catch (err) {
+    console.error("[/users/leaderboard] error:", err)
+    return res.status(500).json({ ok: false, error: "Leaderboard failed" })
+  }
+})
 
   return router
 }
