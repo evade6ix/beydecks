@@ -66,12 +66,18 @@ export default function PlayerLeaderboard() {
 
     const tryFetch = async () => {
       // 1) preferred: pre-aggregated leaderboard from server
-      const res1 = await fetch(api("/api/users/leaderboard?limit=200")).catch(() => null)
-      if (res1 && res1.ok) {
-        const data = await res1.json()
-        if (live) setPlayers(data)
-        return
-      }
+      const res1 = await fetch(
+  api(`/api/users/leaderboard?page=${page}&pageSize=${PAGE_SIZE}&sort=${sortKey}&q=${encodeURIComponent(q)}`)
+).catch(() => null)
+
+if (res1 && res1.ok) {
+  const data = await res1.json()
+  if (live) {
+    setPlayers(data.rows)   // <-- server gives you .rows
+  }
+  return
+}
+
 
       // 2) fallback: fetch all users
       const res2 = await fetch(api("/api/users")).catch(() => null)
