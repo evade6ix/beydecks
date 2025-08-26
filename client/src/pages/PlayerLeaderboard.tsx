@@ -69,17 +69,18 @@ export default function PlayerLeaderboard() {
     })
     if (deferredQ.trim()) params.set("q", deferredQ.trim())
 
-    // NOTE: change to api("/users/leaderboard") if you mounted at /users
-    fetch(api("/api/users/leaderboard") + "?" + params.toString(), { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((payload) => {
-        if (!live) return
-        setRows(Array.isArray(payload?.rows) ? payload.rows : [])
-        setTotal(Number(payload?.total || 0))
-      })
+    // ✅ mounted at /users in your app
+fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.signal })
+  .then((r) => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return r.json()
+  })
+  .then((payload) => {
+    if (!live) return
+    setRows(Array.isArray(payload?.rows) ? payload.rows : [])
+    setTotal(Number(payload?.total || 0))
+  })
+
       .catch((e) => {
         if (!live || e.name === "AbortError") return
         setError(e.message || "Failed to load leaderboard")
