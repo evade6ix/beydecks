@@ -15,6 +15,7 @@ import usersRoutes from "./routes/users.js"
 import jwt from "jsonwebtoken" //
 import usersLeaderboard from "./routes/users.leaderboard.js"
 import helmet from "helmet"
+import net from "net"   
 
 dotenv.config()
 
@@ -759,10 +760,32 @@ async function recomputeUserCounters(userDoc) {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))
   })
 
+   // ---------- Static + SPA fallback ----------
+  app.use(express.static(join(__dirname, "../client/dist")))
+  app.get("*", (req, res) => {
+    res.sendFile(resolve(__dirname, "../client/dist/index.html"))
+  })
+
+  // --- Temporary SMTP probe route (remove after testing) ---
+  app.get("/_smtp-probe-587", (req, res) => {
+    const sock = net.connect({ host: "smtp.gmail.com", port: 587, timeout: 6000 }, () => {
+      sock.destroy()
+      res.json({ ok: true, port: 587 })
+    })
+    sock.on("timeout", () => {
+      sock.destroy()
+      res.status(504).json({ ok: false, error: "timeout 587" })
+    })
+    sock.on("error", (e) => {
+      res.status(500).json({ ok: false, error: String(e) })
+    })
+  })
+
   app.listen(port, () => {
     console.log("✅ Backend + frontend running at: http://localhost:" + port)
   })
 }
+
 
 startServer().catch((err) => {
   console.error("❌ Failed to start:", err)

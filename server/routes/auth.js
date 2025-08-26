@@ -133,7 +133,7 @@ export default (collections) => {
 
     const resetLink = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(token)}`
 
-   // Fire-and-forget email (non-blocking)
+// Fire-and-forget email (non-blocking)
 ;(async () => {
   const SMTP_USER = process.env.EMAIL_USER
   const SMTP_PASS = process.env.EMAIL_PASS
@@ -143,21 +143,20 @@ export default (collections) => {
     return console.error("❌ EMAIL_USER or EMAIL_PASS missing")
   }
 
-  // Use implicit TLS on port 465 only (many hosts block 587)
-  function makeGmail465(user, pass) {
+  // Use Gmail on port 587 with STARTTLS (secure:false means STARTTLS upgrade)
+  function makeGmail587(user, pass) {
     return nodemailer.createTransport({
       host: "smtp.gmail.com",
-      port: 465,         // ✅ implicit TLS
-      secure: true,      // ✅ required for 465
+      port: 587,
+      secure: false,       // ❗ starts plain, upgrades via STARTTLS
+      requireTLS: true,    // insist on STARTTLS before AUTH
       auth: { user, pass },
       connectionTimeout: 10000,
       greetingTimeout: 10000,
       socketTimeout: 15000,
-      family: 4,         // ✅ force IPv4 (some carriers/hosts break IPv6)
-      pool: true,
-      maxConnections: 2,
-      maxMessages: 20,
-      tls: { servername: "smtp.gmail.com" }, // helps with SNI quirks
+      family: 4,           // force IPv4 (often more reliable)
+      pool: false,         // simpler while testing
+      tls: { servername: "smtp.gmail.com" },
     })
   }
 
@@ -172,7 +171,7 @@ export default (collections) => {
   }
 
   try {
-    const transporter = makeGmail465(SMTP_USER, SMTP_PASS)
+    const transporter = makeGmail587(SMTP_USER, SMTP_PASS)
     await withTimeout(
       transporter.sendMail({
         from: FROM_EMAIL,
@@ -186,12 +185,13 @@ export default (collections) => {
       12000,
       "SMTP send"
     )
-    console.log("✅ SMTP OK via 465 (implicit TLS)")
+    console.log("✅ SMTP OK via 587 (STARTTLS)")
     return
   } catch (e) {
-    console.error("❌ SMTP via 465 failed:", e?.code || e?.name || "", String(e?.message || e))
+    console.error("❌ SMTP via 587 failed:", e?.code || e?.name || "", String(e?.message || e))
   }
 })().catch((e) => console.error("Forgot-password bg task error:", e))
+
 
   })
 
