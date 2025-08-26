@@ -772,6 +772,22 @@ async function recomputeUserCounters(userDoc) {
     })
   })
 
+    // --- Temporary SMTP probe for port 465 (implicit TLS) ---
+  app.get("/_smtp-probe-465", (req, res) => {
+    const sock = net.connect({ host: "smtp.gmail.com", port: 465, timeout: 6000 }, () => {
+      sock.destroy()
+      res.json({ ok: true, port: 465 })
+    })
+    sock.on("timeout", () => {
+      sock.destroy()
+      res.status(504).json({ ok: false, error: "timeout 465" })
+    })
+    sock.on("error", (e) => {
+      res.status(500).json({ ok: false, error: String(e) })
+    })
+  })
+
+
   // 👇 This wildcard MUST be last (after the probe), to not swallow it
   app.get("*", (req, res) => {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))
