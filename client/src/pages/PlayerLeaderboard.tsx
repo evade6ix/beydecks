@@ -14,27 +14,31 @@ type PlayerRow = {
   displayName?: string
   avatarDataUrl?: string
 
-  // server-provided counters (may be misleading for top cuts)
-  firsts?: number
-  seconds?: number
-  thirds?: number
-  topCutCount?: number
+  // server-provided derived counters
+  _firsts?: number
+  _seconds?: number
+  _thirds?: number
+  _topcutsOnly?: number
+  _results?: number
+  _name?: string
+}
 
-  tournamentsCount?: number
-  tournamentsPlayed?: Array<{
-    eventId?: string | number | null
-    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
-  }>
+type LeaderboardPayload = {
+  ok: boolean
+  page: number
+  pageSize: number
+  total: number
+  sort: string
+  rows: PlayerRow[]
 }
 
 const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "thirds" | "topcuts" }[] = [
-  { label: "Total",  value: "total" },
+  { label: "Total", value: "total" },
   { label: "Firsts", value: "firsts" },
   { label: "Seconds", value: "seconds" },
   { label: "Thirds", value: "thirds" },
   { label: "Top Cuts", value: "topcuts" },
 ]
-
 
 // UI helpers
 const pillTone = {
@@ -48,15 +52,20 @@ const shimmer =
   "animate-pulse rounded-2xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:200%_100%]"
 
 export default function PlayerLeaderboard() {
-  const [players, setPlayers] = useState<PlayerRow[]>([])
+  const PAGE_SIZE = 20
+  const [players, setPlayers] = useState<LeaderboardPayload>({
+    ok: true,
+    page: 1,
+    pageSize: PAGE_SIZE,
+    total: 0,
+    sort: "total",
+    rows: [],
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState("")
   const [sortKey, setSortKey] =
     useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
-
-  // NEW: pagination
-  const PAGE_SIZE = 20
   const [page, setPage] = useState(1)
 
   useEffect(() => {
@@ -64,102 +73,40 @@ export default function PlayerLeaderboard() {
     setLoading(true)
     setError(null)
 
-    const tryFetch = async () => {
-      // 1) preferred: pre-aggregated leaderboard from server
-      const res1 = await fetch(
-  api(`/api/users/leaderboard?page=${page}&pageSize=${PAGE_SIZE}&sort=${sortKey}&q=${encodeURIComponent(q)}`)
-).catch(() => null)
-
-if (res1 && res1.ok) {
-  const data = await res1.json()
-  if (live) {
-    setPlayers(data.rows)   // <-- server gives you .rows
-  }
-  return
-}
-
-
-      // 2) fallback: fetch all users
-      const res2 = await fetch(api("/api/users")).catch(() => null)
-      if (!res2 || !res2.ok) throw new Error("Failed to fetch users")
-      const all = (await res2.json()) as PlayerRow[]
-      if (live) setPlayers(all)
+    const run = async () => {
+      const url = api(
+        `/api/users/leaderboard?page=${page}&pageSize=${PAGE_SIZE}&sort=${sortKey}&q=${encodeURIComponent(q)}`
+      )
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data: LeaderboardPayload = await res.json()
+      if (live) setPlayers(data)
     }
 
-    tryFetch()
+    run()
       .catch((e) => live && setError(e.message || "Failed to load leaderboard"))
       .finally(() => live && setLoading(false))
 
-    return () => { live = false }
-  }, [])
+    return () => {
+      live = false
+    }
+  }, [page, sortKey, q])
 
-  // Reset to first page when filters/sorts change
-  useEffect(() => { setPage(1) }, [q, sortKey])
+  // Reset to first page when search/sort changes
+  useEffect(() => {
+    setPage(1)
+  }, [q, sortKey])
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
+    const all = Array.isArray(players.rows) ? players.rows : []
+    return needle
+      ? all.filter((p) => (p._name || "").toLowerCase().includes(needle))
+      : all
+  }, [players, q])
 
-    const normalized = players.map((p) => {
-      const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
-
-if (tp.length > 0) {
-  let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
-  for (const t of tp) {
-    const plc = t?.placement
-    if (plc === "First Place") vFirsts++
-    else if (plc === "Second Place") vSeconds++
-    else if (plc === "Third Place") vThirds++
-    else if (plc === "Top Cut") vTopCutsOnly++
-  }
-  const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
-  return { ...p, _firsts: vFirsts, _seconds: vSeconds, _thirds: vThirds,
-           _topcutsOnly: vTopCutsOnly, _results: vResults,
-           _name: (p.username && p.username.trim()) || p.displayName || p.slug }
-}
-
-      const sFirsts = Number(p.firsts || 0)
-      const sSeconds = Number(p.seconds || 0)
-      const sThirds = Number(p.thirds || 0)
-
-      const rawTopCuts = Number(p.topCutCount || 0)
-      const sTopCutsOnly = Math.max(0, rawTopCuts - (sFirsts + sSeconds + sThirds))
-      const sResults = sFirsts + sSeconds + sThirds + sTopCutsOnly
-
-
-
-
-      return {
-        ...p,
-        _firsts: sFirsts,
-        _seconds: sSeconds,
-        _thirds: sThirds,
-        _topcutsOnly: sTopCutsOnly,
-        _results: sResults,
-        _name: (p.username && p.username.trim()) || p.displayName || p.slug,
-      }
-    })
-
-    const filtered = needle
-      ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
-      : normalized
-
-    const sorter = (a: any, b: any) => {
-      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
-      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
-      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
-      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
-      return b._results - a._results || b._firsts - a._firsts
-    }
-
-    return filtered.sort(sorter)
-  }, [players, q, sortKey])
-
-  // --- paginate AFTER filtering/sorting ---
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
-  const pageRows = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE
-    return rows.slice(start, start + PAGE_SIZE)
-  }, [rows, page])
+  const totalPages = Math.max(1, Math.ceil((players.total || 0) / PAGE_SIZE))
+  const pageRows = rows // server already paginated
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
@@ -192,21 +139,24 @@ if (tp.length > 0) {
               />
             </div>
             {/* sort (dropdown) */}
-<div className="relative">
-  <label className="sr-only" htmlFor="sortBy">Sort</label>
-  <select
-    id="sortBy"
-    value={sortKey}
-    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-    className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
-  >
-    {SORT_OPTIONS.map(o => (
-      <option key={o.value} value={o.value}>{o.label}</option>
-    ))}
-  </select>
-  <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
-</div>
-
+            <div className="relative">
+              <label className="sr-only" htmlFor="sortBy">
+                Sort
+              </label>
+              <select
+                id="sortBy"
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+                className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
+            </div>
           </div>
         </div>
       </motion.div>
@@ -230,7 +180,7 @@ if (tp.length > 0) {
             {pageRows.map((p, idx) => (
               <LeaderboardRow
                 key={p.slug || idx}
-                rank={(page - 1) * PAGE_SIZE + idx + 1}  // global rank number
+                rank={(page - 1) * PAGE_SIZE + idx + 1}
                 p={p}
               />
             ))}
@@ -238,7 +188,7 @@ if (tp.length > 0) {
             {/* Pagination footer */}
             <div className="mt-4 flex items-center justify-between gap-2">
               <div className="text-xs text-white/60">
-                Page {page} of {totalPages} · Showing {Math.min(rows.length, page * PAGE_SIZE)} of {rows.length} players
+                Page {page} of {totalPages} · Showing {pageRows.length} of {players.total} players
               </div>
               <Pagination page={page} totalPages={totalPages} onChange={setPage} />
             </div>
@@ -249,11 +199,10 @@ if (tp.length > 0) {
   )
 }
 
-function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
+function LeaderboardRow({ rank, p }: { rank: number; p: PlayerRow }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
   const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
 
-  // use derived view-only numbers
   const total = p._results ?? 0
   const firsts = p._firsts ?? 0
   const seconds = p._seconds ?? 0
@@ -285,8 +234,12 @@ function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
         {/* Avatar + name */}
         <Link to={sharePath} className="flex items-center gap-3 min-w-0 group">
           <img
-            src={p.avatarDataUrl || "/default-avatar.png"}
-            alt={p.avatarDataUrl ? name : ""}
+            src={
+              p.avatarDataUrl ||
+              api(`/api/users/avatar/${encodeURIComponent(p.slug)}`) ||
+              "/default-avatar.png"
+            }
+            alt={name}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
           />
@@ -344,7 +297,6 @@ function Pagination({
   totalPages: number
   onChange: (p: number) => void
 }) {
-  // Build compact page list: 1 … (p-1) p (p+1) … last
   const pages: (number | "...")[] = []
   const push = (v: number | "...") => pages.push(v)
   const clamp = (n: number) => Math.max(1, Math.min(totalPages, n))
