@@ -754,17 +754,8 @@ async function recomputeUserCounters(userDoc) {
   app.use("/api/users", usersRoutes({ users }))
   app.use("/users", usersRoutes({ users }))
 
-  // ---------- Static + SPA fallback ----------
+    // ---------- Static + SPA fallback (serve files first) ----------
   app.use(express.static(join(__dirname, "../client/dist")))
-  app.get("*", (req, res) => {
-    res.sendFile(resolve(__dirname, "../client/dist/index.html"))
-  })
-
-   // ---------- Static + SPA fallback ----------
-  app.use(express.static(join(__dirname, "../client/dist")))
-  app.get("*", (req, res) => {
-    res.sendFile(resolve(__dirname, "../client/dist/index.html"))
-  })
 
   // --- Temporary SMTP probe route (remove after testing) ---
   app.get("/_smtp-probe-587", (req, res) => {
@@ -781,14 +772,17 @@ async function recomputeUserCounters(userDoc) {
     })
   })
 
+  // 👇 This wildcard MUST be last (after the probe), to not swallow it
+  app.get("*", (req, res) => {
+    res.sendFile(resolve(__dirname, "../client/dist/index.html"))
+  })
+
   app.listen(port, () => {
     console.log("✅ Backend + frontend running at: http://localhost:" + port)
   })
-}
-
+} // <— this closes startServer (keep it)
 
 startServer().catch((err) => {
   console.error("❌ Failed to start:", err)
   process.exit(1)
 })
-
