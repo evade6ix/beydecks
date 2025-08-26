@@ -3,7 +3,7 @@ import { motion } from "framer-motion"
 import { Crown, Medal, Trophy, Users, Search, ChevronDown, Sparkles } from "lucide-react"
 import { Link } from "react-router-dom"
 
-// --- API base (same helper pattern you use elsewhere) ---
+// --- API base (same helper you already use) ---
 const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
 const ROOT = RAW.replace(/\/api\/?$/i, "")
 const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
@@ -13,27 +13,31 @@ type PlayerRow = {
   username?: string
   displayName?: string
   avatarDataUrl?: string
-
-  // server-provided derived counters
   _firsts?: number
   _seconds?: number
   _thirds?: number
   _topcutsOnly?: number
   _results?: number
   _name?: string
+  // legacy fields if we ever fall back to /api/users
+  firsts?: number
+  seconds?: number
+  thirds?: number
+  topCutCount?: number
+  tournamentsPlayed?: Array<{ placement?: string }>
 }
 
 type LeaderboardPayload = {
-  ok: boolean
+  ok?: boolean
   page: number
   pageSize: number
   total: number
-  sort: string
+  sort?: string
   rows: PlayerRow[]
 }
 
 const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "thirds" | "topcuts" }[] = [
-  { label: "Total", value: "total" },
+  { label: "Total",  value: "total" },
   { label: "Firsts", value: "firsts" },
   { label: "Seconds", value: "seconds" },
   { label: "Thirds", value: "thirds" },
@@ -44,7 +48,7 @@ const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "th
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
   silver: "border-slate-300/40 text-slate-200 bg-slate-300/10",
-  bronze: "border-amber-500/40 text-amber-200 bg-amber-500/10",
+  bronze: "border-amber-500/40 text-amber-500/10 text-amber-200",
   indigo: "border-indigo-500/40 text-indigo-200 bg-indigo-500/10",
 } as const
 
@@ -53,12 +57,12 @@ const shimmer =
 
 export default function PlayerLeaderboard() {
   const PAGE_SIZE = 20
-  const [players, setPlayers] = useState<LeaderboardPayload>({
-    ok: true,
+
+  // IMPORTANT: payload is an object { rows, total } — not an array
+  const [payload, setPayload] = useState<LeaderboardPayload>({
     page: 1,
     pageSize: PAGE_SIZE,
     total: 0,
-    sort: "total",
     rows: [],
   })
   const [loading, setLoading] = useState(true)
@@ -68,45 +72,104 @@ export default function PlayerLeaderboard() {
     useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
   const [page, setPage] = useState(1)
 
+  // fetch whenever page/sort/search change
   useEffect(() => {
     let live = true
     setLoading(true)
     setError(null)
 
     const run = async () => {
-      const url = api(
-        `/api/users/leaderboard?page=${page}&pageSize=${PAGE_SIZE}&sort=${sortKey}&q=${encodeURIComponent(q)}`
-      )
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const data: LeaderboardPayload = await res.json()
-      if (live) setPlayers(data)
+      // 1) primary — your server route is /users/leaderboard (no /api prefix)
+      try {
+        const url = api(
+          `/users/leaderboard?page=${page}&pageSize=${PAGE_SIZE}&sort=${sortKey}&q=${encodeURIComponent(q)}`
+        )
+        const r1 = await fetch(url)
+        if (r1.ok) {
+          const data = (await r1.json()) as LeaderboardPayload
+          if (live && data && Array.isArray(data.rows)) {
+            setPayload(data)
+            return
+          }
+        }
+      } catch {
+        // move to fallback
+      }
+
+      // 2) fallback — legacy /api/users (client-side derive; keeps avatars as-is)
+      try {
+        const r2 = await fetch(api("/api/users"))
+        if (!r2.ok) throw new Error(`HTTP ${r2.status}`)
+        const all = (await r2.json()) as PlayerRow[]
+        if (!live) return
+
+        // derive minimal totals for UI if server didn’t provide them
+        const rows = all.map((p) => {
+          if (Array.isArray(p.tournamentsPlayed) && p.tournamentsPlayed.length) {
+            let f = 0, s = 0, t = 0, tc = 0
+            for (const tp of p.tournamentsPlayed) {
+              const plc = tp?.placement
+              if (plc === "First Place") f++
+              else if (plc === "Second Place") s++
+              else if (plc === "Third Place") t++
+              else if (plc === "Top Cut") tc++
+            }
+            return {
+              ...p,
+              _firsts: f, _seconds: s, _thirds: t,
+              _topcutsOnly: tc,
+              _results: f + s + t + tc,
+              _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+            }
+          } else {
+            const f = Number(p.firsts || 0)
+            const s = Number(p.seconds || 0)
+            const t = Number(p.thirds || 0)
+            const tcOnly = Math.max(0, Number(p.topCutCount || 0) - (f + s + t))
+            return {
+              ...p,
+              _firsts: f, _seconds: s, _thirds: t,
+              _topcutsOnly: tcOnly,
+              _results: f + s + t + tcOnly,
+              _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+            }
+          }
+        })
+
+        setPayload({
+          page,
+          pageSize: PAGE_SIZE,
+          total: rows.length,
+          sort: sortKey,
+          rows,
+        })
+      } catch (e: any) {
+        if (live) setError(e?.message || "Failed to load leaderboard")
+      }
     }
 
     run()
-      .catch((e) => live && setError(e.message || "Failed to load leaderboard"))
+      .catch((e) => live && setError(e?.message || "Failed to load leaderboard"))
       .finally(() => live && setLoading(false))
 
-    return () => {
-      live = false
-    }
+    return () => { live = false }
   }, [page, sortKey, q])
 
-  // Reset to first page when search/sort changes
-  useEffect(() => {
-    setPage(1)
-  }, [q, sortKey])
+  // Reset to first page when filters/sorts change
+  useEffect(() => { setPage(1) }, [q, sortKey])
 
+  // cheap client-side name filter (server already filters via ?q=)
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
-    const all = Array.isArray(players.rows) ? players.rows : []
+    const all = Array.isArray(payload.rows) ? payload.rows : []
     return needle
-      ? all.filter((p) => (p._name || "").toLowerCase().includes(needle))
+      ? all.filter((p) => (p._name || p.username || p.displayName || p.slug || "")
+          .toLowerCase().includes(needle))
       : all
-  }, [players, q])
+  }, [payload, q])
 
-  const totalPages = Math.max(1, Math.ceil((players.total || 0) / PAGE_SIZE))
-  const pageRows = rows // server already paginated
+  const totalPages = Math.max(1, Math.ceil((payload.total || rows.length) / payload.pageSize || 1))
+  const pageRows = rows // already paginated by server (fallback mimics)
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
@@ -140,19 +203,15 @@ export default function PlayerLeaderboard() {
             </div>
             {/* sort (dropdown) */}
             <div className="relative">
-              <label className="sr-only" htmlFor="sortBy">
-                Sort
-              </label>
+              <label className="sr-only" htmlFor="sortBy">Sort</label>
               <select
                 id="sortBy"
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
                 className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
               >
-                {SORT_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
+                {SORT_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
@@ -180,7 +239,7 @@ export default function PlayerLeaderboard() {
             {pageRows.map((p, idx) => (
               <LeaderboardRow
                 key={p.slug || idx}
-                rank={(page - 1) * PAGE_SIZE + idx + 1}
+                rank={(page - 1) * payload.pageSize + idx + 1}
                 p={p}
               />
             ))}
@@ -188,7 +247,7 @@ export default function PlayerLeaderboard() {
             {/* Pagination footer */}
             <div className="mt-4 flex items-center justify-between gap-2">
               <div className="text-xs text-white/60">
-                Page {page} of {totalPages} · Showing {pageRows.length} of {players.total} players
+                Page {page} of {totalPages} · Showing {Math.min(payload.total || rows.length, page * payload.pageSize)} of {payload.total || rows.length} players
               </div>
               <Pagination page={page} totalPages={totalPages} onChange={setPage} />
             </div>
@@ -234,12 +293,8 @@ function LeaderboardRow({ rank, p }: { rank: number; p: PlayerRow }) {
         {/* Avatar + name */}
         <Link to={sharePath} className="flex items-center gap-3 min-w-0 group">
           <img
-            src={
-              p.avatarDataUrl ||
-              api(`/api/users/avatar/${encodeURIComponent(p.slug)}`) ||
-              "/default-avatar.png"
-            }
-            alt={name}
+            src={p.avatarDataUrl || "/default-avatar.png"}
+            alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
           />
@@ -300,10 +355,7 @@ function Pagination({
   const pages: (number | "...")[] = []
   const push = (v: number | "...") => pages.push(v)
   const clamp = (n: number) => Math.max(1, Math.min(totalPages, n))
-
-  const addRange = (s: number, e: number) => {
-    for (let i = s; i <= e; i++) push(i)
-  }
+  const addRange = (s: number, e: number) => { for (let i = s; i <= e; i++) push(i) }
 
   push(1)
   if (page > 3) push("...")
@@ -319,7 +371,6 @@ function Pagination({
       <button className={btnBase} disabled={page === 1} onClick={() => onChange(clamp(page - 1))}>
         Prev
       </button>
-
       {pages.map((p, i) =>
         p === "..." ? (
           <span key={`e-${i}`} className="px-2 text-white/50 select-none">…</span>
@@ -334,7 +385,6 @@ function Pagination({
           </button>
         )
       )}
-
       <button className={btnBase} disabled={page === totalPages} onClick={() => onChange(clamp(page + 1))}>
         Next
       </button>

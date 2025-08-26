@@ -268,6 +268,7 @@ export default function usersRoutes({ users }) {
     const u = result.value
     return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
+
 /* ---------- Player leaderboard (paginated, server-derived) ---------- */
 // GET /users/leaderboard?page=1&pageSize=20&sort=total&q=needle
 router.get("/leaderboard", async (req, res) => {
