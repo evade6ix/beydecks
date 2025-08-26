@@ -4,7 +4,6 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import { body, validationResult } from "express-validator"
 import crypto from "crypto"
-import nodemailer from "nodemailer"
 
 const slugify = (s) =>
   (s || "")
@@ -133,64 +132,46 @@ export default (collections) => {
 
     const resetLink = `${PUBLIC_BASE_URL.replace(/\/+$/, "")}/reset-password?token=${encodeURIComponent(token)}`
 
-// Fire-and-forget email (non-blocking)
+// Fire-and-forget email via Apps Script webhook (no SMTP)
 ;(async () => {
-  const SMTP_USER = process.env.EMAIL_USER
-  const SMTP_PASS = process.env.EMAIL_PASS
-  const FROM_EMAIL = process.env.FROM_EMAIL || `MetaBeys <${SMTP_USER}>`
-
-  if (!SMTP_USER || !SMTP_PASS) {
-    return console.error("❌ EMAIL_USER or EMAIL_PASS missing")
+  const url = process.env.GMAIL_WEBHOOK_URL
+  const token = process.env.GMAIL_WEBHOOK_TOKEN
+  if (!url || !token) {
+    console.error("❌ Missing GMAIL_WEBHOOK_URL or GMAIL_WEBHOOK_TOKEN")
+    return
   }
 
-  // Use Gmail on port 587 with STARTTLS (secure:false means STARTTLS upgrade)
-  function makeGmail587(user, pass) {
-    return nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false,       // ❗ starts plain, upgrades via STARTTLS
-      requireTLS: true,    // insist on STARTTLS before AUTH
-      auth: { user, pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      family: 4,           // force IPv4 (often more reliable)
-      pool: false,         // simpler while testing
-      tls: { servername: "smtp.gmail.com" },
-    })
-  }
+  const payload = {
+    token,
+    to: email,
+    subject: "Reset your MetaBeys password",
+    text: `Hello ${user.username},
 
-  const withTimeout = (promise, ms = 12000, label = "operation") => {
-    let t
-    return Promise.race([
-      promise,
-      new Promise((_, reject) =>
-        (t = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms))
-      ),
-    ]).finally(() => clearTimeout(t))
+Click the link below to reset your password:
+${resetLink}
+
+This link will expire in 10 minutes.`,
+    html: `<p>Hello ${user.username},</p>
+           <p>Click below to reset your password:</p>
+           <p><a href="${resetLink}">${resetLink}</a></p>
+           <p>This link will expire in 10 minutes.</p>`,
+    fromName: "MetaBeys"
   }
 
   try {
-    const transporter = makeGmail587(SMTP_USER, SMTP_PASS)
-    await withTimeout(
-      transporter.sendMail({
-        from: FROM_EMAIL,
-        to: email,
-        subject: "Reset your MetaBeys password",
-        html: `<p>Hello ${user.username},</p>
-               <p>Click below to reset your password:</p>
-               <p><a href="${resetLink}">${resetLink}</a></p>
-               <p>This link will expire in 10 minutes.</p>`,
-      }),
-      12000,
-      "SMTP send"
-    )
-    console.log("✅ SMTP OK via 587 (STARTTLS)")
-    return
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok || !j.ok) throw new Error(`HTTP ${r.status} body=${JSON.stringify(j)}`)
+    console.log("✅ Password reset email sent via webhook")
   } catch (e) {
-    console.error("❌ SMTP via 587 failed:", e?.code || e?.name || "", String(e?.message || e))
+    console.error("❌ Webhook mail failed:", e)
   }
-})().catch((e) => console.error("Forgot-password bg task error:", e))
+})()
+
 
 
   })
