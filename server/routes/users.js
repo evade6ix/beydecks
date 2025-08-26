@@ -602,6 +602,41 @@ router.get("/leaderboard", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Leaderboard failed" })
   }
 })
+/* ---------- Per-user avatar (serves image bytes) ---------- */
+// GET /users/avatar/:slug
+router.get("/avatar/:slug", async (req, res) => {
+  try {
+    const slug = String(req.params.slug || "").trim().toLowerCase()
+    if (!slug) return res.status(400).send("Missing slug")
+
+    const u = await users.findOne(
+      { slug },
+      { projection: { _id: 0, avatarDataUrl: 1 } }
+    )
+    if (!u || !u.avatarDataUrl) return res.status(404).send("No avatar")
+
+    const dataUrl = String(u.avatarDataUrl)
+    // must be like: data:image/png;base64,AAAA...
+    if (!dataUrl.startsWith("data:image/") || !dataUrl.includes(";base64,")) {
+      return res.status(400).send("Invalid avatar data URL")
+    }
+
+    const [meta, b64] = dataUrl.split(",")
+    const mime = meta.slice("data:".length).replace(";base64", "") || "image/png"
+    const buf = Buffer.from(b64, "base64")
+
+    res.setHeader("Content-Type", mime)
+    // cache it a bit so list scrolling isn’t chatty
+    res.setHeader("Cache-Control", "public, max-age=86400, immutable")
+    // weak ETag from size to help browser revalidation
+    res.setHeader("ETag", `W/"${buf.length.toString(16)}-${slug}"`)
+
+    return res.status(200).end(buf)
+  } catch (e) {
+    console.error("[/users/avatar/:slug] error:", e)
+    return res.status(500).send("Avatar error")
+  }
+})
 
   return router
 }

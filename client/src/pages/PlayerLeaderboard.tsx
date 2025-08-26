@@ -223,7 +223,7 @@ function LeaderboardRow({ rank, p }: { rank: number; p: ServerRow }) {
         {/* Avatar + name */}
         <Link to={sharePath} className="flex items-center gap-3 min-w-0 group">
           <img
-            src={p.avatarDataUrl || "/default-avatar.png"}
+            src={api(`/users/avatar/${encodeURIComponent(p.slug)}`)}
             alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
