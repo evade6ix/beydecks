@@ -1,4 +1,4 @@
-import { useEffect, useState, useDeferredValue } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import { Crown, Medal, Trophy, Users, Search, ChevronDown, Sparkles } from "lucide-react"
 import { Link } from "react-router-dom"
@@ -8,17 +8,23 @@ const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/
 const ROOT = RAW.replace(/\/api\/?$/i, "")
 const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
 
-type ServerRow = {
+type PlayerRow = {
   slug: string
   username?: string
   displayName?: string
   avatarDataUrl?: string
-  _firsts: number
-  _seconds: number
-  _thirds: number
-  _topcutsOnly: number
-  _results: number
-  _name?: string
+
+  // server-provided counters (may be misleading for top cuts)
+  firsts?: number
+  seconds?: number
+  thirds?: number
+  topCutCount?: number
+
+  tournamentsCount?: number
+  tournamentsPlayed?: Array<{
+    eventId?: string | number | null
+    placement?: "First Place" | "Second Place" | "Third Place" | "Top Cut" | string
+  }>
 }
 
 const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "thirds" | "topcuts" }[] = [
@@ -28,6 +34,7 @@ const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "th
   { label: "Thirds", value: "thirds" },
   { label: "Top Cuts", value: "topcuts" },
 ]
+
 
 // UI helpers
 const pillTone = {
@@ -41,65 +48,112 @@ const shimmer =
   "animate-pulse rounded-2xl bg-gradient-to-r from-white/5 via-white/10 to-white/5 bg-[length:200%_100%]"
 
 export default function PlayerLeaderboard() {
-  const PAGE_SIZE = 20
-
-  // server-driven data
-  const [rows, setRows] = useState<ServerRow[]>([])
-  const [total, setTotal] = useState(0)
-
-  // ui state
+  const [players, setPlayers] = useState<PlayerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [q, setQ] = useState("")
-  const deferredQ = useDeferredValue(q) // smoother typing, fewer refetches
-  const [sortKey, setSortKey] = useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
+  const [sortKey, setSortKey] =
+    useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
+
+  // NEW: pagination
+  const PAGE_SIZE = 20
   const [page, setPage] = useState(1)
 
-  // fetch current page from server
   useEffect(() => {
     let live = true
     setLoading(true)
     setError(null)
 
-    const controller = new AbortController()
-    const params = new URLSearchParams({
-      page: String(page),
-      pageSize: String(PAGE_SIZE),
-      sort: sortKey,
-    })
-    if (deferredQ.trim()) params.set("q", deferredQ.trim())
+    const tryFetch = async () => {
+      // 1) preferred: pre-aggregated leaderboard from server
+      const res1 = await fetch(api("/api/users/leaderboard?limit=200")).catch(() => null)
+      if (res1 && res1.ok) {
+        const data = await res1.json()
+        if (live) setPlayers(data)
+        return
+      }
 
-    // ✅ mounted at /users in your app
-fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.signal })
-  .then((r) => {
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    return r.json()
-  })
-  .then((payload) => {
-    if (!live) return
-    setRows(Array.isArray(payload?.rows) ? payload.rows : [])
-    setTotal(Number(payload?.total || 0))
-  })
-
-      .catch((e) => {
-        if (!live || e.name === "AbortError") return
-        setError(e.message || "Failed to load leaderboard")
-      })
-      .finally(() => {
-        if (live) setLoading(false)
-      })
-
-    return () => {
-      live = false
-      controller.abort()
+      // 2) fallback: fetch all users
+      const res2 = await fetch(api("/api/users")).catch(() => null)
+      if (!res2 || !res2.ok) throw new Error("Failed to fetch users")
+      const all = (await res2.json()) as PlayerRow[]
+      if (live) setPlayers(all)
     }
-  }, [page, sortKey, deferredQ])
 
-  // reset to first page on sort/search change
-  useEffect(() => { setPage(1) }, [sortKey, deferredQ])
+    tryFetch()
+      .catch((e) => live && setError(e.message || "Failed to load leaderboard"))
+      .finally(() => live && setLoading(false))
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  const pageRows = rows // server already returns a single page
+    return () => { live = false }
+  }, [])
+
+  // Reset to first page when filters/sorts change
+  useEffect(() => { setPage(1) }, [q, sortKey])
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+
+    const normalized = players.map((p) => {
+      const tp = Array.isArray(p.tournamentsPlayed) ? p.tournamentsPlayed : []
+
+if (tp.length > 0) {
+  let vFirsts = 0, vSeconds = 0, vThirds = 0, vTopCutsOnly = 0
+  for (const t of tp) {
+    const plc = t?.placement
+    if (plc === "First Place") vFirsts++
+    else if (plc === "Second Place") vSeconds++
+    else if (plc === "Third Place") vThirds++
+    else if (plc === "Top Cut") vTopCutsOnly++
+  }
+  const vResults = vFirsts + vSeconds + vThirds + vTopCutsOnly
+  return { ...p, _firsts: vFirsts, _seconds: vSeconds, _thirds: vThirds,
+           _topcutsOnly: vTopCutsOnly, _results: vResults,
+           _name: (p.username && p.username.trim()) || p.displayName || p.slug }
+}
+
+      const sFirsts = Number(p.firsts || 0)
+      const sSeconds = Number(p.seconds || 0)
+      const sThirds = Number(p.thirds || 0)
+
+      const rawTopCuts = Number(p.topCutCount || 0)
+      const sTopCutsOnly = Math.max(0, rawTopCuts - (sFirsts + sSeconds + sThirds))
+      const sResults = sFirsts + sSeconds + sThirds + sTopCutsOnly
+
+
+
+
+      return {
+        ...p,
+        _firsts: sFirsts,
+        _seconds: sSeconds,
+        _thirds: sThirds,
+        _topcutsOnly: sTopCutsOnly,
+        _results: sResults,
+        _name: (p.username && p.username.trim()) || p.displayName || p.slug,
+      }
+    })
+
+    const filtered = needle
+      ? normalized.filter((p) => p._name.toLowerCase().includes(needle))
+      : normalized
+
+    const sorter = (a: any, b: any) => {
+      if (sortKey === "firsts") return b._firsts - a._firsts || b._results - a._results
+      if (sortKey === "seconds") return b._seconds - a._seconds || b._results - a._results
+      if (sortKey === "thirds") return b._thirds - a._thirds || b._results - a._results
+      if (sortKey === "topcuts") return b._topcutsOnly - a._topcutsOnly || b._results - a._results
+      return b._results - a._results || b._firsts - a._firsts
+    }
+
+    return filtered.sort(sorter)
+  }, [players, q, sortKey])
+
+  // --- paginate AFTER filtering/sorting ---
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return rows.slice(start, start + PAGE_SIZE)
+  }, [rows, page])
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
@@ -132,20 +186,21 @@ fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.
               />
             </div>
             {/* sort (dropdown) */}
-            <div className="relative">
-              <label className="sr-only" htmlFor="sortBy">Sort</label>
-              <select
-                id="sortBy"
-                value={sortKey}
-                onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
-                className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
-              >
-                {SORT_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
-            </div>
+<div className="relative">
+  <label className="sr-only" htmlFor="sortBy">Sort</label>
+  <select
+    id="sortBy"
+    value={sortKey}
+    onChange={(e) => setSortKey(e.target.value as typeof sortKey)}
+    className="appearance-none w-full sm:w-44 rounded-xl bg-white/10 px-3 py-2 pr-9 text-sm outline-none border border-white/10 focus:border-indigo-400/60"
+  >
+    {SORT_OPTIONS.map(o => (
+      <option key={o.value} value={o.value}>{o.label}</option>
+    ))}
+  </select>
+  <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-white/60" />
+</div>
+
           </div>
         </div>
       </motion.div>
@@ -160,7 +215,7 @@ fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.
           <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">
             Failed to load leaderboard.
           </div>
-        ) : total === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             No players found.
           </div>
@@ -177,7 +232,7 @@ fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.
             {/* Pagination footer */}
             <div className="mt-4 flex items-center justify-between gap-2">
               <div className="text-xs text-white/60">
-                Page {page} of {totalPages} · Showing {Math.min(total, page * PAGE_SIZE)} of {total} players
+                Page {page} of {totalPages} · Showing {Math.min(rows.length, page * PAGE_SIZE)} of {rows.length} players
               </div>
               <Pagination page={page} totalPages={totalPages} onChange={setPage} />
             </div>
@@ -188,10 +243,11 @@ fetch(api("/users/leaderboard") + "?" + params.toString(), { signal: controller.
   )
 }
 
-function LeaderboardRow({ rank, p }: { rank: number; p: ServerRow }) {
+function LeaderboardRow({ rank, p }: { rank: number; p: any }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
   const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
 
+  // use derived view-only numbers
   const total = p._results ?? 0
   const firsts = p._firsts ?? 0
   const seconds = p._seconds ?? 0
@@ -223,13 +279,10 @@ function LeaderboardRow({ rank, p }: { rank: number; p: ServerRow }) {
         {/* Avatar + name */}
         <Link to={sharePath} className="flex items-center gap-3 min-w-0 group">
           <img
-            src={api(`/users/avatar/${encodeURIComponent(p.slug)}`)}
+            src={p.avatarDataUrl || "/default-avatar.png"}
             alt={p.avatarDataUrl ? name : ""}
             className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
             draggable={false}
-            loading="lazy"
-            width={56}
-            height={56}
           />
 
           <div className="min-w-0">
