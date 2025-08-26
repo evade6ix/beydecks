@@ -48,7 +48,7 @@ const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "th
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
   silver: "border-slate-300/40 text-slate-200 bg-slate-300/10",
-  bronze: "border-amber-500/40 text-amber-500/10 text-amber-200",
+  bronze: "border-amber-500/40 text-amber-200 bg-amber-500/10",
   indigo: "border-indigo-500/40 text-indigo-200 bg-indigo-500/10",
 } as const
 
@@ -71,6 +71,32 @@ export default function PlayerLeaderboard() {
   const [sortKey, setSortKey] =
     useState<"total" | "firsts" | "seconds" | "thirds" | "topcuts">("total")
   const [page, setPage] = useState(1)
+
+  // NEW: only render avatars on Wi-Fi / when Data Saver is off
+  const [showAvatars, setShowAvatars] = useState(true)
+  useEffect(() => {
+    const nav: any = navigator as any
+    const con = nav?.connection || nav?.mozConnection || nav?.webkitConnection
+    let allow = true
+    if (con?.saveData === true) allow = false
+    const t = con?.type || con?.effectiveType // 'wifi' | 'cellular' | '4g' | '3g' | '2g' | 'slow-2g'
+    const isCellular = typeof t === "string" && /cellular/i.test(t)
+    const isReallySlow = typeof t === "string" && /(2g|slow-2g)/i.test(t)
+    if (isCellular || isReallySlow) allow = false
+    setShowAvatars(allow)
+
+    const handler = () => {
+      try {
+        const tt = con?.type || con?.effectiveType
+        const onCell = typeof tt === "string" && /cellular/i.test(tt)
+        const slow = typeof tt === "string" && /(2g|slow-2g)/i.test(tt)
+        const ds = con?.saveData === true
+        setShowAvatars(!(onCell || slow || ds))
+      } catch {}
+    }
+    con?.addEventListener?.("change", handler)
+    return () => con?.removeEventListener?.("change", handler)
+  }, [])
 
   // fetch whenever page/sort/search change
   useEffect(() => {
@@ -241,6 +267,7 @@ export default function PlayerLeaderboard() {
                 key={p.slug || idx}
                 rank={(page - 1) * payload.pageSize + idx + 1}
                 p={p}
+                showAvatars={showAvatars}
               />
             ))}
 
@@ -258,7 +285,7 @@ export default function PlayerLeaderboard() {
   )
 }
 
-function LeaderboardRow({ rank, p }: { rank: number; p: PlayerRow }) {
+function LeaderboardRow({ rank, p, showAvatars }: { rank: number; p: PlayerRow; showAvatars: boolean }) {
   const name = (p.username && p.username.trim()) || p.displayName || p.slug
   const sharePath = p.slug ? `/u/${encodeURIComponent(p.slug)}` : "#"
 
@@ -292,12 +319,28 @@ function LeaderboardRow({ rank, p }: { rank: number; p: PlayerRow }) {
 
         {/* Avatar + name */}
         <Link to={sharePath} className="flex items-center gap-3 min-w-0 group">
-          <img
-            src={p.avatarDataUrl || "/default-avatar.png"}
-            alt={p.avatarDataUrl ? name : ""}
-            className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
-            draggable={false}
-          />
+          {showAvatars ? (
+            <img
+              src={
+                p.slug
+                  ? api(`/users/avatar/${encodeURIComponent(p.slug)}`)
+                  : (p.avatarDataUrl || "/default-avatar.png")
+              }
+              alt={name}
+              loading="lazy"
+              decoding="async"
+              width={56}
+              height={56}
+              className="h-12 w-12 md:h-14 md:w-14 rounded-xl object-cover ring-1 ring-white/10 group-hover:ring-indigo-400/40 transition"
+              draggable={false}
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = "/default-avatar.png" }}
+            />
+          ) : (
+            <div
+              aria-hidden
+              className="h-12 w-12 md:h-14 md:w-14 rounded-xl ring-1 ring-white/10 bg-white/5"
+            />
+          )}
 
           <div className="min-w-0">
             <div className="truncate text-lg md:text-xl font-semibold group-hover:text-indigo-200">
