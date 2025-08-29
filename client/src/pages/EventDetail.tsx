@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
+import ChallongeEmbed from "../components/ChallongeEmbed"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   CalendarDays,
@@ -52,6 +53,7 @@ interface Event {
   region?: string
   city?: string
   attendeeCount?: number
+  challongeUrl?: string
 }
 
 interface Post {
@@ -228,7 +230,7 @@ export default function EventDetail() {
   const { user } = useAuth()
 
   const [event, setEvent] = useState<Event | null>(null)
-  const [tab, setTab] = useState<"overview" | "topcut" | "discussion">("overview")
+  const [tab, setTab] = useState<"overview" | "topcut" | "bracket" | "discussion">("overview")
 
   // discussion
   const [posts, setPosts] = useState<Post[]>([])
@@ -458,6 +460,16 @@ export default function EventDetail() {
   const topCutCount = event.topCut?.length || 0
 
   /* ------------------------------
+     Tabs (dynamic with Bracket)
+  ---------------------------------*/
+  const TABS = [
+    { key: "overview", label: "Overview", icon: BarChart3 },
+    { key: "topcut", label: "Top Cut", icon: Swords },
+    ...(event?.challongeUrl ? [{ key: "bracket", label: "Bracket", icon: Trophy }] : []),
+    { key: "discussion", label: "Discussion", icon: MessageSquare },
+  ] as const
+
+  /* ------------------------------
      UI helpers
   ---------------------------------*/
   const StatChip = ({ icon, label }: { icon: React.ReactNode; label: string }) => (
@@ -603,11 +615,7 @@ export default function EventDetail() {
 
         {/* Tabs */}
         <div className="mt-5 flex items-center gap-2">
-          {[
-            { key: "overview", label: "Overview", icon: BarChart3 },
-            { key: "topcut", label: "Top Cut", icon: Swords },
-            { key: "discussion", label: "Discussion", icon: MessageSquare },
-          ].map(({ key, label, icon: Icon }) => {
+          {TABS.map(({ key, label, icon: Icon }) => {
             const active = tab === (key as typeof tab)
             return (
               <button
@@ -725,20 +733,18 @@ export default function EventDetail() {
                             <div className="mb-2 flex items-center justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="truncate font-medium">
-  {ordinal(i + 1)} — {p.userSlug ? (
-  <Link
-    to={`/u/${encodeURIComponent(p.userSlug)}`}   // ← was `/users/${p.userSlug}`
-    className="text-indigo-300 hover:text-indigo-200 underline"
-    title={p.name !== p.userSlug ? `${p.name} (@${p.userSlug})` : `@${p.userSlug}`}
-  >
-    {p.name}
-  </Link>
-) : (
-  p.name
-)}
-
-</div>
-
+                                  {ordinal(i + 1)} — {p.userSlug ? (
+                                    <Link
+                                      to={`/u/${encodeURIComponent(p.userSlug)}`}
+                                      className="text-indigo-300 hover:text-indigo-200 underline"
+                                      title={p.name !== p.userSlug ? `${p.name} (@${p.userSlug})` : `@${p.userSlug}`}
+                                    >
+                                      {p.name}
+                                    </Link>
+                                  ) : (
+                                    p.name
+                                  )}
+                                </div>
                               </div>
 
                               {/* Deck Score pill */}
@@ -758,6 +764,24 @@ export default function EventDetail() {
                     </div>
                   )}
                 </div>
+              </motion.div>
+            )}
+
+            {/* NEW: Bracket tab */}
+            {tab === "bracket" && (
+              <motion.div
+                key="bracket"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="rounded-2xl border border-white/10 bg-white/5 p-4"
+              >
+                <div className="mb-3 text-sm font-semibold">Bracket</div>
+                {event.challongeUrl ? (
+                  <ChallongeEmbed url={event.challongeUrl} height={600} />
+                ) : (
+                  <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
+                )}
               </motion.div>
             )}
 
