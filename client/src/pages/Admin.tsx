@@ -6,24 +6,41 @@ import toast from "react-hot-toast"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-// Turn a normal Challonge link into an embeddable /module link.
-// Returns "" if it's not a valid challonge.com URL.
-function toEmbedUrl(raw: string) {
-  try {
-    if (!raw) return ""
-    const u = new URL(raw)
-    if (u.hostname !== "challonge.com") return ""
-    if (!u.pathname.endsWith("/module")) {
-      u.pathname = `${u.pathname.replace(/\/+$/, "")}/module`
-    }
-    u.search = ""
-    u.hash = ""
-    return u.toString()
-  } catch {
-    return ""
-  }
-}
+// Accepts: plain slug (e.g. "ayjt40cu"), a full URL, or a pasted <iframe ...>.
+// - forces https
+// - ensures exactly one /module at the end
+// - PRESERVES any query string (?theme=1&scale_to_fit=1)
+// Returns "" if it’s not recognizably Challonge.
+function normalizeChallongeInput(input: string): string {
+  if (!input) return ""
+  let raw = input.trim()
 
+  // If they pasted the full <iframe ...>, extract src
+  if (raw.startsWith("<iframe")) {
+    const m = raw.match(/\ssrc=["']([^"']+)["']/i)
+    if (m?.[1]) raw = m[1].trim()
+  }
+
+  // If it looks like a URL, normalize it
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw)
+      if (!/^(?:www\.)?challonge\.com$/i.test(u.hostname)) return ""
+      u.protocol = "https:"
+      const basePath = u.pathname.replace(/\/+$/, "")
+      u.pathname = basePath.endsWith("/module") ? basePath : `${basePath}/module`
+      u.hash = ""
+      return u.toString()
+    } catch {
+      return ""
+    }
+  }
+
+  // Otherwise treat as a slug
+  const slug = raw.replace(/[^a-z0-9-_]/gi, "")
+  if (!slug) return ""
+  return `https://challonge.com/${slug}/module`
+}
 
 interface Event {
   id: number
@@ -130,24 +147,24 @@ export default function Admin() {
   }
 
   const addOrUpdateEvent = () => {
-  const payload = {
-    title, startTime, endTime, store, topCut, buyLink, imageUrl,
-    capacity, attendeeCount, country, region, city,
-    challongeUrl: challongeUrl || undefined   // ⬅️ NEW
+    const normalizedChallonge = normalizeChallongeInput(challongeUrl)
+    const payload = {
+      title, startTime, endTime, store, topCut, buyLink, imageUrl,
+      capacity, attendeeCount, country, region, city,
+      challongeUrl: normalizedChallonge || undefined
+    }
+    const method = editingId ? "PUT" : "POST"
+    const url = editingId ? `${API}/events/${editingId}` : `${API}/events`
+    fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }).then(() => {
+      toast.success(editingId ? "Event updated" : "Event added")
+      resetForm()
+      fetch(`${API}/events`).then(res => res.json()).then(setEvents)
+    })
   }
-  const method = editingId ? "PUT" : "POST"
-  const url = editingId ? `${API}/events/${editingId}` : `${API}/events`
-  fetch(url, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  }).then(() => {
-    toast.success(editingId ? "Event updated" : "Event added")
-    resetForm()
-    fetch(`${API}/events`).then(res => res.json()).then(setEvents)
-  })
-}
-
 
   const addCombo = (playerIndex: number) => {
     setTopCut(prev => {
@@ -171,10 +188,7 @@ export default function Admin() {
   const addTopCutPlayer = () => {
     setTopCut(prev => [
       ...prev,
-      {
-        name: "",
-        combos: [{ blade: "", ratchet: "", bit: "", notes: "" }]
-      }
+      { name: "", combos: [{ blade: "", ratchet: "", bit: "", notes: "" }] }
     ])
     setNameSuggestions(prev => [...prev, []])
     timersRef.current.push(0)
@@ -215,7 +229,6 @@ export default function Admin() {
 
   const handlePlayerNameChange = (i: number, val: string) => {
     updatePlayerName(i, val)
-
     if (timersRef.current[i]) window.clearTimeout(timersRef.current[i])
 
     const q = val.trim()
@@ -235,8 +248,8 @@ export default function Admin() {
     setTopCut(prev => {
       const copy: any[] = [...prev as any]
       copy[i].name = u.username
-      copy[i].userSlug = u.slug || ""
-      copy[i].userId = u.id
+      ;(copy[i] as any).userSlug = u.slug || ""
+      ;(copy[i] as any).userId = u.id
       return copy as Player[]
     })
     setNameSuggestions(prev => {
@@ -296,7 +309,7 @@ export default function Admin() {
     setCountry(e.country || "")
     setRegion(e.region || "")
     setCity(e.city || "")
-    setChallongeUrl(e.challongeUrl || "")  
+    setChallongeUrl(e.challongeUrl || "")
     // reset suggestions for loaded rows
     setNameSuggestions((e.topCut || []).map(() => []))
     timersRef.current = new Array(e.topCut?.length || 0).fill(0)
@@ -318,65 +331,76 @@ export default function Admin() {
           <input className="input input-bordered" type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
           <input className="input input-bordered" placeholder="Store" value={store} onChange={e => setStore(e.target.value)} />
         </div>
+
         <input
-  className="input input-bordered"
-  placeholder="Buy Ticket URL"
-  value={buyLink}
-  onChange={e => setBuyLink(e.target.value)}
-/>
+          className="input input-bordered"
+          placeholder="Buy Ticket URL"
+          value={buyLink}
+          onChange={e => setBuyLink(e.target.value)}
+        />
 
-{/* NEW: Challonge URL input */}
-<input
-  className="input input-bordered"
-  type="url"
-  placeholder="Challonge URL (e.g. https://challonge.com/ayjt40cu)"
-  value={challongeUrl}
-  onChange={e => setChallongeUrl(e.target.value)}
-/>
-<p className="text-xs opacity-70 -mt-2">
-  Paste the tournament link; it will appear on the “Bracket” tab of the event page.
-</p>
+        {/* Challonge URL input + preview */}
+        <input
+          className="input input-bordered"
+          type="url"
+          placeholder='Challonge URL, slug, or iframe (e.g. "https://challonge.com/ayjt40cu" or "ayjt40cu")'
+          value={challongeUrl}
+          onChange={e => setChallongeUrl(e.target.value)}
+        />
+        <p className="text-xs opacity-70 -mt-2">
+          Paste the tournament link (or slug). We’ll normalize it and show the bracket on the event’s Bracket tab.
+        </p>
 
-{/* NEW: Optional live preview if the URL is a valid challonge.com link */}
-{toEmbedUrl(challongeUrl) ? (
-  <div className="rounded-lg border border-base-300 p-2">
-    <div className="text-xs mb-2 opacity-70">Bracket preview</div>
-    <iframe
-      src={toEmbedUrl(challongeUrl)}
-      width="100%"
-      height={360}
-      frameBorder={0}
-      scrolling="auto"
-      allowTransparency
-      style={{ borderRadius: 8, background: "transparent" }}
-    />
-  </div>
-) : null}
+        {normalizeChallongeInput(challongeUrl) ? (
+          <div className="rounded-lg border border-base-300 p-2">
+            <div className="text-xs mb-2 opacity-70">Bracket preview</div>
+            <iframe
+              src={normalizeChallongeInput(challongeUrl)}
+              width="100%"
+              height={360}
+              frameBorder={0}
+              scrolling="auto"
+              allowTransparency
+              style={{ borderRadius: 8, background: "transparent" }}
+            />
+          </div>
+        ) : null}
 
-<div className="space-y-2">
-  <label className="text-sm font-semibold">Event Image</label>
-  <input
-    type="file"
-    accept="image/*"
-    className="file-input file-input-bordered w-full"
-    onChange={(e) => {
-      const file = e.target.files?.[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setImageUrl(reader.result as string)
-      }
-      reader.readAsDataURL(file)
-    }}
-  />
-  {imageUrl && (
-    <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />
-  )}
-</div>
+        <div className="space-y-2">
+          <label className="text-sm font-semibold">Event Image</label>
+          <input
+            type="file"
+            accept="image/*"
+            className="file-input file-input-bordered w-full"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              const reader = new FileReader()
+              reader.onloadend = () => {
+                setImageUrl(reader.result as string)
+              }
+              reader.readAsDataURL(file)
+            }}
+          />
+          {imageUrl && (
+            <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />
+          )}
+        </div>
 
-
-        <input className="input input-bordered" type="number" placeholder="Capacity (for upcoming)" value={capacity ?? ""} onChange={e => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)} />
-        <input className="input input-bordered" type="number" placeholder="Attendee Count (for completed)" value={attendeeCount ?? ""} onChange={e => setAttendeeCount(e.target.value ? parseInt(e.target.value) : undefined)} />
+        <input
+          className="input input-bordered"
+          type="number"
+          placeholder="Capacity (for upcoming)"
+          value={capacity ?? ""}
+          onChange={e => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)}
+        />
+        <input
+          className="input input-bordered"
+          type="number"
+          placeholder="Attendee Count (for completed)"
+          value={attendeeCount ?? ""}
+          onChange={e => setAttendeeCount(e.target.value ? parseInt(e.target.value) : undefined)}
+        />
 
         <select className="select select-bordered" value={country} onChange={e => { setCountry(e.target.value); setRegion("") }}>
           <option value="">Select Country</option>
