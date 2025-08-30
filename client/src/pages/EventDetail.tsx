@@ -18,6 +18,8 @@ import { toast } from "react-hot-toast"
 import { Helmet } from "react-helmet-async"
 import BladeUsagePie from "../components/BladeUsagePie"
 import { useAuth } from "../context/AuthContext"
+import ChallongeEmbed from "../components/ChallongeEmbed"
+
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -774,21 +776,12 @@ export default function EventDetail() {
     exit={{ opacity: 0, y: -6 }}
     className="rounded-2xl border border-white/10 bg-white/5 p-4"
   >
-    <div className="mb-3 text-sm font-semibold">Bracket</div>
     {event.challongeUrl ? (
-      <iframe
-        src={`/embed/challonge?url=${encodeURIComponent(event.challongeUrl)}`}
-        width="100%"
-        height={600}
-        frameBorder={0}
-        scrolling="auto"
-        allowTransparency
-        style={{ background: "transparent", borderRadius: 8 }}
-        title="Tournament bracket"
-      />
-    ) : (
-      <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
-    )}
+  <ChallongeEmbed url={event.challongeUrl} height={600} />
+) : (
+  <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
+)}
+
   </motion.div>
 )}
 

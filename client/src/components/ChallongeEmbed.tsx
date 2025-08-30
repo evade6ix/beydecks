@@ -11,12 +11,15 @@ const ChallongeEmbed: React.FC<ChallongeEmbedProps> = ({ url, height = 500 }) =>
     return <div className="text-sm text-white/60">No Challonge bracket URL provided.</div>
   }
 
-  // normalize to /module and strip trailing slashes
+  // Normalize challonge input → ensure single /module, strip trailing slashes
   const normalized = url.replace(/\/+$/, "")
   const embedUrl = normalized.endsWith("/module") ? normalized : `${normalized}/module`
 
-  // ✅ ALWAYS hit your same-origin proxy so it can fetch/patch the Challonge page
-  const proxied = `/embed/challonge?url=${encodeURIComponent(embedUrl)}`
+  // IMPORTANT: use backend origin (not a relative path) and strip a trailing "/api"
+  const raw = import.meta.env.VITE_API_URL?.replace(/\/+$/, "")
+  const API_ORIGIN = raw ? raw.replace(/\/api$/i, "") : window.location.origin
+
+  const proxied = `${API_ORIGIN}/embed/challonge?url=${encodeURIComponent(embedUrl)}`
 
   return (
     <iframe
