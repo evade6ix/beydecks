@@ -32,39 +32,50 @@ const startServer = async () => {
 // trust proxy (important if behind Vercel/Render/NGINX/Cloudflare)
 app.set("trust proxy", 1)
 
-// secure headers + HSTS preload + allow challonge in iframes
+// secure headers + HSTS preload + allow our site to be framed by our frontends
 app.use(
   helmet({
-    // keep HSTS
     hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
-
-    // 🔓 allow embedding (Helmet defaults to SAMEORIGIN; we must disable it)
-    frameguard: false,
-
-    // ✅ explicit CSP to allow challonge inside iframes
+    frameguard: false, // no X-Frame-Options (CSP frame-ancestors is used instead)
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
-        // allow our own site + challonge to be framed
+        // 👇 THIS is the critical fix: allow our known frontends to frame us
+        frameAncestors: ["'self'", ...FRONTEND_ORIGINS],
+
+        // allow embedding challonge inside iframes we render
         frameSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
-        // older browsers
         childSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
 
-        // (optional but common) keep these reasonably permissive for your app
         imgSrc: ["'self'", "data:", "https:", "blob:"],
         styleSrc: ["'self'", "'unsafe-inline'", "https:"],
         scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:"],
       },
     },
+    // crossOriginEmbedderPolicy: false, // (optional) if you run into COEP issues
   })
 )
 
 
-// lock CORS to one front-end origin
+
+// Frontend origins we allow to embed us in iframes and call the API
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
+const FRONTEND_ORIGINS = [
+  FRONTEND_ORIGIN,
+  "https://metabeys.com",
+  "https://www.metabeys.com",
+]
+if (process.env.NODE_ENV !== "production") {
+  FRONTEND_ORIGINS.push("http://localhost:5173", "http://localhost:4173")
+}
+
+// CORS: allow only our known frontends (and no-origin tools like curl/postman)
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
+    origin: (origin, cb) => {
+      if (!origin || FRONTEND_ORIGINS.includes(origin)) return cb(null, true)
+      return cb(new Error("Not allowed by CORS"))
+    },
     credentials: true,
   })
 )
@@ -822,33 +833,18 @@ app.get("/embed/challonge", async (req, res) => {
       u.protocol = "https:"
     }
 
-    // Inject a <base> so relative paths resolve, and force assets to https
-    const baseTag = `<base href="https://challonge.com/">`
-    let patched = html
-      .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
-      .replace(/src=["']\/\/([^"']+)["']/gi, `src="https://$1"`)
-      .replace(/href=["']\/\/([^"']+)["']/gi, `href="https://$1"`)
-      .replace(/src=["']http:\/\/([^"']+)["']/gi, `src="https://$1"`)
-      .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
+   // Inject a <base> so relative paths resolve, and force assets to https
+const baseTag = `<base href="https://challonge.com/">`
+let patched = html
+  .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
+  .replace(/src=["']\/\/([^"']+)["']/gi, `src="https://$1"`)
+  .replace(/href=["']\/\/([^"']+)["']/gi, `href="https://$1"`)
+  .replace(/src=["']http:\/\/([^"']+)["']/gi, `src="https://$1"`)
+  .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8")
+res.setHeader("Content-Type", "text/html; charset=utf-8")
+return res.send(patched)
 
-    // ⚠️ Do NOT set X-Frame-Options here (omit entirely).
-    // res.setHeader("X-Frame-Options", "SAMEORIGIN")
-
-    // Allow embedding from your frontend origin (and localhost in dev).
-    const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
-    const extraDev =
-      process.env.NODE_ENV !== "production"
-        ? " http://localhost:5173 http://localhost:4173"
-        : ""
-
-    res.setHeader(
-      "Content-Security-Policy",
-      `frame-ancestors 'self' ${FRONTEND_ORIGIN}${extraDev}`
-    )
-
-    return res.send(patched)
   } catch (e) {
     console.error("Challonge proxy error:", e)
     return res.status(502).send("Failed to load bracket")

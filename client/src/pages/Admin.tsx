@@ -5,6 +5,7 @@ import { motion } from "framer-motion"
 import toast from "react-hot-toast"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
+const API_ORIGIN = (API.replace(/\/+$/, "")).replace(/\/api$/i, "")
 
 // Accepts: plain slug (e.g. "ayjt40cu"), a full URL, or a pasted <iframe ...>.
 // - forces https
@@ -352,19 +353,20 @@ export default function Admin() {
         </p>
 
         {normalizeChallongeInput(challongeUrl) ? (
-          <div className="rounded-lg border border-base-300 p-2">
-            <div className="text-xs mb-2 opacity-70">Bracket preview</div>
-            <iframe
-              src={normalizeChallongeInput(challongeUrl)}
-              width="100%"
-              height={360}
-              frameBorder={0}
-              scrolling="auto"
-              allowTransparency
-              style={{ borderRadius: 8, background: "transparent" }}
-            />
-          </div>
-        ) : null}
+  <div className="rounded-lg border border-base-300 p-2">
+    <div className="text-xs mb-2 opacity-70">Bracket preview</div>
+    <iframe
+      src={`${API_ORIGIN}/embed/challonge?url=${encodeURIComponent(normalizeChallongeInput(challongeUrl))}`}
+      width="100%"
+      height={360}
+      frameBorder={0}
+      scrolling="auto"
+      allowTransparency
+      style={{ borderRadius: 8, background: "transparent" }}
+    />
+  </div>
+) : null}
+
 
         <div className="space-y-2">
           <label className="text-sm font-semibold">Event Image</label>
