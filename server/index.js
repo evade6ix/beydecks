@@ -782,22 +782,20 @@ async function recomputeUserCounters(userDoc) {
     // ---------- Static + SPA fallback (serve files first) ----------
   app.use(express.static(join(__dirname, "../client/dist")))
 
-// --- Challonge embed proxy (guaranteed HTTPS-safe) ---
+// --- Challonge embed proxy (hardened) ---
 app.get("/embed/challonge", async (req, res) => {
   try {
     const raw = String(req.query.url || "").trim()
     if (!raw) return res.status(400).send("Missing url")
 
-    // Accept either a full Challonge URL or a plain slug.
+    // Accept a slug or a full URL
     let target = raw
     if (!/^https?:\/\//i.test(target)) {
-      // treat as slug
       const slug = target.replace(/[^a-z0-9-_]/gi, "")
       if (!slug) return res.status(400).send("Bad slug")
       target = `https://challonge.com/${slug}/module`
     }
 
-    // Validate host
     let u
     try {
       u = new URL(target)
@@ -808,41 +806,73 @@ app.get("/embed/challonge", async (req, res) => {
       return res.status(400).send("Only challonge.com is allowed")
     }
 
-    // Try HTTPS first, fall back to HTTP if Challonge refuses HTTPS for this bracket
+    // Browser-like headers to avoid CF bot blocks
+    const BROWSER_HEADERS = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept":
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+      "Referer": "https://challonge.com/",
+      "Upgrade-Insecure-Requests": "1",
+    }
+
     const tryFetch = async (urlStr) => {
-      const r = await fetch(urlStr, { redirect: "follow" })
-      if (!r.ok) throw new Error(`Upstream ${r.status}`)
-      return await r.text()
+      const ctrl = new AbortController()
+      const t = setTimeout(() => ctrl.abort(), 8000)
+      try {
+        const r = await fetch(urlStr, {
+          redirect: "follow",
+          headers: BROWSER_HEADERS,
+          signal: ctrl.signal,
+        })
+        if (!r.ok) {
+          const txt = await r.text().catch(() => "")
+          throw new Error(`Upstream ${r.status} ${r.statusText} ${txt.slice(0, 200)}`)
+        }
+        return await r.text()
+      } finally {
+        clearTimeout(t)
+      }
     }
 
     let html
     try {
       html = await tryFetch(u.toString())
-    } catch {
-      // fallback to http
-      u.protocol = "http:"
-      html = await tryFetch(u.toString())
-      // switch back to https base for relative URLs via <base>, assets will still be fetched from challonge.com directly
-      u.protocol = "https:"
+    } catch (e1) {
+      // some old brackets still redirect better from http
+      try {
+        const httpURL = new URL(u.toString())
+        httpURL.protocol = "http:"
+        html = await tryFetch(httpURL.toString())
+        // switch back to https base for <base> tag
+        u.protocol = "https:"
+      } catch (e2) {
+        console.error("Challonge proxy fetch failed:", e1?.message || e1, "fallback:", e2?.message || e2)
+        return res.status(502).send("Failed to load bracket")
+      }
     }
 
-   // Inject a <base> so relative paths resolve, and force assets to https
-const baseTag = `<base href="https://challonge.com/">`
-let patched = html
-  .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
-  .replace(/src=["']\/\/([^"']+)["']/gi, `src="https://$1"`)
-  .replace(/href=["']\/\/([^"']+)["']/gi, `href="https://$1"`)
-  .replace(/src=["']http:\/\/([^"']+)["']/gi, `src="https://$1"`)
-  .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
+    // Normalize relative paths → https
+    const baseTag = `<base href="https://challonge.com/">`
+    const patched = String(html)
+      .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
+      .replace(/src=["']\/\/([^"']+)["']/gi, `src="https://$1"`)
+      .replace(/href=["']\/\/([^"']+)["']/gi, `href="https://$1"`)
+      .replace(/src=["']http:\/\/([^"']+)["']/gi, `src="https://$1"`)
+      .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
 
-res.setHeader("Content-Type", "text/html; charset=utf-8")
-return res.send(patched)
-
+    // Let Helmet’s global CSP handle frame-ancestors. Just return HTML.
+    res.setHeader("Content-Type", "text/html; charset=utf-8")
+    return res.send(patched)
   } catch (e) {
     console.error("Challonge proxy error:", e)
     return res.status(502).send("Failed to load bracket")
   }
 })
+
 
 
 
