@@ -778,7 +778,7 @@ async function recomputeUserCounters(userDoc) {
     // ---------- Static + SPA fallback (serve files first) ----------
   app.use(express.static(join(__dirname, "../client/dist")))
 
-  // --- Challonge embed proxy (guaranteed HTTPS-safe) ---
+// --- Challonge embed proxy (guaranteed HTTPS-safe) ---
 app.get("/embed/challonge", async (req, res) => {
   try {
     const raw = String(req.query.url || "").trim()
@@ -822,8 +822,7 @@ app.get("/embed/challonge", async (req, res) => {
       u.protocol = "https:"
     }
 
-    // Inject a <base> so relative paths resolve, and strip frame-busting headers by serving from our origin
-    // Also force any protocol-relative or http asset refs to https to keep the page clean.
+    // Inject a <base> so relative paths resolve, and force assets to https
     const baseTag = `<base href="https://challonge.com/">`
     let patched = html
       .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
@@ -833,15 +832,29 @@ app.get("/embed/challonge", async (req, res) => {
       .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
 
     res.setHeader("Content-Type", "text/html; charset=utf-8")
-    // Let it be framed by *us*
-    res.setHeader("X-Frame-Options", "SAMEORIGIN")
-    res.setHeader("Content-Security-Policy", "frame-ancestors 'self'")
+
+    // ⚠️ Do NOT set X-Frame-Options here (omit entirely).
+    // res.setHeader("X-Frame-Options", "SAMEORIGIN")
+
+    // Allow embedding from your frontend origin (and localhost in dev).
+    const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
+    const extraDev =
+      process.env.NODE_ENV !== "production"
+        ? " http://localhost:5173 http://localhost:4173"
+        : ""
+
+    res.setHeader(
+      "Content-Security-Policy",
+      `frame-ancestors 'self' ${FRONTEND_ORIGIN}${extraDev}`
+    )
+
     return res.send(patched)
   } catch (e) {
     console.error("Challonge proxy error:", e)
     return res.status(502).send("Failed to load bracket")
   }
 })
+
 
 
   // --- Temporary SMTP probe route (remove after testing) ---
