@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
-import ChallongeEmbed from "../components/ChallongeEmbed"
 import { motion, AnimatePresence } from "framer-motion"
 import {
   CalendarDays,
@@ -767,23 +766,31 @@ export default function EventDetail() {
               </motion.div>
             )}
 
-            {/* NEW: Bracket tab */}
             {tab === "bracket" && (
-              <motion.div
-                key="bracket"
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                className="rounded-2xl border border-white/10 bg-white/5 p-4"
-              >
-                <div className="mb-3 text-sm font-semibold">Bracket</div>
-                {event.challongeUrl ? (
-                  <ChallongeEmbed url={event.challongeUrl} height={600} />
-                ) : (
-                  <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
-                )}
-              </motion.div>
-            )}
+  <motion.div
+    key="bracket"
+    initial={{ opacity: 0, y: 6 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -6 }}
+    className="rounded-2xl border border-white/10 bg-white/5 p-4"
+  >
+    <div className="mb-3 text-sm font-semibold">Bracket</div>
+    {event.challongeUrl ? (
+      <iframe
+        src={`/embed/challonge?url=${encodeURIComponent(event.challongeUrl)}`}
+        width="100%"
+        height={600}
+        frameBorder={0}
+        scrolling="auto"
+        allowTransparency
+        style={{ background: "transparent", borderRadius: 8 }}
+        title="Tournament bracket"
+      />
+    ) : (
+      <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
+    )}
+  </motion.div>
+)}
 
             {tab === "discussion" && (
               <motion.div

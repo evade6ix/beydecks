@@ -778,6 +778,72 @@ async function recomputeUserCounters(userDoc) {
     // ---------- Static + SPA fallback (serve files first) ----------
   app.use(express.static(join(__dirname, "../client/dist")))
 
+  // --- Challonge embed proxy (guaranteed HTTPS-safe) ---
+app.get("/embed/challonge", async (req, res) => {
+  try {
+    const raw = String(req.query.url || "").trim()
+    if (!raw) return res.status(400).send("Missing url")
+
+    // Accept either a full Challonge URL or a plain slug.
+    let target = raw
+    if (!/^https?:\/\//i.test(target)) {
+      // treat as slug
+      const slug = target.replace(/[^a-z0-9-_]/gi, "")
+      if (!slug) return res.status(400).send("Bad slug")
+      target = `https://challonge.com/${slug}/module`
+    }
+
+    // Validate host
+    let u
+    try {
+      u = new URL(target)
+    } catch {
+      return res.status(400).send("Bad url")
+    }
+    if (!/^(?:www\.)?challonge\.com$/i.test(u.hostname)) {
+      return res.status(400).send("Only challonge.com is allowed")
+    }
+
+    // Try HTTPS first, fall back to HTTP if Challonge refuses HTTPS for this bracket
+    const tryFetch = async (urlStr) => {
+      const r = await fetch(urlStr, { redirect: "follow" })
+      if (!r.ok) throw new Error(`Upstream ${r.status}`)
+      return await r.text()
+    }
+
+    let html
+    try {
+      html = await tryFetch(u.toString())
+    } catch {
+      // fallback to http
+      u.protocol = "http:"
+      html = await tryFetch(u.toString())
+      // switch back to https base for relative URLs via <base>, assets will still be fetched from challonge.com directly
+      u.protocol = "https:"
+    }
+
+    // Inject a <base> so relative paths resolve, and strip frame-busting headers by serving from our origin
+    // Also force any protocol-relative or http asset refs to https to keep the page clean.
+    const baseTag = `<base href="https://challonge.com/">`
+    let patched = html
+      .replace(/<head([^>]*)>/i, (m, g1) => `<head${g1}>${baseTag}`)
+      .replace(/src=["']\/\/([^"']+)["']/gi, `src="https://$1"`)
+      .replace(/href=["']\/\/([^"']+)["']/gi, `href="https://$1"`)
+      .replace(/src=["']http:\/\/([^"']+)["']/gi, `src="https://$1"`)
+      .replace(/href=["']http:\/\/([^"']+)["']/gi, `href="https://$1"`)
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8")
+    // Let it be framed by *us*
+    res.setHeader("X-Frame-Options", "SAMEORIGIN")
+    res.setHeader("Content-Security-Policy", "frame-ancestors 'self'")
+    return res.send(patched)
+  } catch (e) {
+    console.error("Challonge proxy error:", e)
+    return res.status(502).send("Failed to load bracket")
+  }
+})
+
+
   // --- Temporary SMTP probe route (remove after testing) ---
   app.get("/_smtp-probe-587", (req, res) => {
     const sock = net.connect({ host: "smtp.gmail.com", port: 587, timeout: 6000 }, () => {
