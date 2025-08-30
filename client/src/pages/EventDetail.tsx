@@ -777,10 +777,11 @@ export default function EventDetail() {
     className="rounded-2xl border border-white/10 bg-white/5 p-4"
   >
     {event.challongeUrl ? (
-  <ChallongeEmbed url={event.challongeUrl} height={600} />
+  <ChallongeEmbed slugOrUrl={event.challongeUrl} height={600} />
 ) : (
   <div className="text-sm text-white/60">No Challonge bracket URL has been added for this event.</div>
 )}
+
 
   </motion.div>
 )}
