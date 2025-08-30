@@ -32,12 +32,33 @@ const startServer = async () => {
 // trust proxy (important if behind Vercel/Render/NGINX/Cloudflare)
 app.set("trust proxy", 1)
 
-// secure headers + HSTS preload
+// secure headers + HSTS preload + allow challonge in iframes
 app.use(
   helmet({
-    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true }, // 2 years
+    // keep HSTS
+    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+
+    // 🔓 allow embedding (Helmet defaults to SAMEORIGIN; we must disable it)
+    frameguard: false,
+
+    // ✅ explicit CSP to allow challonge inside iframes
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        // allow our own site + challonge to be framed
+        frameSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
+        // older browsers
+        childSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
+
+        // (optional but common) keep these reasonably permissive for your app
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:"],
+      },
+    },
   })
 )
+
 
 // lock CORS to one front-end origin
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
