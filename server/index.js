@@ -32,32 +32,6 @@ const startServer = async () => {
 // trust proxy (important if behind Vercel/Render/NGINX/Cloudflare)
 app.set("trust proxy", 1)
 
-// secure headers + HSTS preload + allow our site to be framed by our frontends
-app.use(
-  helmet({
-    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
-    frameguard: false, // no X-Frame-Options (CSP frame-ancestors is used instead)
-    contentSecurityPolicy: {
-      useDefaults: true,
-      directives: {
-        // 👇 THIS is the critical fix: allow our known frontends to frame us
-        frameAncestors: ["'self'", ...FRONTEND_ORIGINS],
-
-        // allow embedding challonge inside iframes we render
-        frameSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
-        childSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
-
-        imgSrc: ["'self'", "data:", "https:", "blob:"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https:"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:"],
-      },
-    },
-    // crossOriginEmbedderPolicy: false, // (optional) if you run into COEP issues
-  })
-)
-
-
-
 // Frontend origins we allow to embed us in iframes and call the API
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || "https://www.metabeys.com"
 const FRONTEND_ORIGINS = [
@@ -68,6 +42,25 @@ const FRONTEND_ORIGINS = [
 if (process.env.NODE_ENV !== "production") {
   FRONTEND_ORIGINS.push("http://localhost:5173", "http://localhost:4173")
 }
+
+// secure headers + HSTS preload + allow our site to be framed by our frontends
+app.use(
+  helmet({
+    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
+    frameguard: false, // use CSP instead
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        frameAncestors: ["'self'", ...FRONTEND_ORIGINS],
+        frameSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
+        childSrc: ["'self'", "https://challonge.com", "https://*.challonge.com"],
+        imgSrc: ["'self'", "data:", "https:", "blob:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:"],
+      },
+    },
+  })
+)
 
 // CORS: allow only our known frontends (and no-origin tools like curl/postman)
 app.use(
