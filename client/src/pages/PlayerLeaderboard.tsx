@@ -334,10 +334,23 @@ function Pill({
   label: string
 }) {
   return (
-    <div className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 ${pillTone[tone]}`}>
-      {icon}
-      <span className="text-xs md:text-sm">{label}</span>
-      <span className="ml-1 text-sm md:text-base font-semibold">{value}</span>
+    <div
+      className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1
+                  whitespace-nowrap leading-none ${pillTone[tone]}`}
+    >
+      <span className="shrink-0 inline-flex items-center justify-center">
+        <span className="h-4 w-4 inline-flex items-center justify-center">{icon}</span>
+      </span>
+
+      <span className="text-[11px] md:text-sm align-middle">{label}</span>
+
+      <span
+        className="ml-1 shrink-0 inline-flex items-center justify-center
+                   rounded-md bg-black/10 px-1.5 py-0.5
+                   text-[11px] md:text-sm font-semibold tabular-nums leading-none"
+      >
+        {value}
+      </span>
     </div>
   )
 }
