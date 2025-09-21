@@ -48,7 +48,7 @@ const SORT_OPTIONS: { label: string; value: "total" | "firsts" | "seconds" | "th
 const pillTone = {
   gold: "border-yellow-400/40 text-yellow-200 bg-yellow-400/10",
   silver: "border-slate-300/40 text-slate-200 bg-slate-300/10",
-  bronze: "border-amber-500/40 text-amber-500/10 text-amber-200",
+  bronze: "border-amber-500/40 text-amber-200 bg-amber-500/10",
   indigo: "border-indigo-500/40 text-indigo-200 bg-indigo-500/10",
 } as const
 
