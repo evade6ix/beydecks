@@ -338,14 +338,15 @@ function Pill({
       className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1
                   whitespace-nowrap leading-none ${pillTone[tone]}`}
     >
-      <span className="shrink-0 inline-flex items-center justify-center">
-        <span className="h-4 w-4 inline-flex items-center justify-center">{icon}</span>
+      <span className="h-4 w-4 inline-flex items-center justify-center shrink-0">
+        {icon}
       </span>
 
-      <span className="text-[11px] md:text-sm align-middle">{label}</span>
+      {/* label hidden on mobile, visible on md+ */}
+      <span className="hidden md:inline text-xs md:text-sm">{label}</span>
 
       <span
-        className="ml-1 shrink-0 inline-flex items-center justify-center
+        className="ml-0.5 shrink-0 inline-flex items-center justify-center
                    rounded-md bg-black/10 px-1.5 py-0.5
                    text-[11px] md:text-sm font-semibold tabular-nums leading-none"
       >
@@ -354,6 +355,7 @@ function Pill({
     </div>
   )
 }
+
 
 /* ---------- Pagination ---------- */
 function Pagination({
