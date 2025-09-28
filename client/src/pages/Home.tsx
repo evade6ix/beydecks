@@ -1,5 +1,5 @@
 // File: src/pages/Home.tsx
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, useRef } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion, AnimatePresence } from "framer-motion"
@@ -1095,26 +1095,93 @@ function ChatWidget({ username }: { username: string }) {
   const [messages, setMessages] = useState<{ user: string; text: string; ts: number }[]>([])
   const [online, setOnline] = useState<string[]>([])
   const [text, setText] = useState("")
+  const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
+  // auto-scroll when messages change
   useEffect(() => {
-  // Strip /api if API points to the REST endpoint
-  const baseUrl = API.replace(/\/api$/, "")
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
+ useEffect(() => {
+  if (!username) return
+
+  const baseUrl = API.replace(/\/api$/, "")
   const s = io(baseUrl, { transports: ["websocket"] })
   setSocket(s)
 
-  s.emit("join", username || "Guest")
+  s.emit("join", username)
 
-  s.on("message", (msg: any) => setMessages(m => [...m, msg]))
+  // ✅ load past messages from server
+  s.on("messageHistory", (msgs: any[]) => {
+    setMessages(msgs) // replace with history
+  })
+
+  // ✅ listen for new messages
+  s.on("message", (msg: any) => {
+    setMessages(m => [...m, msg])
+  })
+
   s.on("onlineUsers", (users: string[]) => setOnline(users))
 
   return () => { s.disconnect() }
 }, [username])
 
 
+  // swear filter
+  const bannedWords = [
+  // Core swears
+  "fuck","fucking","fucker","fucked","motherfucker","mofucka","fuk","fukk","fux","f*ck","fuq","fuhk","phuck","phuk",
+  "shit","shitty","shite","shyt","sh1t","s**t","$hit","sh!t",
+  "ass","asses","asshole","arse","arsehole","azz","jackass","dumbass","dumbasses",
+  "bitch","bitches","bitchy","biatch","b!tch","b1tch","bi7ch","b!+ch","slut","sluts","slutty","slutz",
+  "bastard","basterd",
+  "cunt","cunts","c*nt","cnt",
+  "dick","dicks","dickhead","d1ck","d!ck","d!k",
+  "cock","cocks","c0ck","c*ck","cawk","coq",
+  "pussy","pussies","pusy","p*ssy",
+  "twat","twats",
+  "prick","pr1ck",
+  "wank","wanker","wankers",
+  "bollocks","bollox",
+
+  // Mild / insults
+  "crap","crappy","dammit","goddamn","hell","bloody",
+  "jerk","moron","idiot","retard","r*tard",
+
+  // Sexual / vulgar
+  "sex","sexual","sexy","whore","whores","wh0re","hore","hoe","hoes","hoez","skank","slag",
+  "cum","cumming","cums","jizz","spooge","porn","porno","pornography",
+  "tits","titties","boob","boobs","boobies","nipple","nipples",
+
+  // LGBT-related slurs
+  "fag","fags","faggy","dyke",
+  "gay", // ⚠️ optional — blocks “gay” even when used innocently
+
+  // Bodily
+  "piss","pisses","pee","peeing","poop","poo","turd","turds","anus","rectum","fart","farting",
+
+  // Racial / ethnic slurs (very offensive)
+  "nigger","nigga","n1gga","n1gger","nigg@",
+  "chink","gook","spic","wetback",
+  "kike","kyke","paki",
+  "cracker","honky",
+
+  // Obfuscated variants
+  "f.u.c.k","f u c k","f* u *c *k",
+]
+
+  const filterBadWords = (txt: string) => {
+    let out = txt
+    for (const w of bannedWords) {
+      const regex = new RegExp(`\\b${w}\\b`, "gi")
+      out = out.replace(regex, "****")
+    }
+    return out
+  }
+
   const send = () => {
-    if (!text.trim()) return
-    const msg = { user: username || "Guest", text, ts: Date.now() }
+    if (!text.trim() || !username) return
+    const msg = { user: username, text: filterBadWords(text), ts: Date.now() }
     socket.emit("message", msg)
     setText("")
   }
@@ -1132,6 +1199,7 @@ function ChatWidget({ username }: { username: string }) {
               <div>{m.text}</div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Online Users */}
@@ -1148,21 +1216,27 @@ function ChatWidget({ username }: { username: string }) {
       </div>
 
       {/* Input */}
-      <div className="mt-3 flex gap-2">
-        <input
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && send()}
-          placeholder="Type a message…"
-          className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
-        />
-        <button
-          onClick={send}
-          className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm"
-        >
-          Send
-        </button>
-      </div>
+      {username ? (
+        <div className="mt-3 flex gap-2">
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && send()}
+            placeholder="Type a message…"
+            className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+          />
+          <button
+            onClick={send}
+            className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm"
+          >
+            Send
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 text-sm text-white/50 italic">
+          Log in to participate in chat.
+        </div>
+      )}
     </Section>
   )
 }

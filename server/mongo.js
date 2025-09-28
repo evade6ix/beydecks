@@ -19,12 +19,17 @@ export const connectDB = async () => {
     console.log("✅ Connected to MongoDB")
   }
 
+  const chatMessages = db.collection("chatMessages")
+  // TTL: auto-delete after 24h
+  await chatMessages.createIndex({ ts: 1 }, { expireAfterSeconds: 60 * 60 * 24 })
+
   return {
     users: db.collection("users"),
     products: db.collection("products"),
     events: db.collection("events"),
     stores: db.collection("stores"),
     prepDecks: db.collection("prep_decks"),
+    chatMessages, // ✅ new
   }
 }
 
