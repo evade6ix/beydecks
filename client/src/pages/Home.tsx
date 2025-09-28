@@ -1170,14 +1170,17 @@ function ChatWidget({ username }: { username: string }) {
   "f.u.c.k","f u c k","f* u *c *k",
 ]
 
-  const filterBadWords = (txt: string) => {
-    let out = txt
-    for (const w of bannedWords) {
-      const regex = new RegExp(`\\b${w}\\b`, "gi")
-      out = out.replace(regex, "****")
-    }
-    return out
+ const escapeRegex = (word: string) =>
+  word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const filterBadWords = (txt: string) => {
+  let out = txt
+  for (const w of bannedWords) {
+    const regex = new RegExp(`\\b${escapeRegex(w)}\\b`, "gi")
+    out = out.replace(regex, "****")
   }
+  return out
+}
 
   const send = () => {
     if (!text.trim() || !username) return
