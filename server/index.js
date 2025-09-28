@@ -16,6 +16,9 @@ import jwt from "jsonwebtoken" //
 import usersLeaderboard from "./routes/users.leaderboard.js"
 import helmet from "helmet"
 import net from "net"   
+import http from "http"
+import { initChat } from "./routes/chat.js"
+
 
 dotenv.config()
 
@@ -820,9 +823,17 @@ async function recomputeUserCounters(userDoc) {
     res.sendFile(resolve(__dirname, "../client/dist/index.html"))
   })
 
-  app.listen(port, () => {
-    console.log("✅ Backend + frontend running at: http://localhost:" + port)
-  })
+  // create an HTTP server wrapper
+const server = http.createServer(app)
+
+// init chat with this server
+initChat(server)
+
+// start listening
+server.listen(port, () => {
+  console.log("✅ Backend + frontend + chat running at: http://localhost:" + port)
+})
+
 } // <— this closes startServer (keep it)
 
 startServer().catch((err) => {

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion, AnimatePresence } from "framer-motion"
+import { io } from "socket.io-client"
 import {
   Trophy,
   MapPin,
@@ -249,6 +250,8 @@ export default function Home() {
   const [tlAssist, setTlAssist] = useState<string>("")
   const [tlRatchet, setTlRatchet] = useState<string>("")
   const [tlBit, setTlBit] = useState<string>("")
+
+  
 
   // Part popularity (now includes assistBlades with separate denominator)
   const [popularity, setPopularity] = useState<{
@@ -565,6 +568,8 @@ setLeaders(derived)
                   </Link>
                 </div>
               </Section>
+
+              <ChatWidget username={username} />
 
               {/* Part Popularity Leaderboard */}
               <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
@@ -1085,3 +1090,74 @@ function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUserD }) 
 }
 
 
+function ChatWidget({ username }: { username: string }) {
+  const [socket, setSocket] = useState<any>(null)
+  const [messages, setMessages] = useState<{ user: string; text: string; ts: number }[]>([])
+  const [online, setOnline] = useState<string[]>([])
+  const [text, setText] = useState("")
+
+  useEffect(() => {
+    const s = io(API, { transports: ["websocket"] })
+    setSocket(s)
+    s.emit("join", username || "Guest")
+
+    s.on("message", (msg: any) => setMessages(m => [...m, msg]))
+    s.on("onlineUsers", (users: string[]) => setOnline(users))
+
+    return () => { s.disconnect() }
+  }, [username])
+
+  const send = () => {
+    if (!text.trim()) return
+    const msg = { user: username || "Guest", text, ts: Date.now() }
+    socket.emit("message", msg)
+    setText("")
+  }
+
+  return (
+    <Section title="Live Chat" icon={<Users className="h-5 w-5" />}>
+      <div className="flex">
+        {/* Messages */}
+        <div className="flex-1 h-64 overflow-y-auto pr-3 space-y-2">
+          {messages.map((m, i) => (
+            <div key={i} className="rounded-xl bg-white/5 p-2">
+              <div className="text-xs text-white/60">
+                {m.user} · {new Date(m.ts).toLocaleTimeString()}
+              </div>
+              <div>{m.text}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Online Users */}
+        <div className="w-32 border-l border-white/10 pl-3">
+          <div className="text-xs text-white/60 mb-1">Online</div>
+          <ul className="space-y-1 text-sm">
+            {online.map((u, i) => (
+              <li key={i} className="flex items-center gap-1">
+                <span className="h-2 w-2 bg-green-400 rounded-full" /> {u}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* Input */}
+      <div className="mt-3 flex gap-2">
+        <input
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && send()}
+          placeholder="Type a message…"
+          className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+        />
+        <button
+          onClick={send}
+          className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm"
+        >
+          Send
+        </button>
+      </div>
+    </Section>
+  )
+}
