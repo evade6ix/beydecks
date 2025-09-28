@@ -1099,8 +1099,11 @@ function ChatWidget({ username }: { username: string }) {
 
   // auto-scroll when messages change
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
+  if (messagesEndRef.current) {
+    messagesEndRef.current.scrollTop = messagesEndRef.current.scrollHeight
+  }
+}, [messages])
+
 
  useEffect(() => {
   if (!username) return
@@ -1193,17 +1196,20 @@ const filterBadWords = (txt: string) => {
     <Section title="Live Chat" icon={<Users className="h-5 w-5" />}>
       <div className="flex">
         {/* Messages */}
-        <div className="flex-1 h-64 overflow-y-auto pr-3 space-y-2">
-          {messages.map((m, i) => (
-            <div key={i} className="rounded-xl bg-white/5 p-2">
-              <div className="text-xs text-white/60">
-                {m.user} · {new Date(m.ts).toLocaleTimeString()}
-              </div>
-              <div>{m.text}</div>
-            </div>
-          ))}
-          <div ref={messagesEndRef} />
-        </div>
+        <div
+  className="flex-1 h-64 overflow-y-auto pr-3 space-y-2"
+  ref={messagesEndRef}   // attach ref here instead
+>
+  {messages.map((m, i) => (
+    <div key={i} className="rounded-xl bg-white/5 p-2">
+      <div className="text-xs text-white/60">
+        {m.user} · {new Date(m.ts).toLocaleTimeString()}
+      </div>
+      <div>{m.text}</div>
+    </div>
+  ))}
+</div>
+
 
         {/* Online Users */}
         <div className="w-32 border-l border-white/10 pl-3">
