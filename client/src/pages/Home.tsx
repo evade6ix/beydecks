@@ -1097,15 +1097,20 @@ function ChatWidget({ username }: { username: string }) {
   const [text, setText] = useState("")
 
   useEffect(() => {
-    const s = io(API, { transports: ["websocket"] })
-    setSocket(s)
-    s.emit("join", username || "Guest")
+  // Strip /api if API points to the REST endpoint
+  const baseUrl = API.replace(/\/api$/, "")
 
-    s.on("message", (msg: any) => setMessages(m => [...m, msg]))
-    s.on("onlineUsers", (users: string[]) => setOnline(users))
+  const s = io(baseUrl, { transports: ["websocket"] })
+  setSocket(s)
 
-    return () => { s.disconnect() }
-  }, [username])
+  s.emit("join", username || "Guest")
+
+  s.on("message", (msg: any) => setMessages(m => [...m, msg]))
+  s.on("onlineUsers", (users: string[]) => setOnline(users))
+
+  return () => { s.disconnect() }
+}, [username])
+
 
   const send = () => {
     if (!text.trim()) return
