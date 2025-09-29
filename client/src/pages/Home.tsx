@@ -869,7 +869,7 @@ function TopCutRow({ players }: { players?: Player[] }) {
           <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
             {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•"}
           </span>
-          <span className="text-xs">{p.name}</span>
+          <span className="text-xs whitespace-nowrap">{p.name}</span>
         </div>
       ))}
     </div>
