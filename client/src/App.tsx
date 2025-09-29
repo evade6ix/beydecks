@@ -3,6 +3,7 @@ import { useEffect, useState, Suspense, lazy } from "react"
 import { Routes, Route, useLocation, Navigate, useParams } from "react-router-dom"
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
+import BottomBar from "./components/BottomBar"   // 👈 Added
 
 // Eager
 import ForumThread from "./pages/ForumThread"
@@ -112,6 +113,9 @@ export default function App() {
           {isAdmin && <Route path="/admin" element={<Admin />} />}
         </Routes>
       </Suspense>
+
+      {/* 👇 Sticky BottomBar (hidden on landing page just like Navbar) */}
+      {location.pathname !== "/" && <BottomBar />}
     </>
   )
 }

@@ -372,18 +372,21 @@ export default function CompletedEvents() {
                           Top cut (first 4)
                         </div>
                         <ul className="space-y-1.5">
-                          {e.topCut.slice(0, 4).map((p, i) => (
-                            <li
-                              key={p.name + i}
-                              className="flex items-center justify-between rounded-xl bg-white/5 px-2.5 py-1.5"
-                            >
-                              <span className="truncate text-sm">{p.name}</span>
-                              <span className="text-xs text-white/50">
-                                {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🏁"}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
+  {e.topCut.slice(0, 4).map((p, i) => (
+    <li
+      key={p.name + i}
+      className="flex items-center justify-between rounded-xl bg-white/5 px-2.5 py-1.5"
+    >
+      {/* ✅ Prevents wrapping inside the pill */}
+      <span className="truncate text-sm whitespace-nowrap">{p.name}</span>
+
+      <span className="text-xs text-white/50">
+        {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🏁"}
+      </span>
+    </li>
+  ))}
+</ul>
+
                       </div>
                     ) : null}
                   </div>

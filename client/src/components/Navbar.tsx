@@ -59,7 +59,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
           )}
         </div>
 
-        {/* ✅ LOGO + DISCORD ICON */}
+        {/* ✅ LOGO ONLY (Discord icon removed) */}
         <div className="flex items-center space-x-3 overflow-hidden shrink-0 z-10 relative">
           <Link to="/home">
             <img
@@ -68,18 +68,6 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
               className="h-12 w-auto max-w-[180px] object-contain"
             />
           </Link>
-          <a
-            href="https://discord.gg/xmrb4EW739"
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Join our Discord"
-          >
-            <img
-              src="https://i.imgur.com/3NtUyB7.png"
-              alt="Discord"
-              className="h-6 w-auto flex-shrink-0 hover:scale-105 transition-transform"
-            />
-          </a>
         </div>
       </div>
 
