@@ -11,7 +11,7 @@ export default function Login({ onLogin }: Props) {
   const navigate = useNavigate()
 
   const handleLogin = () => {
-    if (password === "308f498ng8949vnvn4848jnv4jdkif") {
+    if (password === "womfwiomfwelwefjwnfiwenifnw") {
       onLogin()
       sessionStorage.setItem("admin", "true")
       navigate("/admin")
