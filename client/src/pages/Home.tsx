@@ -522,8 +522,8 @@ setLeaders(derived)
               <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and player leaderboards.</p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Link to="/events" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
-                <CalendarCheck className="h-4 w-4" /> Explore Events
+              <Link to="/submit" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
+                <CalendarCheck className="h-4 w-4" /> Submit Event
               </Link>
               <Link to="/tournament-lab" className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600/90 px-4 py-2 text-sm font-medium shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500">
                 <BarChart3 className="h-4 w-4" /> Tournament Lab

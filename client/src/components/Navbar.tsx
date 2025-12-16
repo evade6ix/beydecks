@@ -45,7 +45,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
               <li className="py-2"><Link to={accountLinkPath} onClick={closeMenu}>{accountLinkText}</Link></li>
               <li className="py-2"><Link to="/Contact" onClick={closeMenu}>Contact</Link></li>
               <li className="py-2"><Link to="/Shop" onClick={closeMenu}>Shop</Link></li>
-              <li className="py-2"><Link to="/events" onClick={closeMenu}>Upcoming Events</Link></li>
+              <li className="py-2"><Link to="/submit" onClick={closeMenu}>Submit Event</Link></li>
               <li className="py-2"><Link to="/events/completed" onClick={closeMenu}>Completed Events</Link></li>
               <li className="py-2"><Link to="/stores" onClick={closeMenu}>Store Finder</Link></li>
               <li className="py-2"><Link to="/leaderboard" onClick={closeMenu}>Beyblade Meta</Link></li>
