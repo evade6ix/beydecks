@@ -426,6 +426,34 @@ export default function Admin() {
   }
 }
 
+  const rejectSubmission = async (submission: EventSubmission) => {
+    const id = String(submission._id || submission.id || "")
+    if (!id) {
+      toast.error("Missing submission id")
+      return
+    }
+
+    if (!confirm("Reject this submission? This will delete it.")) return
+
+    try {
+      const res = await fetch(`${API}/event-submissions/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data?.error || "Reject failed")
+        return
+      }
+
+      toast.success("Submission rejected ❌")
+      await loadSubmissions()
+    } catch (e) {
+      toast.error("Reject failed")
+    }
+  }
+
+
 
   return (
     <motion.div
@@ -814,11 +842,12 @@ export default function Admin() {
 </button>
 
                         <button
-                          className="btn btn-error btn-sm"
-                          onClick={() => toast("Reject button wired next step")}
-                        >
-                          Reject
-                        </button>
+  className="btn btn-error btn-sm"
+  onClick={() => rejectSubmission(s)}
+>
+  Reject
+</button>
+
                       </div>
                     </div>
 

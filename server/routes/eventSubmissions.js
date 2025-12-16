@@ -18,6 +18,28 @@ export default function eventSubmissionsRoutes({ eventSubmissions }) {
     }
   })
 
+    // DELETE /api/event-submissions/:id
+  // Reject submission (hard delete)
+  router.delete("/:id", async (req, res) => {
+    try {
+      const { id } = req.params
+
+      const result = await eventSubmissions.findOneAndDelete({
+        _id: new (require("mongodb").ObjectId)(id),
+      })
+
+      if (!result.value) {
+        return res.status(404).json({ error: "Submission not found" })
+      }
+
+      return res.json({ ok: true, deletedId: id })
+    } catch (err) {
+      console.error("DELETE /api/event-submissions error:", err)
+      return res.status(500).json({ error: "Server error" })
+    }
+  })
+
+
   // POST /api/event-submissions
   router.post("/", async (req, res) => {
     try {
