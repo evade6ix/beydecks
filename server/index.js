@@ -12,6 +12,7 @@ import forumRoutes from "./routes/forum.js"
 import eventSubmissionsRoutes from "./routes/eventSubmissions.js"
 import eventsRouter from "./routes/events.js"
 import userPartsRoutes from "./routes/userParts.js"
+import eventSubmissionsRoutes from "./routes/eventSubmissionsRoutes.js"
 import dotenv from "dotenv"
 import usersRoutes from "./routes/users.js"
 import jwt from "jsonwebtoken" //
@@ -179,6 +180,7 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
 
   app.use("/api/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
   app.use("/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
+  
 
 
 
