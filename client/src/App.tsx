@@ -4,6 +4,8 @@ import { Routes, Route, useLocation, Navigate, useParams } from "react-router-do
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 import BottomBar from "./components/BottomBar"   // 👈 Added
+import SubmitEvent from "./pages/SubmitEvent"
+
 
 // Eager
 import ForumThread from "./pages/ForumThread"
@@ -105,6 +107,7 @@ export default function App() {
           <Route path="/edit-product/:id" element={<EditProduct />} />
           <Route path="/stores/:id/upcoming" element={<StoreUpcomingEvents />} />
           <Route path="/login" element={<Login onLogin={() => setIsAdmin(true)} />} />
+          <Route path="/submit" element={<SubmitEvent />} />
           <Route path="/shop" element={<Shop />} />
           <Route path="/add-product" element={<AddProduct />} />
           <Route path="/ratchets/:name" element={<RatchetDetail />} />

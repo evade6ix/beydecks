@@ -29,7 +29,8 @@ export const connectDB = async () => {
     events: db.collection("events"),
     stores: db.collection("stores"),
     prepDecks: db.collection("prep_decks"),
-    chatMessages, // ✅ new
+    chatMessages,
+    eventSubmissions: db.collection("event_submissions") // ✅ new
   }
 }
 

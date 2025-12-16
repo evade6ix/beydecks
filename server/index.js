@@ -6,8 +6,10 @@ import { join, dirname, resolve } from "path"
 import { fileURLToPath } from "url"
 import { existsSync, mkdirSync } from "fs"
 import { connectDB } from "./mongo.js"
+import { ObjectId } from "mongodb"
 import authRoutes from "./routes/auth.js"
 import forumRoutes from "./routes/forum.js"
+import eventSubmissionsRoutes from "./routes/eventSubmissions.js"
 import eventsRouter from "./routes/events.js"
 import userPartsRoutes from "./routes/userParts.js"
 import dotenv from "dotenv"
@@ -83,7 +85,102 @@ app.use(
   app.use("/api", usersLeaderboard)
 
   // ✅ Connect to DB first
-  const { users, products, events, stores, prepDecks } = await connectDB()
+  const { users, products, events, stores, prepDecks, eventSubmissions } = await connectDB()
+  
+  // ✅ Approve a pending submission -> create a real event
+app.post("/api/event-submissions/:id/approve", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim()
+    if (!id) return res.status(400).json({ error: "Missing submission id" })
+
+    // Find submission by _id (ObjectId) or fallback string id
+    let sub =
+      (ObjectId.isValid(id) ? await eventSubmissions.findOne({ _id: new ObjectId(id) }) : null) ||
+      (await eventSubmissions.findOne({ id }))
+
+    if (!sub) return res.status(404).json({ error: "Submission not found" })
+    if (sub.status !== "pending") {
+      return res.status(400).json({ error: `Submission is not pending (status=${sub.status})` })
+    }
+
+    const draft = sub.eventDraft || {}
+    if (!draft.title || !draft.startTime || !draft.endTime || !draft.store) {
+      return res.status(400).json({ error: "Submission draft missing required fields" })
+    }
+
+    // Create real event (same as createEvent logic)
+    const newEvent = { ...draft, id: Date.now() }
+    await events.insertOne(newEvent)
+
+    // Mark submission approved
+    await eventSubmissions.updateOne(
+      { _id: sub._id },
+      {
+        $set: {
+          status: "approved",
+          reviewedAt: new Date(),
+          rejectionReason: null,
+        },
+      }
+    )
+
+    // Sync tournaments (you already have this function in index.js)
+    try {
+      await syncTournamentsForEvent(newEvent)
+    } catch (e) {
+      console.warn("Tournament sync (approve) failed:", e)
+    }
+
+    return res.json({ ok: true, eventId: newEvent.id })
+  } catch (err) {
+    console.error("POST /api/event-submissions/:id/approve error:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+})
+
+app.post("/event-submissions/:id/approve", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim()
+    if (!id) return res.status(400).json({ error: "Missing submission id" })
+
+    let sub =
+      (ObjectId.isValid(id) ? await eventSubmissions.findOne({ _id: new ObjectId(id) }) : null) ||
+      (await eventSubmissions.findOne({ id }))
+
+    if (!sub) return res.status(404).json({ error: "Submission not found" })
+    if (sub.status !== "pending") {
+      return res.status(400).json({ error: `Submission is not pending (status=${sub.status})` })
+    }
+
+    const draft = sub.eventDraft || {}
+    if (!draft.title || !draft.startTime || !draft.endTime || !draft.store) {
+      return res.status(400).json({ error: "Submission draft missing required fields" })
+    }
+
+    const newEvent = { ...draft, id: Date.now() }
+    await events.insertOne(newEvent)
+
+    await eventSubmissions.updateOne(
+      { _id: sub._id },
+      { $set: { status: "approved", reviewedAt: new Date(), rejectionReason: null } }
+    )
+
+    try { await syncTournamentsForEvent(newEvent) } catch (e) {
+      console.warn("Tournament sync (approve) failed:", e)
+    }
+
+    return res.json({ ok: true, eventId: newEvent.id })
+  } catch (err) {
+    console.error("POST /event-submissions/:id/approve error:", err)
+    return res.status(500).json({ error: "Server error" })
+  }
+})
+
+
+  app.use("/api/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
+  app.use("/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
+
+
 
   // --- Profile slug support (helper + index + backfill) ---
   const slugify = (s) =>

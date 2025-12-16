@@ -94,9 +94,35 @@ type UserHit = {
   avatarDataUrl?: string
 }
 
+interface EventSubmission {
+  _id?: string
+  id?: string
+  status: "pending" | "approved" | "rejected"
+  submittedAt?: string
+  rejectionReason?: string
+  eventDraft: {
+    title: string
+    startTime: string
+    endTime: string
+    store: string
+    buyLink?: string
+    imageUrl?: string
+    topCut?: Player[]
+    capacity?: number
+    attendeeCount?: number
+    country?: string
+    region?: string
+    city?: string
+    challongeUrl?: string
+  }
+}
+
 export default function Admin() {
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
+  const [submissions, setSubmissions] = useState<EventSubmission[]>([])
+  const [submissionsLoaded, setSubmissionsLoaded] = useState(false)
+
   const [title, setTitle] = useState("")
   const [buyLink, setBuyLink] = useState("")
   const [imageUrl, setImageUrl] = useState("")
@@ -112,7 +138,15 @@ export default function Admin() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [topCut, setTopCut] = useState<Player[]>([])
   const [storeForm, setStoreForm] = useState<Omit<Store, "id">>({
-    name: "", address: "", logo: "", mapEmbedUrl: "", website: "", notes: "", country: "", region: "", city: ""
+    name: "",
+    address: "",
+    logo: "",
+    mapEmbedUrl: "",
+    website: "",
+    notes: "",
+    country: "",
+    region: "",
+    city: "",
   })
   const [storeEditId, setStoreEditId] = useState<number | null>(null)
 
@@ -120,12 +154,36 @@ export default function Admin() {
   const [nameSuggestions, setNameSuggestions] = useState<UserHit[][]>([])
   const timersRef = useRef<number[]>([])
 
+  const loadSubmissions = async () => {
+    try {
+      setSubmissionsLoaded(false)
+      const res = await fetch(`${API}/event-submissions`)
+      if (!res.ok) {
+        setSubmissions([])
+        return
+      }
+      const data = await res.json()
+      setSubmissions(Array.isArray(data) ? data : (data.items || []))
+    } catch {
+      setSubmissions([])
+    } finally {
+      setSubmissionsLoaded(true)
+    }
+  }
+
   useEffect(() => {
-    fetch(`${API}/events`).then(res => res.json()).then((data: Event[]) => {
-      const sorted = data.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-      setEvents(sorted)
-    })
-    fetch(`${API}/stores`).then(res => res.json()).then(setStores)
+    fetch(`${API}/events`)
+      .then((res) => res.json())
+      .then((data: Event[]) => {
+        const sorted = data.sort(
+          (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()
+        )
+        setEvents(sorted)
+      })
+
+    fetch(`${API}/stores`).then((res) => res.json()).then(setStores)
+
+    loadSubmissions()
   }, [])
 
   const resetForm = () => {
@@ -150,36 +208,49 @@ export default function Admin() {
   const addOrUpdateEvent = () => {
     const normalizedChallonge = normalizeChallongeInput(challongeUrl)
     const payload = {
-      title, startTime, endTime, store, topCut, buyLink, imageUrl,
-      capacity, attendeeCount, country, region, city,
-      challongeUrl: normalizedChallonge || undefined
+      title,
+      startTime,
+      endTime,
+      store,
+      topCut,
+      buyLink,
+      imageUrl,
+      capacity,
+      attendeeCount,
+      country,
+      region,
+      city,
+      challongeUrl: normalizedChallonge || undefined,
     }
     const method = editingId ? "PUT" : "POST"
     const url = editingId ? `${API}/events/${editingId}` : `${API}/events`
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     }).then(() => {
       toast.success(editingId ? "Event updated" : "Event added")
       resetForm()
-      fetch(`${API}/events`).then(res => res.json()).then(setEvents)
+      fetch(`${API}/events`).then((res) => res.json()).then(setEvents)
     })
   }
 
   const addCombo = (playerIndex: number) => {
-    setTopCut(prev => {
+    setTopCut((prev) => {
       const updated = [...prev]
       updated[playerIndex] = {
         ...updated[playerIndex],
-        combos: [...updated[playerIndex].combos, { blade: "", ratchet: "", bit: "", notes: "" }]
+        combos: [
+          ...updated[playerIndex].combos,
+          { blade: "", ratchet: "", bit: "", notes: "" },
+        ],
       }
       return updated
     })
   }
 
   const updateTopCutCombo = (p: number, c: number, f: keyof Combo, val: string) => {
-    setTopCut(prev => {
+    setTopCut((prev) => {
       const copy = [...prev]
       copy[p].combos[c][f] = val
       return copy
@@ -187,22 +258,19 @@ export default function Admin() {
   }
 
   const addTopCutPlayer = () => {
-    setTopCut(prev => [
-      ...prev,
-      { name: "", combos: [{ blade: "", ratchet: "", bit: "", notes: "" }] }
-    ])
-    setNameSuggestions(prev => [...prev, []])
+    setTopCut((prev) => [...prev, { name: "", combos: [{ blade: "", ratchet: "", bit: "", notes: "" }] }])
+    setNameSuggestions((prev) => [...prev, []])
     timersRef.current.push(0)
   }
 
   const removeTopCutPlayer = (i: number) => {
-    setTopCut(prev => prev.filter((_, idx) => idx !== i))
-    setNameSuggestions(prev => prev.filter((_, idx) => idx !== i))
+    setTopCut((prev) => prev.filter((_, idx) => idx !== i))
+    setNameSuggestions((prev) => prev.filter((_, idx) => idx !== i))
     timersRef.current.splice(i, 1)
   }
 
   const updatePlayerName = (i: number, val: string) => {
-    setTopCut(prev => {
+    setTopCut((prev) => {
       const copy = [...prev]
       copy[i].name = val
       return copy
@@ -214,13 +282,13 @@ export default function Admin() {
     try {
       const res = await fetch(`${API}/users/search?q=${encodeURIComponent(q)}`)
       const data: UserHit[] = res.ok ? await res.json() : []
-      setNameSuggestions(prev => {
+      setNameSuggestions((prev) => {
         const copy = [...prev]
         copy[i] = data
         return copy
       })
     } catch {
-      setNameSuggestions(prev => {
+      setNameSuggestions((prev) => {
         const copy = [...prev]
         copy[i] = []
         return copy
@@ -234,7 +302,7 @@ export default function Admin() {
 
     const q = val.trim()
     if (q.length < 2) {
-      setNameSuggestions(prev => {
+      setNameSuggestions((prev) => {
         const copy = [...prev]
         copy[i] = []
         return copy
@@ -246,14 +314,14 @@ export default function Admin() {
   }
 
   const selectSuggestedUser = (i: number, u: UserHit) => {
-    setTopCut(prev => {
-      const copy: any[] = [...prev as any]
+    setTopCut((prev) => {
+      const copy: any[] = [...(prev as any)]
       copy[i].name = u.username
       ;(copy[i] as any).userSlug = u.slug || ""
       ;(copy[i] as any).userId = u.id
       return copy as Player[]
     })
-    setNameSuggestions(prev => {
+    setNameSuggestions((prev) => {
       const copy = [...prev]
       copy[i] = []
       return copy
@@ -267,12 +335,22 @@ export default function Admin() {
     fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(storeForm)
+      body: JSON.stringify(storeForm),
     }).then(() => {
       toast.success(storeEditId ? "Store updated" : "Store added")
-      setStoreForm({ name: "", address: "", logo: "", mapEmbedUrl: "", website: "", notes: "", country: "", region: "", city: "" })
+      setStoreForm({
+        name: "",
+        address: "",
+        logo: "",
+        mapEmbedUrl: "",
+        website: "",
+        notes: "",
+        country: "",
+        region: "",
+        city: "",
+      })
       setStoreEditId(null)
-      fetch(`${API}/stores`).then(res => res.json()).then(setStores)
+      fetch(`${API}/stores`).then((res) => res.json()).then(setStores)
     })
   }
 
@@ -285,14 +363,14 @@ export default function Admin() {
   const deleteStore = (id: number) => {
     fetch(`${API}/stores/${id}`, { method: "DELETE" }).then(() => {
       toast.success("Store deleted")
-      fetch(`${API}/stores`).then(res => res.json()).then(setStores)
+      fetch(`${API}/stores`).then((res) => res.json()).then(setStores)
     })
   }
 
   const deleteEvent = (id: number) => {
     fetch(`${API}/events/${id}`, { method: "DELETE" }).then(() => {
       toast.success("Event deleted")
-      fetch(`${API}/events`).then(res => res.json()).then(setEvents)
+      fetch(`${API}/events`).then((res) => res.json()).then(setEvents)
     })
   }
 
@@ -316,28 +394,82 @@ export default function Admin() {
     timersRef.current = new Array(e.topCut?.length || 0).fill(0)
   }
 
-  const upcomingEvents = events.filter(e => new Date(e.startTime) > new Date())
-  const completedEvents = events.filter(e => new Date(e.startTime) <= new Date())
+  const upcomingEvents = events.filter((e) => new Date(e.startTime) > new Date())
+  const completedEvents = events.filter((e) => new Date(e.startTime) <= new Date())
+
+  const approveSubmission = async (submission: EventSubmission) => {
+  const id = String(submission._id || submission.id || "")
+  if (!id) {
+    toast.error("Missing submission id")
+    return
+  }
+
+  try {
+    const res = await fetch(`${API}/event-submissions/${encodeURIComponent(id)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      toast.error(data?.error || "Approve failed")
+      return
+    }
+
+    toast.success("Submission approved ✅")
+
+    // Refresh both lists
+    await loadSubmissions()
+    fetch(`${API}/events`).then((r) => r.json()).then(setEvents)
+  } catch (e) {
+    toast.error("Approve failed")
+  }
+}
+
 
   return (
-    <motion.div className="p-6 max-w-5xl mx-auto space-y-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    <motion.div
+      className="p-6 max-w-5xl mx-auto space-y-12"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
       <h1 className="text-3xl font-bold">Admin Panel</h1>
 
       {/* Event Form */}
       <div className="card bg-base-200 p-4 space-y-4">
         <h2 className="text-xl font-bold">Create or Edit Event</h2>
         <div className="grid md:grid-cols-3 gap-4">
-          <input className="input input-bordered" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} />
-          <input className="input input-bordered" type="datetime-local" value={startTime} onChange={e => setStartTime(e.target.value)} />
-          <input className="input input-bordered" type="datetime-local" value={endTime} onChange={e => setEndTime(e.target.value)} />
-          <input className="input input-bordered" placeholder="Store" value={store} onChange={e => setStore(e.target.value)} />
+          <input
+            className="input input-bordered"
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <input
+            className="input input-bordered"
+            type="datetime-local"
+            value={startTime}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+          <input
+            className="input input-bordered"
+            type="datetime-local"
+            value={endTime}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+          <input
+            className="input input-bordered"
+            placeholder="Store"
+            value={store}
+            onChange={(e) => setStore(e.target.value)}
+          />
         </div>
 
         <input
           className="input input-bordered"
           placeholder="Buy Ticket URL"
           value={buyLink}
-          onChange={e => setBuyLink(e.target.value)}
+          onChange={(e) => setBuyLink(e.target.value)}
         />
 
         {/* Challonge URL input + preview */}
@@ -346,27 +478,28 @@ export default function Admin() {
           type="url"
           placeholder='Challonge URL, slug, or iframe (e.g. "https://challonge.com/ayjt40cu" or "ayjt40cu")'
           value={challongeUrl}
-          onChange={e => setChallongeUrl(e.target.value)}
+          onChange={(e) => setChallongeUrl(e.target.value)}
         />
         <p className="text-xs opacity-70 -mt-2">
           Paste the tournament link (or slug). We’ll normalize it and show the bracket on the event’s Bracket tab.
         </p>
 
         {normalizeChallongeInput(challongeUrl) ? (
-  <div className="rounded-lg border border-base-300 p-2">
-    <div className="text-xs mb-2 opacity-70">Bracket preview</div>
-    <iframe
-      src={`${API_ORIGIN}/embed/challonge?url=${encodeURIComponent(normalizeChallongeInput(challongeUrl))}`}
-      width="100%"
-      height={360}
-      frameBorder={0}
-      scrolling="auto"
-      allowTransparency
-      style={{ borderRadius: 8, background: "transparent" }}
-    />
-  </div>
-) : null}
-
+          <div className="rounded-lg border border-base-300 p-2">
+            <div className="text-xs mb-2 opacity-70">Bracket preview</div>
+            <iframe
+              src={`${API_ORIGIN}/embed/challonge?url=${encodeURIComponent(
+                normalizeChallongeInput(challongeUrl)
+              )}`}
+              width="100%"
+              height={360}
+              frameBorder={0}
+              scrolling="auto"
+              allowTransparency
+              style={{ borderRadius: 8, background: "transparent" }}
+            />
+          </div>
+        ) : null}
 
         <div className="space-y-2">
           <label className="text-sm font-semibold">Event Image</label>
@@ -384,9 +517,7 @@ export default function Admin() {
               reader.readAsDataURL(file)
             }}
           />
-          {imageUrl && (
-            <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />
-          )}
+          {imageUrl && <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />}
         </div>
 
         <input
@@ -394,23 +525,42 @@ export default function Admin() {
           type="number"
           placeholder="Capacity (for upcoming)"
           value={capacity ?? ""}
-          onChange={e => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)}
+          onChange={(e) => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)}
         />
         <input
           className="input input-bordered"
           type="number"
           placeholder="Attendee Count (for completed)"
           value={attendeeCount ?? ""}
-          onChange={e => setAttendeeCount(e.target.value ? parseInt(e.target.value) : undefined)}
+          onChange={(e) =>
+            setAttendeeCount(e.target.value ? parseInt(e.target.value) : undefined)
+          }
         />
 
-        <select className="select select-bordered" value={country} onChange={e => { setCountry(e.target.value); setRegion("") }}>
+        <select
+          className="select select-bordered"
+          value={country}
+          onChange={(e) => {
+            setCountry(e.target.value)
+            setRegion("")
+          }}
+        >
           <option value="">Select Country</option>
           <option value="Canada">Canada</option>
           <option value="United States">United States</option>
         </select>
-        <input className="input input-bordered" placeholder={country === "Canada" ? "Province" : "State"} value={region} onChange={e => setRegion(e.target.value)} />
-        <input className="input input-bordered" placeholder="City" value={city} onChange={e => setCity(e.target.value)} />
+        <input
+          className="input input-bordered"
+          placeholder={country === "Canada" ? "Province" : "State"}
+          value={region}
+          onChange={(e) => setRegion(e.target.value)}
+        />
+        <input
+          className="input input-bordered"
+          placeholder="City"
+          value={city}
+          onChange={(e) => setCity(e.target.value)}
+        />
 
         <div className="space-y-2">
           <h3 className="font-semibold">Top Cut Combos</h3>
@@ -421,7 +571,7 @@ export default function Admin() {
                   className="input input-sm w-full"
                   placeholder="Player Name"
                   value={p.name}
-                  onChange={e => handlePlayerNameChange(i, e.target.value)}
+                  onChange={(e) => handlePlayerNameChange(i, e.target.value)}
                   autoComplete="off"
                 />
                 {nameSuggestions[i]?.length ? (
@@ -449,42 +599,89 @@ export default function Admin() {
                         </div>
                       </li>
                     ))}
-                    <li className="px-3 py-2 text-xs opacity-60">
-                      Or keep free text: “{p.name}”
-                    </li>
+                    <li className="px-3 py-2 text-xs opacity-60">Or keep free text: “{p.name}”</li>
                   </ul>
                 ) : null}
               </div>
 
               {p.combos.map((c, j) => (
                 <div key={j} className="grid md:grid-cols-5 gap-2">
-                  <input className="input input-sm" placeholder="Blade" value={c.blade} onChange={e => updateTopCutCombo(i, j, "blade", e.target.value)} />
-                  <input className="input input-sm" placeholder="Assist Blade (optional)" value={c.assistBlade ?? ""} onChange={e => updateTopCutCombo(i, j, "assistBlade", e.target.value)} />
-                  <input className="input input-sm" placeholder="Ratchet" value={c.ratchet} onChange={e => updateTopCutCombo(i, j, "ratchet", e.target.value)} />
-                  <input className="input input-sm" placeholder="Bit" value={c.bit} onChange={e => updateTopCutCombo(i, j, "bit", e.target.value)} />
-                  <input className="input input-sm" placeholder="Notes" value={c.notes ?? ""} onChange={e => updateTopCutCombo(i, j, "notes", e.target.value)} />
+                  <input
+                    className="input input-sm"
+                    placeholder="Blade"
+                    value={c.blade}
+                    onChange={(e) => updateTopCutCombo(i, j, "blade", e.target.value)}
+                  />
+                  <input
+                    className="input input-sm"
+                    placeholder="Assist Blade (optional)"
+                    value={c.assistBlade ?? ""}
+                    onChange={(e) => updateTopCutCombo(i, j, "assistBlade", e.target.value)}
+                  />
+                  <input
+                    className="input input-sm"
+                    placeholder="Ratchet"
+                    value={c.ratchet}
+                    onChange={(e) => updateTopCutCombo(i, j, "ratchet", e.target.value)}
+                  />
+                  <input
+                    className="input input-sm"
+                    placeholder="Bit"
+                    value={c.bit}
+                    onChange={(e) => updateTopCutCombo(i, j, "bit", e.target.value)}
+                  />
+                  <input
+                    className="input input-sm"
+                    placeholder="Notes"
+                    value={c.notes ?? ""}
+                    onChange={(e) => updateTopCutCombo(i, j, "notes", e.target.value)}
+                  />
                 </div>
               ))}
 
-              <button className="btn btn-outline btn-xs" onClick={() => addCombo(i)}>Add Combo</button>
-              <button className="btn btn-error btn-xs" onClick={() => removeTopCutPlayer(i)}>Remove Player</button>
+              <button className="btn btn-outline btn-xs" onClick={() => addCombo(i)}>
+                Add Combo
+              </button>
+              <button className="btn btn-error btn-xs" onClick={() => removeTopCutPlayer(i)}>
+                Remove Player
+              </button>
             </div>
           ))}
-          <button className="btn btn-outline btn-sm" onClick={addTopCutPlayer}>Add Player</button>
+          <button className="btn btn-outline btn-sm" onClick={addTopCutPlayer}>
+            Add Player
+          </button>
         </div>
 
         <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={addOrUpdateEvent}>{editingId ? "Update" : "Add"} Event</button>
-          {editingId && <button className="btn btn-ghost" onClick={resetForm}>Cancel</button>}
+          <button className="btn btn-primary" onClick={addOrUpdateEvent}>
+            {editingId ? "Update" : "Add"} Event
+          </button>
+          {editingId && (
+            <button className="btn btn-ghost" onClick={resetForm}>
+              Cancel
+            </button>
+          )}
         </div>
       </div>
+
+      
 
       {/* Store Form */}
       <div className="card bg-base-200 p-4 space-y-4">
         <h2 className="text-xl font-bold">Add or Edit Store</h2>
         <div className="grid md:grid-cols-2 gap-4">
-          <input className="input input-bordered" placeholder="Name" value={storeForm.name} onChange={e => setStoreForm(s => ({ ...s, name: e.target.value }))} />
-          <input className="input input-bordered" placeholder="Address" value={storeForm.address} onChange={e => setStoreForm(s => ({ ...s, address: e.target.value }))} />
+          <input
+            className="input input-bordered"
+            placeholder="Name"
+            value={storeForm.name}
+            onChange={(e) => setStoreForm((s) => ({ ...s, name: e.target.value }))}
+          />
+          <input
+            className="input input-bordered"
+            placeholder="Address"
+            value={storeForm.address}
+            onChange={(e) => setStoreForm((s) => ({ ...s, address: e.target.value }))}
+          />
           <div className="space-y-2">
             <label className="text-sm font-semibold">Store Logo</label>
             <input
@@ -496,51 +693,210 @@ export default function Admin() {
                 if (!file) return
                 const reader = new FileReader()
                 reader.onloadend = () => {
-                  setStoreForm(s => ({ ...s, logo: reader.result as string }))
+                  setStoreForm((s) => ({ ...s, logo: reader.result as string }))
                 }
                 reader.readAsDataURL(file)
               }}
             />
             {storeForm.logo && (
-              <img src={storeForm.logo} alt="Preview" className="w-32 h-32 object-contain border rounded" />
+              <img
+                src={storeForm.logo}
+                alt="Preview"
+                className="w-32 h-32 object-contain border rounded"
+              />
             )}
           </div>
 
-          <input className="input input-bordered" placeholder="Google Maps Embed URL" value={storeForm.mapEmbedUrl} onChange={e => setStoreForm(s => ({ ...s, mapEmbedUrl: e.target.value }))} />
-          <input className="input input-bordered" placeholder="Website" value={storeForm.website} onChange={e => setStoreForm(s => ({ ...s, website: e.target.value }))} />
-          <select className="select select-bordered" value={storeForm.country} onChange={e => setStoreForm(s => ({ ...s, country: e.target.value }))}>
+          <input
+            className="input input-bordered"
+            placeholder="Google Maps Embed URL"
+            value={storeForm.mapEmbedUrl}
+            onChange={(e) => setStoreForm((s) => ({ ...s, mapEmbedUrl: e.target.value }))}
+          />
+          <input
+            className="input input-bordered"
+            placeholder="Website"
+            value={storeForm.website}
+            onChange={(e) => setStoreForm((s) => ({ ...s, website: e.target.value }))}
+          />
+          <select
+            className="select select-bordered"
+            value={storeForm.country}
+            onChange={(e) => setStoreForm((s) => ({ ...s, country: e.target.value }))}
+          >
             <option value="">Select Country</option>
             <option value="Canada">Canada</option>
             <option value="United States">United States</option>
           </select>
-          <input className="input input-bordered" placeholder={storeForm.country === "Canada" ? "Province" : "State"} value={storeForm.region} onChange={e => setStoreForm(s => ({ ...s, region: e.target.value }))} />
-          <input className="input input-bordered" placeholder="City" value={storeForm.city} onChange={e => setStoreForm(s => ({ ...s, city: e.target.value }))} />
+          <input
+            className="input input-bordered"
+            placeholder={storeForm.country === "Canada" ? "Province" : "State"}
+            value={storeForm.region}
+            onChange={(e) => setStoreForm((s) => ({ ...s, region: e.target.value }))}
+          />
+          <input
+            className="input input-bordered"
+            placeholder="City"
+            value={storeForm.city}
+            onChange={(e) => setStoreForm((s) => ({ ...s, city: e.target.value }))}
+          />
         </div>
-        <textarea className="textarea textarea-bordered w-full" placeholder="Notes" value={storeForm.notes} onChange={e => setStoreForm(s => ({ ...s, notes: e.target.value }))}></textarea>
-        <button className="btn btn-success" onClick={submitStore}>{storeEditId ? "Update" : "Add"} Store</button>
+        <textarea
+          className="textarea textarea-bordered w-full"
+          placeholder="Notes"
+          value={storeForm.notes}
+          onChange={(e) => setStoreForm((s) => ({ ...s, notes: e.target.value }))}
+        ></textarea>
+        <button className="btn btn-success" onClick={submitStore}>
+          {storeEditId ? "Update" : "Add"} Store
+        </button>
       </div>
+
+      {/* Pending Tournament Submissions */}
+      <details className="bg-base-200 p-4 rounded-lg" open>
+        <summary className="text-xl font-bold cursor-pointer">
+          Pending Tournament Submissions
+        </summary>
+
+        <div className="mt-4 space-y-3">
+          {!submissionsLoaded ? (
+            <div className="opacity-70">Loading submissions…</div>
+          ) : submissions.filter((s) => s.status === "pending").length === 0 ? (
+            <div className="opacity-70">
+              No pending submissions yet.
+              <div className="text-xs opacity-60 mt-1">
+                (Next step: we’ll add GET /api/event-submissions so this list can populate.)
+              </div>
+            </div>
+          ) : (
+            submissions
+              .filter((s) => s.status === "pending")
+              .map((s, idx) => {
+                const d = s.eventDraft
+                const id = s._id || s.id || String(idx)
+                const topCutCount = (d.topCut || []).length
+
+                return (
+                  <div key={id} className="card bg-base-100 p-4 space-y-3">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-lg">{d.title}</div>
+                        <div className="text-sm opacity-70">
+                          {d.store} • {d.city || "?"}, {d.region || "?"} • {d.country || "?"}
+                        </div>
+                        <div className="text-sm opacity-70">
+                          {d.startTime ? new Date(d.startTime).toLocaleString() : "No start time"} →{" "}
+                          {d.endTime ? new Date(d.endTime).toLocaleString() : "No end time"}
+                        </div>
+
+                        <div className="text-sm opacity-70 mt-1">
+                          Top Cut Players: <span className="font-semibold">{topCutCount}</span>
+                        </div>
+
+                        {d.buyLink ? (
+                          <a
+                            href={d.buyLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-blue-600 underline"
+                          >
+                            Buy Ticket Link
+                          </a>
+                        ) : null}
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+  className="btn btn-success btn-sm"
+  onClick={() => approveSubmission(s)}
+>
+  Approve
+</button>
+
+                        <button
+                          className="btn btn-error btn-sm"
+                          onClick={() => toast("Reject button wired next step")}
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+
+                    {topCutCount ? (
+                      <div className="text-sm">
+                        <div className="font-semibold mb-2">Top Cut Preview</div>
+                        <div className="space-y-2">
+                          {(d.topCut || []).slice(0, 4).map((p, pi) => (
+                            <div key={pi} className="rounded border border-base-300 p-2">
+                              <div className="font-medium">{p.name || "Unnamed player"}</div>
+                              <div className="opacity-70 text-xs">
+                                {(p.combos || []).slice(0, 2).map((c, ci) => (
+                                  <div key={ci}>
+                                    {c.blade || "?"}
+                                    {c.assistBlade ? ` / ${c.assistBlade}` : ""} • {c.ratchet || "?"} •{" "}
+                                    {c.bit || "?"}
+                                    {c.notes ? ` — ${c.notes}` : ""}
+                                  </div>
+                                ))}
+                                {(p.combos || []).length > 2 ? <div>…</div> : null}
+                              </div>
+                            </div>
+                          ))}
+                          {topCutCount > 4 ? (
+                            <div className="opacity-60 text-xs">…and more</div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })
+          )}
+
+          <div className="pt-2">
+            <button className="btn btn-outline btn-sm" onClick={loadSubmissions}>
+              Refresh Submissions
+            </button>
+          </div>
+        </div>
+      </details>
 
       {/* Event Listings */}
       <details className="bg-base-200 p-4 rounded-lg">
         <summary className="text-xl font-bold cursor-pointer">Upcoming Events</summary>
         <div className="max-h-96 overflow-y-auto space-y-2 mt-4">
-          {upcomingEvents.map(e => (
-            <div key={e.id} className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          {upcomingEvents.map((e) => (
+            <div
+              key={e.id}
+              className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+            >
               <div>
                 <p className="font-semibold">{e.title}</p>
                 <p className="text-sm text-neutral-content">
-                  {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @ {e.store}
+                  {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @{" "}
+                  {e.store}
                 </p>
                 {e.buyLink && (
-                  <a href={e.buyLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline">
+                  <a
+                    href={e.buyLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 underline"
+                  >
                     Buy Ticket Link
                   </a>
                 )}
               </div>
               <div className="flex gap-2">
-                <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">View</Link>
-                <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>Edit</button>
-                <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>Delete</button>
+                <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">
+                  View
+                </Link>
+                <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>
+                  Edit
+                </button>
+                <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>
+                  Delete
+                </button>
               </div>
             </div>
           ))}
@@ -550,23 +906,38 @@ export default function Admin() {
       <details className="bg-base-200 p-4 rounded-lg">
         <summary className="text-xl font-bold cursor-pointer">Completed Events</summary>
         <div className="max-h-96 overflow-y-auto space-y-2 mt-4">
-          {completedEvents.map(e => (
-            <div key={e.id} className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          {completedEvents.map((e) => (
+            <div
+              key={e.id}
+              className="card bg-base-100 p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+            >
               <div>
                 <p className="font-semibold">{e.title}</p>
                 <p className="text-sm text-neutral-content">
-                  {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @ {e.store}
+                  {new Date(e.startTime).toLocaleString()} → {new Date(e.endTime).toLocaleTimeString()} @{" "}
+                  {e.store}
                 </p>
                 {e.buyLink && (
-                  <a href={e.buyLink} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 underline">
+                  <a
+                    href={e.buyLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-blue-600 underline"
+                  >
                     Buy Ticket Link
                   </a>
                 )}
               </div>
               <div className="flex gap-2">
-                <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">View</Link>
-                <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>Edit</button>
-                <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>Delete</button>
+                <Link to={`/events/${e.id}`} className="btn btn-outline btn-sm">
+                  View
+                </Link>
+                <button className="btn btn-info btn-sm" onClick={() => editEvent(e)}>
+                  Edit
+                </button>
+                <button className="btn btn-error btn-sm" onClick={() => deleteEvent(e.id)}>
+                  Delete
+                </button>
               </div>
             </div>
           ))}
@@ -584,9 +955,15 @@ export default function Admin() {
                 <p className="text-sm text-neutral-content">{store.address}</p>
               </div>
               <div className="flex gap-2">
-                <Link to={`/stores/${store.id}`} className="btn btn-outline btn-sm">View</Link>
-                <button className="btn btn-info btn-sm" onClick={() => editStore(store)}>Edit</button>
-                <button className="btn btn-error btn-sm" onClick={() => deleteStore(store.id)}>Delete</button>
+                <Link to={`/stores/${store.id}`} className="btn btn-outline btn-sm">
+                  View
+                </Link>
+                <button className="btn btn-info btn-sm" onClick={() => editStore(store)}>
+                  Edit
+                </button>
+                <button className="btn btn-error btn-sm" onClick={() => deleteStore(store.id)}>
+                  Delete
+                </button>
               </div>
             </div>
           ))}
