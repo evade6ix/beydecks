@@ -765,7 +765,7 @@ export default function Admin() {
             <div className="opacity-70">
               No pending submissions yet.
               <div className="text-xs opacity-60 mt-1">
-                (Next step: we’ll add GET /api/event-submissions so this list can populate.)
+                (Refresh to see if any new events)
               </div>
             </div>
           ) : (
