@@ -79,11 +79,15 @@ export default function eventSubmissionsRoutes({ eventSubmissions }) {
   // DELETE /api/event-submissions/:id  (Reject = hard delete)
   router.delete("/:id", async (req, res) => {
     try {
-      const { id } = req.params
+      const id = String(req.params.id || "").trim()
+      if (!id) return res.status(400).json({ error: "Missing submission id" })
 
-      const result = await eventSubmissions.findOneAndDelete({
-        _id: new ObjectId(id),
-      })
+      // ✅ Don't let ObjectId() throw -> that causes your 500
+      const filter = ObjectId.isValid(id)
+        ? { _id: new ObjectId(id) }
+        : { id } // optional fallback if you ever store string ids
+
+      const result = await eventSubmissions.findOneAndDelete(filter)
 
       if (!result.value) {
         return res.status(404).json({ error: "Submission not found" })
