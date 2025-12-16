@@ -75,7 +75,6 @@ export default function SubmitEvent() {
   const [title, setTitle] = useState("")
   const [buyLink, setBuyLink] = useState("")
   const [imageUrl, setImageUrl] = useState("")
-  const [capacity, setCapacity] = useState<number | undefined>()
   const [attendeeCount, setAttendeeCount] = useState<number | undefined>()
   const [startTime, setStartTime] = useState("")
   const [endTime, setEndTime] = useState("")
@@ -99,7 +98,6 @@ export default function SubmitEvent() {
     setTopCut([])
     setBuyLink("")
     setImageUrl("")
-    setCapacity(undefined)
     setAttendeeCount(undefined)
     setCountry("")
     setRegion("")
@@ -221,7 +219,6 @@ export default function SubmitEvent() {
         topCut,
         buyLink,
         imageUrl,
-        capacity,
         attendeeCount,
         country,
         region,
@@ -272,8 +269,6 @@ export default function SubmitEvent() {
           <input className="input input-bordered" placeholder="Store" value={store} onChange={(e) => setStore(e.target.value)} />
         </div>
 
-        <input className="input input-bordered" placeholder="Buy Ticket URL" value={buyLink} onChange={(e) => setBuyLink(e.target.value)} />
-
         <input
           className="input input-bordered"
           type="url"
@@ -317,13 +312,6 @@ export default function SubmitEvent() {
           {imageUrl && <img src={imageUrl} alt="Event Preview" className="w-48 mx-auto rounded" />}
         </div>
 
-        <input
-          className="input input-bordered"
-          type="number"
-          placeholder="Capacity (for upcoming)"
-          value={capacity ?? ""}
-          onChange={(e) => setCapacity(e.target.value ? parseInt(e.target.value) : undefined)}
-        />
         <input
           className="input input-bordered"
           type="number"
