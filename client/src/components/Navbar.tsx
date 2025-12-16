@@ -77,7 +77,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
           <li><Link to={accountLinkPath}>{accountLinkText}</Link></li>
           <li><Link to="/Contact">Contact</Link></li>
           <li><Link to="/Shop">Shop</Link></li>
-          <li><Link to="/events">Upcoming Events</Link></li>
+          <li><Link to="/submit">Submit Event</Link></li>
           <li><Link to="/events/completed">Completed Events</Link></li>
           <li><Link to="/stores">Store Finder</Link></li>
           <li><Link to="/leaderboard">Beyblade Meta</Link></li>
