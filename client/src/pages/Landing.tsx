@@ -317,7 +317,7 @@ export default function Landing() {
         <section className="relative px-6 pt-20 pb-16 sm:pb-24">
           <div className="max-w-4xl mx-auto text-center">
             <motion.img
-              src="/logos/logoclear.png"
+              src="/logos/stacked.png"
               alt="MetaBeys Logo"
               className="h-20 sm:h-24 md:h-28 mx-auto drop-shadow-xl"
               initial={{ opacity: 0, y: -10 }}
