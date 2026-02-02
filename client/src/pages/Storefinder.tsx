@@ -18,6 +18,9 @@ import {
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
+// Hard-coded sponsored store (Mongo `id` value)
+const SPONSORED_STORE_ID = 1754921172194
+
 /* --------------------------------
    Types
 ---------------------------------*/
@@ -29,6 +32,9 @@ type Store = {
   country?: string
   region?: string
   city?: string
+  website?: string
+  notes?: string
+  mapEmbedUrl?: string
 }
 
 type RSOption = { label: string; value: string }
@@ -129,6 +135,12 @@ export default function StoreFinder() {
     }
     load()
   }, [])
+
+  // Sponsored store derived from loaded stores
+  const sponsoredStore = useMemo(
+    () => stores.find((s) => String(s.id) === String(SPONSORED_STORE_ID)),
+    [stores]
+  )
 
   // options (cascading)
   const countries = useMemo(
@@ -247,7 +259,7 @@ export default function StoreFinder() {
         </div>
       </div>
 
-      {/* 🔥 Sponsored Slot (simple / always visible for now) */}
+      {/* 🔥 Sponsored Store Slot */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -260,16 +272,24 @@ export default function StoreFinder() {
         </div>
 
         <div className="relative rounded-[22px] bg-[#030712]/90 px-4 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
-          {/* Left: badge + placeholder logo */}
+          {/* Left: badge + logo */}
           <div className="flex items-start gap-3 md:w-64">
             <div className="flex flex-col gap-2">
               <span className="inline-flex items-center gap-2 rounded-full border border-yellow-400/70 bg-yellow-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-yellow-100 shadow-[0_0_25px_rgba(250,204,21,0.6)]">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-yellow-300 animate-pulse" />
-                Featured Placement
+                Sponsored Store
               </span>
 
               <div className="relative h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
-                <Building2 className="h-7 w-7 text-white/50" />
+                {sponsoredStore?.logo ? (
+                  <img
+                    src={sponsoredStore.logo}
+                    alt={sponsoredStore.name}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <Building2 className="h-7 w-7 text-white/50" />
+                )}
                 <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10" />
               </div>
             </div>
@@ -278,24 +298,39 @@ export default function StoreFinder() {
           {/* Middle: text */}
           <div className="flex-1 min-w-0">
             <h2 className="text-lg md:text-xl font-semibold leading-tight">
-              Sponsored Store
+              {sponsoredStore?.name || "Featured Beyblade Store"}
             </h2>
             <p className="mt-2 text-sm text-white/75 max-w-xl">
-              This premium slot is reserved for a featured Beyblade store. Highlight your brand, upcoming events,
-              and community presence right at the top of the MetaBeys Store Finder.
+              {sponsoredStore?.notes ||
+                "This premium slot highlights a featured Beyblade store in the MetaBeys community. Showcase your releases, events, and local scene in front of players searching for stores."}
             </p>
           </div>
 
           {/* Right: CTAs */}
-          <div className="flex flex-col items-stretch gap-2 md:w-56">
-            <button
-              type="button"
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
-            >
-              Your Store Here
-            </button>
-            <span className="text-[10px] text-white/45 text-right">
-              Interested in sponsoring this slot? Contact MetaBeys to learn more.
+          <div className="flex flex-col items-stretch gap-2 md:w-56 text-right md:text-right">
+            {sponsoredStore?.website ? (
+              <a
+                href={sponsoredStore.website}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
+              >
+                Visit Website
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
+              >
+                Your Store Here
+              </button>
+            )}
+
+            <span className="text-[10px] text-white/45">
+              {sponsoredStore
+                ? "Sponsored placement powered by MetaBeys Store Finder."
+                : "Interested in sponsoring this slot? Contact MetaBeys to learn more."}
             </span>
           </div>
         </div>
