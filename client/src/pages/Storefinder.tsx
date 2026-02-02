@@ -14,6 +14,8 @@ import {
   ExternalLink,
   Building2,
   Globe2,
+  Sparkles,
+  ArrowUpRight,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -259,80 +261,141 @@ export default function StoreFinder() {
         </div>
       </div>
 
-      {/* 🔥 Sponsored Store Slot */}
+      {/* 🔥 Sponsored Store Hero */}
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6 relative overflow-hidden rounded-3xl border border-yellow-500/40 bg-gradient-to-r from-indigo-900/80 via-slate-950/90 to-fuchsia-900/70 p-[1px] shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+        transition={{ duration: 0.25 }}
+        className="mb-7 relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-[1px] shadow-[0_24px_80px_rgba(15,23,42,0.95)]"
       >
-        <div className="absolute inset-0 pointer-events-none opacity-70">
-          <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-yellow-400/20 blur-3xl" />
-          <div className="absolute -right-16 bottom-[-40px] h-52 w-52 rounded-full bg-fuchsia-500/25 blur-3xl" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_65%)]" />
+        {/* Outer glow / frame */}
+        <div className="pointer-events-none absolute inset-0 opacity-60">
+          <div className="absolute -left-20 top-[-40px] h-52 w-52 rounded-full bg-fuchsia-500/20 blur-3xl" />
+          <div className="absolute right-[-40px] bottom-[-40px] h-64 w-64 rounded-full bg-indigo-500/30 blur-3xl" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_65%)]" />
         </div>
 
-        <div className="relative rounded-[22px] bg-[#030712]/90 px-4 py-5 md:px-7 md:py-6 flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
-          {/* Left: badge + logo */}
-          <div className="flex items-start gap-3 md:w-64">
-            <div className="flex flex-col gap-2">
-              <span className="inline-flex items-center gap-2 rounded-full border border-yellow-400/70 bg-yellow-500/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-yellow-100 shadow-[0_0_25px_rgba(250,204,21,0.6)]">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-yellow-300 animate-pulse" />
-                Sponsored Store
-              </span>
+        <div className="relative rounded-[26px] bg-[#020617]/90 px-5 py-5 md:px-8 md:py-6 lg:px-10 lg:py-7">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center">
+            {/* Left: logo + badge */}
+            <div className="flex items-start gap-4 md:w-72 lg:w-80">
+              <div className="flex flex-col gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/80 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 shadow-[0_0_30px_rgba(251,191,36,0.65)]">
+                  <Sparkles className="h-3.5 w-3.5 text-amber-200" />
+                  Sponsored Store
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-white/60">
+                  Featured placement on Store Finder
+                </span>
 
-              <div className="relative h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
-                {sponsoredStore?.logo ? (
-                  <img
-                    src={sponsoredStore.logo}
-                    alt={sponsoredStore.name}
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <Building2 className="h-7 w-7 text-white/50" />
+                <div className="mt-3 relative h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
+                  {sponsoredStore?.logo ? (
+                    <img
+                      src={sponsoredStore.logo}
+                      alt={sponsoredStore.name}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <Building2 className="h-7 w-7 text-white/50" />
+                  )}
+                  <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/15" />
+                  <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/5 via-transparent to-fuchsia-500/10 mix-blend-screen" />
+                </div>
+              </div>
+            </div>
+
+            {/* Middle: content */}
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl md:text-2xl font-semibold leading-tight">
+                  {sponsoredStore?.name || "Featured Beyblade Store"}
+                </h2>
+                {sponsoredStore?.country && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80">
+                    <Globe2 className="h-3.5 w-3.5" />
+                    {sponsoredStore.country}
+                    {sponsoredStore.region ? ` • ${sponsoredStore.region}` : ""}
+                  </span>
                 )}
-                <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10" />
+              </div>
+
+              <p className="mt-2 text-sm text-white/80 max-w-xl">
+                {sponsoredStore?.notes ||
+                  "Showcase your Beyblade store in front of players actively searching for locals, events, and product drops. This premium slot is built for brands that want to stand out."}
+              </p>
+
+              {/* Small meta row */}
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/60">
+                {sponsoredStore?.city && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
+                    <MapPin className="h-3 w-3" />
+                    {sponsoredStore.city}
+                    {sponsoredStore.region ? `, ${sponsoredStore.region}` : ""}
+                  </span>
+                )}
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
+                  <Sparkles className="h-3 w-3" />
+                  Powered by MetaBeys Store Finder
+                </span>
+              </div>
+            </div>
+
+            {/* Right: CTAs & mini metrics */}
+            <div className="flex flex-col gap-3 md:w-64 lg:w-72">
+              <div className="flex flex-col gap-2">
+                {sponsoredStore?.website ? (
+                  <>
+                    <a
+                      href={sponsoredStore.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
+                    >
+                      Visit Website
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </a>
+                    <Link
+                      to={`/stores/${sponsoredStore.id}`}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] md:text-xs text-white/80 hover:bg-white/10"
+                    >
+                      View store profile on MetaBeys
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
+                    >
+                      Your Store Here
+                      <ArrowUpRight className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-[11px] text-white/55">
+                      Highlight your Beyblade store to players searching for locals and events.
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-white/50">Visibility</div>
+                  <div className="mt-0.5 text-sm font-semibold text-white">Prime</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-white/50">Placement</div>
+                  <div className="mt-0.5 text-sm font-semibold text-white">Top</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-white/50">Audience</div>
+                  <div className="mt-0.5 text-sm font-semibold text-white">Beyblade</div>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Middle: text */}
-          <div className="flex-1 min-w-0">
-            <h2 className="text-lg md:text-xl font-semibold leading-tight">
-              {sponsoredStore?.name || "Featured Beyblade Store"}
-            </h2>
-            <p className="mt-2 text-sm text-white/75 max-w-xl">
-              {sponsoredStore?.notes ||
-                "This premium slot highlights a featured Beyblade store in the MetaBeys community. Showcase your releases, events, and local scene in front of players searching for stores."}
-            </p>
-          </div>
-
-          {/* Right: CTAs */}
-          <div className="flex flex-col items-stretch gap-2 md:w-56 text-right md:text-right">
-            {sponsoredStore?.website ? (
-              <a
-                href={sponsoredStore.website}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
-              >
-                Visit Website
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            ) : (
-              <button
-                type="button"
-                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
-              >
-                Your Store Here
-              </button>
-            )}
-
-            <span className="text-[10px] text-white/45">
-              {sponsoredStore
-                ? "Sponsored placement powered by MetaBeys Store Finder."
-                : "Interested in sponsoring this slot? Contact MetaBeys to learn more."}
-            </span>
-          </div>
+          {/* Subtle animated underline */}
+          <div className="mt-4 h-px w-full bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-60" />
         </div>
       </motion.div>
 
