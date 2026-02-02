@@ -14,7 +14,6 @@ import {
   ExternalLink,
   Building2,
   Globe2,
-  Sparkles, // 👈 NEW
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -23,6 +22,7 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
    Types
 ---------------------------------*/
 type Store = {
+  _id?: string
   id: number | string
   name: string
   address: string
@@ -30,6 +30,9 @@ type Store = {
   country?: string
   region?: string
   city?: string
+  website?: string
+  notes?: string
+  mapEmbedUrl?: string
 }
 
 type RSOption = { label: string; value: string }
@@ -40,8 +43,10 @@ type ViewMode = "grid" | "list"
    Sponsored config
 ---------------------------------*/
 
-// 👇 Store Mongo / API id that should be featured as sponsored
-const SPONSORED_STORE_ID = 1754921172194
+// Business ID (your numeric `id` field from Mongo)
+const SPONSORED_STORE_BUSINESS_ID = "1754921172194"
+// Mongo _id, just in case you prefer matching on that
+const SPONSORED_STORE_MONGO_ID = "6899f8d4b3a944ae44c7c598"
 
 /* --------------------------------
    Utils
@@ -72,6 +77,7 @@ const selectTheme = (theme: any) => ({
     primary: "#6366f1",
   },
 })
+
 const selectStyles = {
   control: (base: any, state: any) => ({
     ...base,
@@ -88,7 +94,7 @@ const selectStyles = {
     backgroundColor: state.isFocused ? "#1f2937" : "#111827",
     color: "#e5e7eb",
     cursor: "pointer",
-  }),
+  })),
 }
 
 /* --------------------------------
@@ -110,12 +116,6 @@ export default function StoreFinder() {
   const [pageSize, setPageSize] = useState<number>(Number(searchParams.get("ps")) || 12)
 
   const searchRef = useRef<HTMLInputElement>(null)
-
-  // Derived: sponsored store
-  const sponsoredStore = useMemo(() => {
-    if (!SPONSORED_STORE_ID) return null
-    return stores.find((s) => String(s.id) === String(SPONSORED_STORE_ID)) ?? null
-  }, [stores])
 
   // "/" focuses search like your events pages
   useEffect(() => {
@@ -149,16 +149,34 @@ export default function StoreFinder() {
     () => ["All", ...Array.from(new Set(stores.map((s) => s.country).filter(Boolean) as string[])).sort()],
     [stores]
   )
+
   const regions = useMemo(() => {
     const base = country === "All" ? stores : stores.filter((s) => s.country === country)
     return ["All", ...Array.from(new Set(base.map((s) => s.region).filter(Boolean) as string[])).sort()]
   }, [stores, country])
+
   const cities = useMemo(() => {
     const base = stores.filter(
       (s) => (country === "All" || s.country === country) && (region === "All" || s.region === region)
     )
-    return ["All", ...Array.from(new Set(base.map((s) => s.city).filter(Boolean) as string[])).sort())]
+    return ["All", ...Array.from(new Set(base.map((s) => s.city).filter(Boolean) as string[])).sort()]
   }, [stores, country, region])
+
+  // derived: sponsored store
+  const sponsoredStore = useMemo(() => {
+    if (!stores.length) return null
+
+    const byBusinessId = stores.find(
+      (s) => String(s.id) === SPONSORED_STORE_BUSINESS_ID
+    )
+    if (byBusinessId) return byBusinessId
+
+    const byMongoId = stores.find((s) => s._id === SPONSORED_STORE_MONGO_ID)
+    if (byMongoId) return byMongoId
+
+    // Fallback: still show something to keep the hero feeling alive
+    return stores[0]
+  }, [stores])
 
   // filtered + searched + sorted
   const filtered = useMemo(() => {
@@ -172,7 +190,9 @@ export default function StoreFinder() {
 
     if (q) {
       list = list.filter((s) =>
-        [s.name, s.address, s.city, s.region, s.country].filter(Boolean).some((v) => normalize(v as string).includes(q))
+        [s.name, s.address, s.city, s.region, s.country]
+          .filter(Boolean)
+          .some((v) => normalize(v as string).includes(q))
       )
     }
 
@@ -190,20 +210,20 @@ export default function StoreFinder() {
   useEffect(() => {
     setSearchParams((prev) => {
       const p = new URLSearchParams(prev)
-      const set = (k: string, v: string | number) => {
+      const setParam = (k: string, v: string | number) => {
         const str = String(v)
         if (!str || str === "All" || str === "1" || (k === "ps" && Number(str) === 12) || (k === "view" && str === "grid"))
           p.delete(k)
         else p.set(k, str)
       }
-      set("country", country)
-      set("region", region)
-      set("city", city)
-      set("sort", sortBy)
-      set("q", query)
-      set("view", view)
-      set("page", pageSafe)
-      set("ps", pageSize)
+      setParam("country", country)
+      setParam("region", region)
+      setParam("city", city)
+      setParam("sort", sortBy)
+      setParam("q", query)
+      setParam("view", view)
+      setParam("page", pageSafe)
+      setParam("ps", pageSize)
       return p
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,6 +235,7 @@ export default function StoreFinder() {
     setCity("All")
     setPage(1)
   }, [country])
+
   useEffect(() => {
     setCity("All")
     setPage(1)
@@ -263,7 +284,7 @@ export default function StoreFinder() {
       <div className="mb-6">
         {loading ? (
           <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-indigo-900/60 via-slate-900/80 to-fuchsia-900/50 p-[1px]">
-            <div className="rounded-[22px] bg-black/60 px-4 py-5 md:px-6 md:py-6 animate-pulse" />
+            <div className="rounded-[22px] bg-black/60 px-4 py-6 md:px-6 md:py-7 animate-pulse" />
           </div>
         ) : sponsoredStore ? (
           <SponsoredStoreHighlight store={sponsoredStore} />
@@ -281,7 +302,7 @@ export default function StoreFinder() {
               setPage(1)
             }}
             placeholder="Search store, city, state/province, country, address…  (press /)"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-9 outline-none focus:border-indigo-500/50"
+            className="w-full rounded-xl border border.white/10 bg.white/5 px-3 py-2 pr-9 outline-none focus:border-indigo-500/50"
           />
           <SearchIcon className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
         </div>
@@ -411,7 +432,7 @@ export default function StoreFinder() {
 
       {/* Pagination */}
       {filtered.length > 0 && (
-        <div className="mt-8 flex items-center justify-center gap-2">
+        <div className="mt-8 flex items-center justify.center gap-2">
           <button
             className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
             disabled={pageSafe === 1}
@@ -448,89 +469,103 @@ function SponsoredStoreHighlight({ store }: { store: Store }) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2, scale: 1.01 }}
-      transition={{ duration: 0.3 }}
-      className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-r from-indigo-900/80 via-slate-900/90 to-fuchsia-900/70 p-[1px]"
+      className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-r from-indigo-950/90 via-slate-950/90 to-fuchsia-900/60 p-[1px] shadow-[0_20px_60px_rgba(0,0,0,0.55)]"
     >
-      {/* Soft glow */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(129,140,248,0.25),transparent_55%),radial-gradient(circle_at_bottom_right,rgba(236,72,153,0.22),transparent_55%)]" />
+      <div className="absolute inset-0 opacity-70">
+        <div className="pointer-events-none absolute -left-10 -top-10 h-40 w-40 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="pointer-events-none absolute -right-20 bottom-[-40px] h-56 w-56 rounded-full bg-fuchsia-500/25 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.05),_transparent_65%)]" />
+      </div>
 
-      <div className="relative flex flex-col gap-4 rounded-[22px] bg-black/70 px-4 py-5 md:flex-row md:items-center md:px-7 md:py-6">
-        {/* Left: badge + logo + text */}
-        <div className="flex flex-1 items-start gap-4">
-          <div className="flex flex-col items-center gap-3">
-            <div className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 px-3 py-1 text-[11px] font-medium tracking-wide text-amber-200 ring-1 ring-amber-300/40 shadow-[0_0_20px_rgba(251,191,36,0.25)]">
-              <Sparkles className="h-3.5 w-3.5" />
-              <span>Sponsored Store</span>
-            </div>
-
-            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-2xl border border-white/15 bg-white/5 grid place-items-center">
-              {store.logo ? (
-                <img src={store.logo} alt={store.name} className="h-full w-full object-contain" />
-              ) : (
-                <Building2 className="h-7 w-7 text-white/60" />
-              )}
-              <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10" />
-            </div>
+      <div className="relative rounded-[22px] bg-[#030712]/90 px-4 py-5 md:px-7 md:py-6 lg:px-8 lg:py-7 flex flex-col md:flex-row gap-6 md:gap-8">
+        {/* Left: badge + logo */}
+        <div className="flex flex-col items-start gap-3 md:w-56">
+          <div className="inline-flex items-center gap-2 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-yellow-200 shadow-[0_0_20px_rgba(250,204,21,0.4)]">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-yellow-300 animate-pulse" />
+            Sponsored Store
           </div>
 
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-xl md:text-2xl font-semibold leading-tight">
-                {store.name}
-              </h2>
-              {store.country && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] text-white/80 ring-1 ring-white/15">
-                  <Globe2 className="h-3.5 w-3.5" />
-                  {store.country}
-                </span>
-              )}
-            </div>
-
-            {(store.city || store.region || store.country) && (
-              <div className="mt-1 text-sm text-white/75">
-                <MapPin className="mr-1 inline h-4 w-4 translate-y-[1px]" />
-                {[store.city, store.region, store.country].filter(Boolean).join(", ")}
-              </div>
+          <div className="relative h-16 w-16 md:h-20 md:w-20 shrink-0 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
+            {store.logo ? (
+              <img src={store.logo} alt={store.name} className="h-full w-full object-contain" />
+            ) : (
+              <Building2 className="h-8 w-8 text-white/50" />
             )}
-
-            <p className="mt-3 max-w-xl text-sm text-white/70">
-              Featured MetaBeys partner store. Host to competitive Beyblade events, local communities, and exclusive
-              launches. Visit them to test new combos, climb the rankings, and earn your next trophy.
-            </p>
+            <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10" />
           </div>
         </div>
 
-        {/* Right: actions */}
-        <div className="flex flex-col gap-2 md:items-end">
-          <div className="flex flex-wrap justify-end gap-2">
+        {/* Middle: text */}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-xl md:text-2xl font-semibold leading-tight">
+              {store.name || "Featured Beyblade Store"}
+            </h2>
+            {store.country && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px]">
+                <Globe2 className="h-3.5 w-3.5" />
+                {store.country}
+              </span>
+            )}
+          </div>
+
+          {(store.city || store.region || store.country) && (
+            <div className="mt-1 text-xs md:text-sm text-white/70">
+              <MapPin className="mr-1 inline h-4 w-4 translate-y-[1px]" />
+              {[store.city, store.region, store.country].filter(Boolean).join(", ")}
+            </div>
+          )}
+
+          {store.notes && (
+            <p className="mt-3 text-sm text-white/75 max-w-2xl line-clamp-3">
+              {store.notes}
+            </p>
+          )}
+        </div>
+
+        {/* Right: buttons */}
+        <div className="flex flex-col items-stretch justify-center gap-2 md:w-56">
+          <div className="flex flex-wrap gap-2">
             <Link
               to={`/stores/${store.id}`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-white text-xs font-semibold text-slate-900 px-4 py-2 shadow-lg shadow-indigo-500/30 hover:bg-slate-100"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-indigo-500 px-3 py-2 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/30 hover:bg-indigo-400"
             >
               View Store
             </Link>
             <Link
               to={`/stores/${store.id}/upcoming`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-2xl bg-indigo-500/90 text-xs font-semibold text-white px-4 py-2 hover:bg-indigo-400"
+              className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-indigo-400/60 bg-indigo-500/10 px-3 py-2 text-xs md:text-sm font-medium text-indigo-100 hover:bg-indigo-500/20"
             >
               Upcoming Events
             </Link>
+          </div>
+
+          <div className="mt-1 flex flex-wrap gap-2">
+            {store.website && (
+              <a
+                href={store.website}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
+              >
+                Visit Website
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
             <a
               href={mapsUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center justify-center gap-1.5 rounded-2xl border border-white/20 bg-white/5 px-4 py-2 text-xs text-white/80 hover:bg-white/10"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] text-white/80 hover:bg-white/10"
             >
               Open in Maps
-              <ExternalLink className="h-3.5 w-3.5" />
             </a>
           </div>
 
-          <div className="mt-1 text-[11px] text-white/50">
-            Premium placement • Sponsored listing • Rotates between partner stores
+          <div className="mt-2 text-[10px] text-white/40 text-right">
+            Featured placement. Contact MetaBeys to sponsor this slot.
           </div>
         </div>
       </div>
@@ -596,7 +631,6 @@ function LockedField({
 }
 
 function StoreCard({ s, view }: { s: Store; view: "grid" | "list" }) {
-  // Google Maps intent URL
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
     [s.address, s.city, s.region, s.country].filter(Boolean).join(", ")
   )}`
@@ -632,7 +666,7 @@ function StoreCard({ s, view }: { s: Store; view: "grid" | "list" }) {
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="truncate text-lg font-semibold leading-tight">{s.name}</h3>
               {s.country && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px]">
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg.white/5 px-2 py-0.5 text-[11px]">
                   <Globe2 className="h-3.5 w-3.5" />
                   {s.country}
                 </span>
