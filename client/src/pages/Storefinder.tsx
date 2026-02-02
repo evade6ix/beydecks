@@ -285,10 +285,6 @@ export default function StoreFinder() {
                   <Sparkles className="h-3.5 w-3.5 text-amber-200" />
                   Sponsored Store
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-white/60">
-                  Featured placement on Store Finder
-                </span>
-
                 <div className="mt-3 relative h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
                   {sponsoredStore?.logo ? (
                     <img
