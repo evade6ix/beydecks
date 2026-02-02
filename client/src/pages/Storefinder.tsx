@@ -16,6 +16,7 @@ import {
   Globe2,
   Sparkles,
   ArrowUpRight,
+  Youtube,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -340,26 +341,39 @@ export default function StoreFinder() {
               </div>
             </div>
 
-            {/* Right: CTAs & mini metrics */}
+            {/* Right: CTAs */}
             <div className="flex flex-col gap-3 md:w-64 lg:w-72">
               <div className="flex flex-col gap-2">
-                {sponsoredStore?.website ? (
+                {sponsoredStore ? (
                   <>
-                    <a
-                      href={sponsoredStore.website}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
-                    >
-                      Visit Website
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </a>
+                    {sponsoredStore.website && (
+                      <a
+                        href={sponsoredStore.website}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
+                      >
+                        Visit Website
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </a>
+                    )}
+
                     <Link
                       to={`/stores/${sponsoredStore.id}`}
                       className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] md:text-xs text-white/80 hover:bg-white/10"
                     >
-                      View store profile on MetaBeys
+                      Store profile
                     </Link>
+
+                    <a
+                      href="https://www.youtube.com/zankye"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-500/60 bg-red-600/20 px-3 py-2 text-[11px] md:text-xs font-medium text-red-100 hover:bg-red-600/30"
+                    >
+                      <Youtube className="h-3.5 w-3.5" />
+                      Watch Zankye on YouTube
+                    </a>
                   </>
                 ) : (
                   <>
@@ -375,21 +389,6 @@ export default function StoreFinder() {
                     </span>
                   </>
                 )}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 text-center text-[11px]">
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-wide text-white/50">Visibility</div>
-                  <div className="mt-0.5 text-sm font-semibold text-white">Prime</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-wide text-white/50">Placement</div>
-                  <div className="mt-0.5 text-sm font-semibold text-white">Top</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/5 px-2 py-2">
-                  <div className="text-[10px] uppercase tracking-wide text-white/50">Audience</div>
-                  <div className="mt-0.5 text-sm font-semibold text-white">Beyblade</div>
-                </div>
               </div>
             </div>
           </div>
