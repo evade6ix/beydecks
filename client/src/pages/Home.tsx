@@ -52,136 +52,6 @@ type EventItem = {
 type ProductItem = { id: number | string; title: string; imageUrl?: string }
 type TimeRange = "all" | "24h" | "7d" | "30d" | "month" | "90d" | "year" | "lastYear"
 
-type LeaderboardUser = {
-  slug: string
-  username?: string
-  displayName?: string
-  avatarDataUrl?: string
-  firsts?: number
-  seconds?: number
-  thirds?: number
-  topCutCount?: number
-  tournamentsCount?: number
-  tournamentsPlayed?: Array<{ placement?: string }>
-}
-
-type LeaderboardUserD = LeaderboardUser & {
-  _firsts: number
-  _seconds: number
-  _thirds: number
-  _topcutsOnly: number
-  _total: number
-}
-
-function deriveUser(u: LeaderboardUser): LeaderboardUserD {
-  const tp = Array.isArray(u.tournamentsPlayed) ? u.tournamentsPlayed : []
-  let f = 0, s = 0, t = 0, tcOnly = 0
-
-  if (tp.length) {
-    for (const e of tp) {
-      const plc = e?.placement
-      if (plc === "First Place") f++
-      else if (plc === "Second Place") s++
-      else if (plc === "Third Place") t++
-      else if (plc === "Top Cut") tcOnly++
-    }
-  } else {
-    f = Number(u.firsts || 0)
-    s = Number(u.seconds || 0)
-    t = Number(u.thirds || 0)
-    const raw = Number(u.topCutCount || 0)
-    tcOnly = Math.max(0, raw - (f + s + t))
-  }
-
-  return {
-    ...u,
-    _firsts: f,
-    _seconds: s,
-    _thirds: t,
-    _topcutsOnly: tcOnly,
-    _total: f + s + t + tcOnly,
-  }
-}
-
-function normalizeLB(payload: any): any[] {
-  if (Array.isArray(payload)) return payload
-  if (Array.isArray(payload?.users)) return payload.users
-  if (Array.isArray(payload?.items)) return payload.items
-  if (Array.isArray(payload?.data)) return payload.data
-  if (Array.isArray(payload?.leaderboard)) return payload.leaderboard
-  if (Array.isArray(payload?.results)) return payload.results
-  if (Array.isArray(payload?.rows)) return payload.rows
-  if (Array.isArray(payload?.list)) return payload.list
-  // Some APIs respond { ok:true, data:{ items:[...] } }
-  if (Array.isArray(payload?.data?.items)) return payload.data.items
-  return []
-}
-
-function coerceUser(u: any): LeaderboardUser | null {
-  const slug =
-    u?.slug ?? u?.userSlug ?? u?.username ?? u?.handle ?? u?.user?.slug ?? u?.user?.username ?? u?.id
-  if (!slug) return null
-
-  return {
-    slug: String(slug),
-    username: u?.username ?? u?.handle ?? u?.user?.username ?? u?.name ?? u?.displayName,
-    displayName: u?.displayName ?? u?.name ?? u?.user?.displayName ?? u?.username ?? u?.handle,
-    avatarDataUrl: u?.avatarDataUrl ?? u?.avatarUrl ?? u?.avatar ?? u?.user?.avatarUrl,
-    firsts: u?.firsts ?? u?.gold ?? u?.wins ?? 0,
-    seconds: u?.seconds ?? u?.silver ?? 0,
-    thirds: u?.thirds ?? u?.bronze ?? 0,
-    topCutCount: u?.topCutCount ?? u?.topCuts ?? u?.tc ?? 0,
-    tournamentsCount: u?.tournamentsCount ?? u?.events ?? u?.results ?? u?.total ?? u?.count ?? 0,
-    tournamentsPlayed: u?.tournamentsPlayed ?? u?.resultsList ?? u?.entries ?? undefined,
-  }
-}
-
-
-async function fetchLeadersEverywhere(limit = 12): Promise<LeaderboardUser[]> {
-  const base = import.meta.env.VITE_API_URL || ""
-  const qs = (q = "") => (q ? `&${q}` : "")
-  const tries = [
-    // Common patterns used across the app / API
-    `/api/users/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `/api/leaderboard/users?limit=${limit}${qs("sort=total")}`,
-    `/api/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `/users/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `/players/leaderboard?limit=${limit}${qs("sort=total")}`,
-
-    // With base URL (prod/staging/local API host)
-    `${base}/api/users/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `${base}/api/leaderboard/users?limit=${limit}${qs("sort=total")}`,
-    `${base}/api/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `${base}/users/leaderboard?limit=${limit}${qs("sort=total")}`,
-    `${base}/players/leaderboard?limit=${limit}${qs("sort=total")}`,
-
-    // No sort param fallbacks
-    `/api/users/leaderboard?limit=${limit}`,
-    `/api/leaderboard/users?limit=${limit}`,
-    `${base}/api/users/leaderboard?limit=${limit}`,
-    `${base}/api/leaderboard/users?limit=${limit}`,
-  ]
-
-  for (const url of tries) {
-    try {
-      const res = await fetch(url, { credentials: "include" })
-      if (!res.ok) continue
-      const payload = await res.json().catch(() => null)
-      const raw = normalizeLB(payload)
-      const coerced = raw.map(coerceUser).filter(Boolean) as LeaderboardUser[]
-      if (coerced.length) {
-        if (import.meta.env.DEV) console.info("[Home] Leaderboard via", url, "→", coerced.length, "rows")
-        return coerced
-      }
-    } catch {
-      // try next
-    }
-  }
-  if (import.meta.env.DEV) console.warn("[Home] Leaderboard: all endpoints returned empty/failed.")
-  return []
-}
-
-
 /* --------------------------------
    Small utils
 ---------------------------------*/
@@ -207,14 +77,22 @@ type PopularityRow = { name: string; count: number; pct: number }
 function cutoffFor(range: TimeRange) {
   const now = new Date()
   switch (range) {
-    case "24h": return new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    case "7d": return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    case "30d": return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-    case "month": return new Date(now.getFullYear(), now.getMonth(), 1)
-    case "90d": return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-    case "year": return new Date(now.getFullYear(), 0, 1)
-    case "lastYear": return new Date(now.getFullYear() - 1, 0, 1)
-    default: return null
+    case "24h":
+      return new Date(now.getTime() - 24 * 60 * 60 * 1000)
+    case "7d":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    case "30d":
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    case "month":
+      return new Date(now.getFullYear(), now.getMonth(), 1)
+    case "90d":
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    case "year":
+      return new Date(now.getFullYear(), 0, 1)
+    case "lastYear":
+      return new Date(now.getFullYear() - 1, 0, 1)
+    default:
+      return null
   }
 }
 
@@ -230,17 +108,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
 
-  // NEW: leaderboard state
-  const [leaders, setLeaders] = useState<LeaderboardUserD[]>([])  
-  const [leadersLoading, setLeadersLoading] = useState(true)
-
   const navigate = useNavigate()
 
   // auth → username for greeting
   const { user } = (useAuth?.() as any) || {}
   const username =
-    ((user?.username as string) ||
-      (user?.email ? String(user.email).split("@")[0] : "")).toString().trim()
+    ((user?.username as string) || (user?.email ? String(user.email).split("@")[0] : "")).toString().trim()
 
   // KPI “Top Blade”
   const [topBladeName, setTopBladeName] = useState<string>("—")
@@ -250,8 +123,6 @@ export default function Home() {
   const [tlAssist, setTlAssist] = useState<string>("")
   const [tlRatchet, setTlRatchet] = useState<string>("")
   const [tlBit, setTlBit] = useState<string>("")
-
-  
 
   // Part popularity (now includes assistBlades with separate denominator)
   const [popularity, setPopularity] = useState<{
@@ -268,14 +139,8 @@ export default function Home() {
     const load = async () => {
       try {
         setLoading(true)
-        const [eventsRes, productsRes] = await Promise.all([
-          fetch(`${API}/events`),
-          fetch(`${API}/products`),
-        ])
-        const [eventsData, productsData] = await Promise.all([
-          eventsRes.json(),
-          productsRes.json(),
-        ])
+        const [eventsRes, productsRes] = await Promise.all([fetch(`${API}/events`), fetch(`${API}/products`)])
+        const [eventsData, productsData] = await Promise.all([eventsRes.json(), productsRes.json()])
 
         const now = new Date()
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
@@ -318,31 +183,6 @@ export default function Home() {
       } finally {
         setLoading(false)
       }
-
-      // NEW: fetch leaderboard (multi-URL + shape normalization)
-try {
-  setLeadersLoading(true)
-const list = await fetchLeadersEverywhere(12)
-const derived = list.map(deriveUser)
-
-// sort by our computed total; tie-break by wins, then seconds, thirds, then slug for stability
-derived.sort((a, b) =>
-  (b._total - a._total) ||
-  (b._firsts - a._firsts) ||
-  (b._seconds - a._seconds) ||
-  (b._thirds - a._thirds) ||
-  a.slug.localeCompare(b.slug)
-)
-
-setLeaders(derived)
-
-} catch (e) {
-  console.warn("[Home] Leaderboard fetch failed", e)
-  setLeaders([])
-} finally {
-  setLeadersLoading(false)
-}
-
     }
     load()
   }, [])
@@ -419,7 +259,10 @@ setLeaders(derived)
 
   // TL options & stats (include assist blades)
   const parts = useMemo(() => {
-    const b = new Set<string>(), ab = new Set<string>(), r = new Set<string>(), bt = new Set<string>()
+    const b = new Set<string>(),
+      ab = new Set<string>(),
+      r = new Set<string>(),
+      bt = new Set<string>()
     for (const e of filteredEvents) {
       for (const p of e.topCut ?? []) {
         for (const c of p.combos ?? []) {
@@ -436,7 +279,7 @@ setLeaders(derived)
       ratchets: Array.from(r).sort(),
       bits: Array.from(bt).sort(),
     }
-  }, [filteredEvents])
+  }, [filteredEvents, timeRange])
 
   const tlStats = useMemo(() => {
     let total = 0
@@ -448,10 +291,10 @@ setLeaders(derived)
       for (const p of e.topCut ?? []) {
         for (const c of p.combos ?? []) {
           total++
-          const okBlade   = !tlBlade   || c.blade === tlBlade
-          const okAssist  = !tlAssist  || c.assistBlade === tlAssist
+          const okBlade = !tlBlade || c.blade === tlBlade
+          const okAssist = !tlAssist || c.assistBlade === tlAssist
           const okRatchet = !tlRatchet || c.ratchet === tlRatchet
-          const okBit     = !tlBit     || c.bit === tlBit
+          const okBit = !tlBit || c.bit === tlBit
           if (okBlade && okAssist && okRatchet && okBit) {
             matches++
             eventMatched = true
@@ -494,7 +337,10 @@ setLeaders(derived)
     <>
       <Helmet>
         <title>MetaBeys — Competitive Beyblade X Dashboard</title>
-        <meta name="description" content="Live insights, upcoming & recent events, and shop spotlight — all in one polished dashboard for Beyblade X." />
+        <meta
+          name="description"
+          content="Live insights, upcoming & recent events, and shop spotlight — all in one polished dashboard for Beyblade X."
+        />
         <meta name="robots" content="index, follow" />
         <meta property="og:title" content="MetaBeys — Competitive Beyblade X Dashboard" />
         <meta property="og:url" content="https://www.metabeys.com/" />
@@ -515,20 +361,43 @@ setLeaders(derived)
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-6">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                {username
-                  ? <>Welcome back <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">{username}</span></>
-                  : <>Welcome to <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">MetaBeys</span></>}
+                {username ? (
+                  <>
+                    Welcome back{" "}
+                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">
+                      {username}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Welcome to{" "}
+                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">
+                      MetaBeys
+                    </span>
+                  </>
+                )}
               </h1>
-              <p className="mt-2 text-sm md:text-base text-white/60">Your home dashboard for events, meta trends, and player leaderboards.</p>
+              <p className="mt-2 text-sm md:text-base text-white/60">
+                Your home dashboard for events, meta trends, and player leaderboards.
+              </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <Link to="/submit" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
+              <Link
+                to="/submit"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
+              >
                 <CalendarCheck className="h-4 w-4" /> Submit Event
               </Link>
-              <Link to="/tournament-lab" className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600/90 px-4 py-2 text-sm font-medium shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500">
+              <Link
+                to="/tournament-lab"
+                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600/90 px-4 py-2 text-sm font-medium shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500"
+              >
                 <BarChart3 className="h-4 w-4" /> Tournament Lab
               </Link>
-              <Link to="/shop" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10">
+              <Link
+                to="/shop"
+                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
+              >
                 <ShoppingBag className="h-4 w-4" /> Shop
               </Link>
             </div>
@@ -554,7 +423,11 @@ setLeaders(derived)
                     <div>
                       <h3 className="text-lg md:text-xl font-semibold leading-tight">{upcoming.title}</h3>
                       <p className="text-white/60 mt-1">
-                        {fmt.format(new Date(upcoming.startTime))} · <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" />{upcoming.store}</span>
+                        {fmt.format(new Date(upcoming.startTime))} ·{" "}
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="h-4 w-4" />
+                          {upcoming.store}
+                        </span>
                       </p>
                     </div>
                     <CountdownPill d={countdown.d} h={countdown.h} m={countdown.m} s={countdown.s} />
@@ -563,7 +436,10 @@ setLeaders(derived)
                   <p className="text-white/60">No upcoming events found.</p>
                 )}
                 <div className="mt-4">
-                  <Link to={upcoming ? `/events/${upcoming.id}` : "/events"} className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
+                  <Link
+                    to={upcoming ? `/events/${upcoming.id}` : "/events"}
+                    className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200"
+                  >
                     View details <ChevronRight className="h-4 w-4" />
                   </Link>
                 </div>
@@ -571,7 +447,7 @@ setLeaders(derived)
 
               <ChatWidget username={username} />
 
-              {/* Part Popularity Leaderboard */}
+              {/* Part Popularity */}
               <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="inline-flex items-center gap-2 text-xs text-white/60">
@@ -593,12 +469,12 @@ setLeaders(derived)
 
                 <div className="min-h-64 grid gap-3 md:grid-cols-2">
                   <div className="grid gap-3 [grid-auto-rows:1fr]">
-                    <PopularityList title="Blades"        items={popularity.blades}        className="h-full" />
-                    <PopularityList title="Assist Blades" items={popularity.assistBlades}  className="h-full" />
+                    <PopularityList title="Blades" items={popularity.blades} className="h-full" />
+                    <PopularityList title="Assist Blades" items={popularity.assistBlades} className="h-full" />
                   </div>
                   <div className="grid gap-3 [grid-auto-rows:1fr]">
-                    <PopularityList title="Ratchets"      items={popularity.ratchets}      className="h-full" />
-                    <PopularityList title="Bits"          items={popularity.bits}          className="h-full" />
+                    <PopularityList title="Ratchets" items={popularity.ratchets} className="h-full" />
+                    <PopularityList title="Bits" items={popularity.bits} className="h-full" />
                   </div>
                 </div>
 
@@ -611,11 +487,12 @@ setLeaders(derived)
               {/* Tournament Lab */}
               <Section title="Tournament Lab" icon={<FlaskConical className="h-5 w-5" />}>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <ComboBox label="Blade"        value={tlBlade}   onChange={setTlBlade}   options={parts.blades}        placeholder="Any blade" />
-                  <ComboBox label="Assist Blade" value={tlAssist}  onChange={setTlAssist}  options={parts.assistBlades}  placeholder="Any assist" />
-                  <ComboBox label="Ratchet"      value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets}      placeholder="Any ratchet" />
-                  <ComboBox label="Bit"          value={tlBit}     onChange={setTlBit}     options={parts.bits}          placeholder="Any bit" />
+                  <ComboBox label="Blade" value={tlBlade} onChange={setTlBlade} options={parts.blades} placeholder="Any blade" />
+                  <ComboBox label="Assist Blade" value={tlAssist} onChange={setTlAssist} options={parts.assistBlades} placeholder="Any assist" />
+                  <ComboBox label="Ratchet" value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets} placeholder="Any ratchet" />
+                  <ComboBox label="Bit" value={tlBit} onChange={setTlBit} options={parts.bits} placeholder="Any bit" />
                 </div>
+
                 <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
                   <div className="lg:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-4">
                     <div className="text-xs uppercase tracking-wide text-white/60">Appearance Rate</div>
@@ -624,7 +501,13 @@ setLeaders(derived)
                       {tlStats.matches} matches / {tlStats.total} top-cut combos
                     </div>
                     <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full" style={{ width: `${Math.min(100, tlStats.pct)}%`, background: "linear-gradient(180deg,#a78bfa,#22d3ee)" }} />
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(100, tlStats.pct)}%`,
+                          background: "linear-gradient(180deg,#a78bfa,#22d3ee)",
+                        }}
+                      />
                     </div>
 
                     <div className="mt-4 flex items-center gap-2">
@@ -632,7 +515,12 @@ setLeaders(derived)
                         Tournament Lab
                       </Link>
                       <button
-                        onClick={() => { setTlBlade(""); setTlAssist(""); setTlRatchet(""); setTlBit(""); }}
+                        onClick={() => {
+                          setTlBlade("")
+                          setTlAssist("")
+                          setTlRatchet("")
+                          setTlBit("")
+                        }}
                         className="btn btn-sm rounded-xl border-white/10 bg-white/5 hover:bg-white/10 px-4"
                       >
                         Reset
@@ -645,7 +533,10 @@ setLeaders(derived)
                     {tlStats.eventsMatched.length ? (
                       <ul className="max-h-56 overflow-auto space-y-2 pr-1 isolate">
                         {tlStats.eventsMatched.map(ev => (
-                          <li key={ev.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                          <li
+                            key={ev.id}
+                            className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                          >
                             <div className="min-w-0">
                               <div className="truncate text-sm font-medium">{ev.title}</div>
                               <div className="text-xs text-white/60">{ev.date}</div>
@@ -664,12 +555,14 @@ setLeaders(derived)
               </Section>
             </div>
 
-            {/* Right: Recent, Player Leaderboard, Shop */}
+            {/* Right: Recent, Shop */}
             <div className="space-y-6">
               <Section title="Recent Events" icon={<Trophy className="h-5 w-5" />}>
                 {loading ? (
                   <div className="space-y-3">
-                    <Skeleton height="h-16" /><Skeleton height="h-16" /><Skeleton height="h-16" />
+                    <Skeleton height="h-16" />
+                    <Skeleton height="h-16" />
+                    <Skeleton height="h-16" />
                   </div>
                 ) : recent.length ? (
                   <ul className="space-y-3">
@@ -720,33 +613,13 @@ setLeaders(derived)
                 </div>
               </Section>
 
-              {/* NEW: Player Leaderboard snippet */}
-              <Section title="Player Leaderboard" icon={<BarChart3 className="h-5 w-5" />}>
-                {leadersLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton height="h-14" /><Skeleton height="h-14" /><Skeleton height="h-14" />
-                  </div>
-                ) : leaders.length === 0 ? (
-                  <div className="text-sm text-white/60">No player data yet.</div>
-                ) : (
-                  <ul className="space-y-2">
-                    {leaders.slice(0, 6).map((p, i) => (
-                      <LeaderboardMiniRow key={p.slug || i} rank={i + 1} p={p} />
-                    ))}
-                  </ul>
-                )}
-                <div className="mt-4 flex items-center justify-between">
-                  <Link to="/players" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
-                    View full leaderboard <ChevronRight className="h-4 w-4" />
-                  </Link>
-                  <div className="text-xs text-white/50">Ranked by total results</div>
-                </div>
-              </Section>
-
-              {/* Shop Spotlight (pushed down) */}
+              {/* Shop Spotlight */}
               <Section title="Shop Spotlight" icon={<ShoppingBag className="h-5 w-5" />}>
                 {loading ? (
-                  <div className="grid grid-cols-2 gap-3"><Skeleton height="h-36" /><Skeleton height="h-36" /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Skeleton height="h-36" />
+                    <Skeleton height="h-36" />
+                  </div>
                 ) : products.length ? (
                   <div className="grid grid-cols-2 gap-3">
                     <AnimatePresence mode="popLayout">
@@ -761,7 +634,12 @@ setLeaders(derived)
                           className="group isolate overflow-hidden relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/[0.03] p-3 text-left transition hover:from-white/15"
                         >
                           <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-black/20">
-                            <img src={p.imageUrl || "/placeholder.svg"} alt={p.title} loading="lazy" className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]" />
+                            <img
+                              src={p.imageUrl || "/placeholder.svg"}
+                              alt={p.title}
+                              loading="lazy"
+                              className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]"
+                            />
                           </div>
                           <div className="mt-2 line-clamp-2 text-sm font-medium leading-snug">{p.title}</div>
                         </motion.button>
@@ -788,7 +666,7 @@ setLeaders(derived)
             <NavTile to="/events" icon={<CalendarCheck className="h-5 w-5" />} label="Upcoming" />
             <NavTile to="/events/completed" icon={<List className="h-5 w-5" />} label="Completed" />
             <NavTile to="/stores" icon={<MapPin className="h-5 w-5" />} label="Store Finder" />
-            <NavTile to="/leaderboard" icon={<Trophy className="h-5 w-5" />} label="Leaderboard" />
+            {/* ✅ removed leaderboard nav tile */}
           </div>
 
           <div className="mt-10 text-center text-xs text-white/40">
@@ -924,9 +802,17 @@ function Segmented<T extends string>({
 }
 
 function ComboBox({
-  label, value, onChange, options, placeholder,
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
 }: {
-  label: string; value: string; onChange: (v: string) => void; options: string[]; placeholder?: string
+  label: string
+  value: string
+  onChange: (v: string) => void
+  options: string[]
+  placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value)
@@ -966,7 +852,10 @@ function ComboBox({
 
       <input
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+        onChange={e => {
+          setQuery(e.target.value)
+          setOpen(true)
+        }}
         onFocus={() => setOpen(true)}
         placeholder={placeholder || `Any ${label.toLowerCase()}`}
         className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none transition focus:border-indigo-500/50"
@@ -975,7 +864,7 @@ function ComboBox({
       {open && (
         <div
           className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-xl border border-white/10 bg-[#0b1220]/95 backdrop-blur-sm p-1 shadow-lg"
-          onMouseDown={(e) => e.preventDefault()}
+          onMouseDown={e => e.preventDefault()}
         >
           {filtered.length ? (
             filtered.map(o => (
@@ -1011,10 +900,7 @@ function ComboBox({
 
 function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label: React.ReactNode }) {
   return (
-    <Link
-      to={to}
-      className="group isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 transition hover:bg-white/10"
-    >
+    <Link to={to} className="group isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 transition hover:bg-white/10">
       <div className="flex items-center gap-3">
         <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-white/80">{icon}</div>
         <div className="font-medium">{label}</div>
@@ -1030,66 +916,6 @@ function Skeleton({ height = "h-10" }: { height?: string }) {
   return <div className={cn("w-full animate-pulse rounded-2xl bg-white/5", height)} />
 }
 
-/* ---------- Mini leaderboard row ---------- */
-function LeaderboardMiniRow({ rank, p }: { rank: number; p: LeaderboardUserD }) {
-  const name = (p.username && p.username.trim()) || p.displayName || p.slug
-
-  // just read the precomputed numbers
-  const firsts = p._firsts
-  const seconds = p._seconds
-  const thirds = p._thirds
-  const topCutsOnly = p._topcutsOnly
-  const total = p._total
-
-  const tone =
-    rank === 1
-      ? "from-yellow-400/20 to-amber-500/10"
-      : rank === 2
-      ? "from-slate-300/15 to-slate-500/10"
-      : rank === 3
-      ? "from-amber-500/20 to-amber-700/10"
-      : "from-indigo-400/10 to-sky-500/5"
-
-  return (
-    <Link
-      to={`/u/${encodeURIComponent(p.slug)}`}
-      className={`flex items-center gap-3 rounded-2xl border border-white/10 bg-gradient-to-br ${tone} p-2.5 hover:bg-white/10 transition`}
-    >
-      <div className="shrink-0 grid place-items-center h-8 w-8 rounded-lg bg-white/10 border border-white/10 font-bold">
-        {rank}
-      </div>
-
-      <img
-        src={p.avatarDataUrl || "/default-avatar.png"}
-        alt={p.avatarDataUrl ? name : ""}
-        className="h-10 w-10 rounded-lg object-cover ring-1 ring-white/10"
-        draggable={false}
-      />
-
-      <div className="min-w-0">
-        <div className="truncate text-sm font-semibold leading-tight">{name}</div>
-        <div className="text-[11px] text-white/60">{total} results</div>
-      </div>
-
-      <div className="ml-auto flex items-center gap-1.5 text-xs">
-        <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-2 py-0.5 text-yellow-200">
-          🏆 {firsts}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-slate-300/40 bg-slate-300/10 px-2 py-0.5 text-slate-200">
-          🥈 {seconds}
-        </span>
-        <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">
-          🥉 {thirds}
-        </span>
-        <span className="hidden sm:inline-flex items-center gap-1 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-2 py-0.5 text-indigo-200">
-          🎖️ {topCutsOnly}
-        </span>
-      </div>
-    </Link>
-  )
-}
-
-
 function ChatWidget({ username }: { username: string }) {
   const [socket, setSocket] = useState<any>(null)
   const [messages, setMessages] = useState<{ user: string; text: string; ts: number }[]>([])
@@ -1099,91 +925,197 @@ function ChatWidget({ username }: { username: string }) {
 
   // auto-scroll when messages change
   useEffect(() => {
-  if (messagesEndRef.current) {
-    messagesEndRef.current.scrollTop = messagesEndRef.current.scrollHeight
-  }
-}, [messages])
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollTop = messagesEndRef.current.scrollHeight
+    }
+  }, [messages])
 
+  useEffect(() => {
+    if (!username) return
 
- useEffect(() => {
-  if (!username) return
+    const baseUrl = API.replace(/\/api$/, "")
+    const s = io(baseUrl, { transports: ["websocket"] })
+    setSocket(s)
 
-  const baseUrl = API.replace(/\/api$/, "")
-  const s = io(baseUrl, { transports: ["websocket"] })
-  setSocket(s)
+    s.emit("join", username)
 
-  s.emit("join", username)
+    // ✅ load past messages from server
+    s.on("messageHistory", (msgs: any[]) => {
+      setMessages(msgs) // replace with history
+    })
 
-  // ✅ load past messages from server
-  s.on("messageHistory", (msgs: any[]) => {
-    setMessages(msgs) // replace with history
-  })
+    // ✅ listen for new messages
+    s.on("message", (msg: any) => {
+      setMessages(m => [...m, msg])
+    })
 
-  // ✅ listen for new messages
-  s.on("message", (msg: any) => {
-    setMessages(m => [...m, msg])
-  })
+    s.on("onlineUsers", (users: string[]) => setOnline(users))
 
-  s.on("onlineUsers", (users: string[]) => setOnline(users))
-
-  return () => { s.disconnect() }
-}, [username])
-
+    return () => {
+      s.disconnect()
+    }
+  }, [username])
 
   // swear filter
   const bannedWords = [
-  // Core swears
-  "fuck","fucking","fucker","fucked","motherfucker","mofucka","fuk","fukk","fux","f*ck","fuq","fuhk","phuck","phuk",
-  "shit","shitty","shite","shyt","sh1t","s**t","$hit","sh!t",
-  "ass","asses","asshole","arse","arsehole","azz","jackass","dumbass","dumbasses",
-  "bitch","bitches","bitchy","biatch","b!tch","b1tch","bi7ch","b!+ch","slut","sluts","slutty","slutz",
-  "bastard","basterd",
-  "cunt","cunts","c*nt","cnt",
-  "dick","dicks","dickhead","d1ck","d!ck","d!k",
-  "cock","cocks","c0ck","c*ck","cawk","coq",
-  "pussy","pussies","pusy","p*ssy",
-  "twat","twats",
-  "prick","pr1ck",
-  "wank","wanker","wankers",
-  "bollocks","bollox",
+    "fuck",
+    "fucking",
+    "fucker",
+    "fucked",
+    "motherfucker",
+    "mofucka",
+    "fuk",
+    "fukk",
+    "fux",
+    "f*ck",
+    "fuq",
+    "fuhk",
+    "phuck",
+    "phuk",
+    "shit",
+    "shitty",
+    "shite",
+    "shyt",
+    "sh1t",
+    "s**t",
+    "$hit",
+    "sh!t",
+    "ass",
+    "asses",
+    "asshole",
+    "arse",
+    "arsehole",
+    "azz",
+    "jackass",
+    "dumbass",
+    "dumbasses",
+    "bitch",
+    "bitches",
+    "bitchy",
+    "biatch",
+    "b!tch",
+    "b1tch",
+    "bi7ch",
+    "b!+ch",
+    "slut",
+    "sluts",
+    "slutty",
+    "slutz",
+    "bastard",
+    "basterd",
+    "cunt",
+    "cunts",
+    "c*nt",
+    "cnt",
+    "dick",
+    "dicks",
+    "dickhead",
+    "d1ck",
+    "d!ck",
+    "d!k",
+    "cock",
+    "cocks",
+    "c0ck",
+    "c*ck",
+    "cawk",
+    "coq",
+    "pussy",
+    "pussies",
+    "pusy",
+    "p*ssy",
+    "twat",
+    "twats",
+    "prick",
+    "pr1ck",
+    "wank",
+    "wanker",
+    "wankers",
+    "bollocks",
+    "bollox",
+    "crap",
+    "crappy",
+    "dammit",
+    "goddamn",
+    "hell",
+    "bloody",
+    "jerk",
+    "moron",
+    "idiot",
+    "retard",
+    "r*tard",
+    "sex",
+    "sexual",
+    "sexy",
+    "whore",
+    "whores",
+    "wh0re",
+    "hore",
+    "hoe",
+    "hoes",
+    "hoez",
+    "skank",
+    "slag",
+    "cum",
+    "cumming",
+    "cums",
+    "jizz",
+    "spooge",
+    "porn",
+    "porno",
+    "pornography",
+    "tits",
+    "titties",
+    "boob",
+    "boobs",
+    "boobies",
+    "nipple",
+    "nipples",
+    "fag",
+    "fags",
+    "faggy",
+    "dyke",
+    "gay",
+    "piss",
+    "pisses",
+    "pee",
+    "peeing",
+    "poop",
+    "poo",
+    "turd",
+    "turds",
+    "anus",
+    "rectum",
+    "fart",
+    "farting",
+    "nigger",
+    "nigga",
+    "n1gga",
+    "n1gger",
+    "nigg@",
+    "chink",
+    "gook",
+    "spic",
+    "wetback",
+    "kike",
+    "kyke",
+    "paki",
+    "cracker",
+    "honky",
+    "f.u.c.k",
+    "f u c k",
+    "f* u *c *k",
+  ]
 
-  // Mild / insults
-  "crap","crappy","dammit","goddamn","hell","bloody",
-  "jerk","moron","idiot","retard","r*tard",
+  const escapeRegex = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
-  // Sexual / vulgar
-  "sex","sexual","sexy","whore","whores","wh0re","hore","hoe","hoes","hoez","skank","slag",
-  "cum","cumming","cums","jizz","spooge","porn","porno","pornography",
-  "tits","titties","boob","boobs","boobies","nipple","nipples",
-
-  // LGBT-related slurs
-  "fag","fags","faggy","dyke",
-  "gay", // ⚠️ optional — blocks “gay” even when used innocently
-
-  // Bodily
-  "piss","pisses","pee","peeing","poop","poo","turd","turds","anus","rectum","fart","farting",
-
-  // Racial / ethnic slurs (very offensive)
-  "nigger","nigga","n1gga","n1gger","nigg@",
-  "chink","gook","spic","wetback",
-  "kike","kyke","paki",
-  "cracker","honky",
-
-  // Obfuscated variants
-  "f.u.c.k","f u c k","f* u *c *k",
-]
-
- const escapeRegex = (word: string) =>
-  word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-const filterBadWords = (txt: string) => {
-  let out = txt
-  for (const w of bannedWords) {
-    const regex = new RegExp(`\\b${escapeRegex(w)}\\b`, "gi")
-    out = out.replace(regex, "****")
+  const filterBadWords = (txt: string) => {
+    let out = txt
+    for (const w of bannedWords) {
+      const regex = new RegExp(`\\b${escapeRegex(w)}\\b`, "gi")
+      out = out.replace(regex, "****")
+    }
+    return out
   }
-  return out
-}
 
   const send = () => {
     if (!text.trim() || !username) return
@@ -1196,20 +1128,16 @@ const filterBadWords = (txt: string) => {
     <Section title="Live Chat" icon={<Users className="h-5 w-5" />}>
       <div className="flex">
         {/* Messages */}
-        <div
-  className="flex-1 h-64 overflow-y-auto pr-3 space-y-2"
-  ref={messagesEndRef}   // attach ref here instead
->
-  {messages.map((m, i) => (
-    <div key={i} className="rounded-xl bg-white/5 p-2">
-      <div className="text-xs text-white/60">
-        {m.user} · {new Date(m.ts).toLocaleTimeString()}
-      </div>
-      <div>{m.text}</div>
-    </div>
-  ))}
-</div>
-
+        <div className="flex-1 h-64 overflow-y-auto pr-3 space-y-2" ref={messagesEndRef}>
+          {messages.map((m, i) => (
+            <div key={i} className="rounded-xl bg-white/5 p-2">
+              <div className="text-xs text-white/60">
+                {m.user} · {new Date(m.ts).toLocaleTimeString()}
+              </div>
+              <div>{m.text}</div>
+            </div>
+          ))}
+        </div>
 
         {/* Online Users */}
         <div className="w-32 border-l border-white/10 pl-3">
@@ -1234,17 +1162,12 @@ const filterBadWords = (txt: string) => {
             placeholder="Type a message…"
             className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
           />
-          <button
-            onClick={send}
-            className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm"
-          >
+          <button onClick={send} className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm">
             Send
           </button>
         </div>
       ) : (
-        <div className="mt-3 text-sm text-white/50 italic">
-          Log in to participate in chat.
-        </div>
+        <div className="mt-3 text-sm text-white/50 italic">Log in to participate in chat.</div>
       )}
     </Section>
   )
