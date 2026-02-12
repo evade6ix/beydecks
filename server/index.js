@@ -362,6 +362,7 @@ try {
     homeStore: 1,
     ownedParts: 1,
     tournamentsPlayed: 1,
+    vip: 1,
   }
 
   const getBearerToken = (req) => {
