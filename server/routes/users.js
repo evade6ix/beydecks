@@ -24,6 +24,7 @@ const publicProjection = {
   username: 1,
   displayName: 1,
   slug: 1,
+  vip: 1,
   avatarDataUrl: 1,
   bio: 1,
   homeStore: 1,
@@ -104,6 +105,7 @@ function publicUserPayload(u, { includeTournaments = true } = {}) {
     username: u.username || "",
     displayName: u.displayName || u.username || "",
     slug: u.slug,
+    vip: Boolean(u.vip),
     avatarDataUrl: u.avatarDataUrl || "",
     bio: u.bio || "",
     homeStore: u.homeStore || "",
@@ -176,6 +178,48 @@ export default function usersRoutes({ users }) {
     return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
 
+   // -------------------------------------------------------
+  // Set VIP by slug or username (no protection)
+  // POST /users/set-vip
+  // Body: { users: ["slug-or-username", ...], vip: true }
+  // -------------------------------------------------------
+  router.post("/set-vip", async (req, res) => {
+    try {
+      const vip = Boolean(req.body?.vip)
+      const list = Array.isArray(req.body?.users) ? req.body.users : []
+      const inputs = list.map((x) => String(x || "").trim()).filter(Boolean)
+
+      if (!inputs.length) return res.status(400).json({ error: "Missing users[]" })
+
+      const lower = inputs.map((s) => s.toLowerCase())
+
+      // Match by slug OR username
+      const targets = await users
+        .find(
+          { $or: [{ slug: { $in: lower } }, { username: { $in: inputs } }] },
+          { projection: { _id: 1, slug: 1, username: 1 } }
+        )
+        .toArray()
+
+      if (!targets.length) {
+        return res.status(404).json({ error: "No users matched", inputs })
+      }
+
+      const ids = targets.map((u) => u._id)
+
+      await users.updateMany({ _id: { $in: ids } }, { $set: { vip } })
+
+      return res.json({
+        ok: true,
+        vip,
+        matched: targets.map((u) => ({ slug: u.slug, username: u.username })),
+      })
+    } catch (e) {
+      console.error("[/users/set-vip] error:", e)
+      return res.status(500).json({ error: "VIP update failed" })
+    }
+  })
+
 
   /* ---------- Edit own profile ---------- */
   // NOTE:
@@ -229,7 +273,9 @@ export default function usersRoutes({ users }) {
         avatarDataUrl === "" ||
         (avatarDataUrl.startsWith("data:image/") && avatarDataUrl.includes(";base64,"))
       if (!ok) {
-        return res.status(400).json({ error: "avatarDataUrl must be a base64 data URL (or empty to clear)" })
+        return res
+          .status(400)
+          .json({ error: "avatarDataUrl must be a base64 data URL (or empty to clear)" })
       }
       $set.avatarDataUrl = avatarDataUrl
     }
@@ -269,198 +315,177 @@ export default function usersRoutes({ users }) {
     return res.json(publicUserPayload(u, { includeTournaments: true }))
   })
 
-/* ---------- Player leaderboard (paginated, server-derived) ---------- */
-// GET /users/leaderboard?page=1&pageSize=20&sort=total&q=needle
-router.get("/leaderboard", async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1)
-    const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize || "20"), 10) || 20))
-    const sortKey = String(req.query.sort || "total").toLowerCase()
-    const q = String(req.query.q || "").trim()
+  /* ---------- Player leaderboard (paginated, server-derived) ---------- */
+  // GET /users/leaderboard?page=1&pageSize=20&sort=total&q=needle
+  router.get("/leaderboard", async (req, res) => {
+    try {
+      const page = Math.max(1, parseInt(String(req.query.page || "1"), 10) || 1)
+      const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.pageSize || "20"), 10) || 20))
+      const sortKey = String(req.query.sort || "total").toLowerCase()
+      const q = String(req.query.q || "").trim()
 
-    const sortMap = {
-      total: { _results: -1, _firsts: -1, _seconds: -1, _thirds: -1, slug: 1 },
-      firsts: { _firsts: -1, _results: -1, _seconds: -1, _thirds: -1, slug: 1 },
-      seconds: { _seconds: -1, _results: -1, _firsts: -1, _thirds: -1, slug: 1 },
-      thirds: { _thirds: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
-      topcuts: { _topcutsOnly: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
-    }
-    const sortStage = sortMap[sortKey] || sortMap.total
+      const sortMap = {
+        total: { _results: -1, _firsts: -1, _seconds: -1, _thirds: -1, slug: 1 },
+        firsts: { _firsts: -1, _results: -1, _seconds: -1, _thirds: -1, slug: 1 },
+        seconds: { _seconds: -1, _results: -1, _firsts: -1, _thirds: -1, slug: 1 },
+        thirds: { _thirds: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
+        topcuts: { _topcutsOnly: -1, _results: -1, _firsts: -1, _seconds: -1, slug: 1 },
+      }
+      const sortStage = sortMap[sortKey] || sortMap.total
 
-    // Text filter on username/displayName/slug
-    const match = q
-      ? {
-          $or: [
-            { username: { $regex: q, $options: "i" } },
-            { displayName: { $regex: q, $options: "i" } },
-            { slug: { $regex: q, $options: "i" } },
-          ],
-        }
-      : {}
+      // Text filter on username/displayName/slug
+      const match = q
+        ? {
+            $or: [
+              { username: { $regex: q, $options: "i" } },
+              { displayName: { $regex: q, $options: "i" } },
+              { slug: { $regex: q, $options: "i" } },
+            ],
+          }
+        : {}
 
-    // Build derived counters from tournamentsPlayed when present
-    // Otherwise fall back to firsts/seconds/thirds/topCutCount
-    const pipeline = [
-      { $match: match },
-
-      // Safety defaults so expressions don't explode on nulls
-      {
-        $addFields: {
-          tournamentsPlayed: { $ifNull: ["$tournamentsPlayed", []] },
-          firsts: { $toInt: { $ifNull: ["$firsts", 0] } },
-          seconds: { $toInt: { $ifNull: ["$seconds", 0] } },
-          thirds: { $toInt: { $ifNull: ["$thirds", 0] } },
-          topCutCount: { $toInt: { $ifNull: ["$topCutCount", 0] } },
-        },
-      },
-
-      // Compute per-placement counts from tournamentsPlayed
-      {
-        $addFields: {
-          tpLen: { $size: "$tournamentsPlayed" },
-          tpFirsts: {
-            $size: {
-              $filter: {
-                input: "$tournamentsPlayed",
-                as: "t",
-                cond: { $eq: ["$$t.placement", "First Place"] },
-              },
-            },
-          },
-          tpSeconds: {
-            $size: {
-              $filter: {
-                input: "$tournamentsPlayed",
-                as: "t",
-                cond: { $eq: ["$$t.placement", "Second Place"] },
-              },
-            },
-          },
-          tpThirds: {
-            $size: {
-              $filter: {
-                input: "$tournamentsPlayed",
-                as: "t",
-                cond: { $eq: ["$$t.placement", "Third Place"] },
-              },
-            },
-          },
-          tpTopCutsOnly: {
-            $size: {
-              $filter: {
-                input: "$tournamentsPlayed",
-                as: "t",
-                cond: { $eq: ["$$t.placement", "Top Cut"] },
-              },
-            },
+      const pipeline = [
+        { $match: match },
+        {
+          $addFields: {
+            tournamentsPlayed: { $ifNull: ["$tournamentsPlayed", []] },
+            firsts: { $toInt: { $ifNull: ["$firsts", 0] } },
+            seconds: { $toInt: { $ifNull: ["$seconds", 0] } },
+            thirds: { $toInt: { $ifNull: ["$thirds", 0] } },
+            topCutCount: { $toInt: { $ifNull: ["$topCutCount", 0] } },
           },
         },
-      },
-
-      // Choose source: tournamentsPlayed-derived vs stored counters
-      {
-        $addFields: {
-          _firsts: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpFirsts", "$firsts"] },
-          _seconds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpSeconds", "$seconds"] },
-          _thirds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpThirds", "$thirds"] },
-          _topcutsOnly: {
-            $cond: [
-              { $gt: ["$tpLen", 0] },
-              "$tpTopCutsOnly",
-              {
-                $let: {
-                  vars: {
-                    podium: { $add: ["$firsts", "$seconds", "$thirds"] },
-                  },
-                  in: {
-                    $cond: [
-                      { $lte: ["$topCutCount", "$$podium"] },
-                      0,
-                      { $subtract: ["$topCutCount", "$$podium"] },
-                    ],
-                  },
+        {
+          $addFields: {
+            tpLen: { $size: "$tournamentsPlayed" },
+            tpFirsts: {
+              $size: {
+                $filter: {
+                  input: "$tournamentsPlayed",
+                  as: "t",
+                  cond: { $eq: ["$$t.placement", "First Place"] },
                 },
               },
-            ],
+            },
+            tpSeconds: {
+              $size: {
+                $filter: {
+                  input: "$tournamentsPlayed",
+                  as: "t",
+                  cond: { $eq: ["$$t.placement", "Second Place"] },
+                },
+              },
+            },
+            tpThirds: {
+              $size: {
+                $filter: {
+                  input: "$tournamentsPlayed",
+                  as: "t",
+                  cond: { $eq: ["$$t.placement", "Third Place"] },
+                },
+              },
+            },
+            tpTopCutsOnly: {
+              $size: {
+                $filter: {
+                  input: "$tournamentsPlayed",
+                  as: "t",
+                  cond: { $eq: ["$$t.placement", "Top Cut"] },
+                },
+              },
+            },
           },
         },
-      },
-
-      // Totals, display name fallback
-      {
-        $addFields: {
-          _results: { $add: ["$_firsts", "$_seconds", "$_thirds", "$_topcutsOnly"] },
-          _name: { $ifNull: [{ $trim: { input: "$username" } }, { $ifNull: ["$displayName", "$slug"] }] },
+        {
+          $addFields: {
+            _firsts: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpFirsts", "$firsts"] },
+            _seconds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpSeconds", "$seconds"] },
+            _thirds: { $cond: [{ $gt: ["$tpLen", 0] }, "$tpThirds", "$thirds"] },
+            _topcutsOnly: {
+              $cond: [
+                { $gt: ["$tpLen", 0] },
+                "$tpTopCutsOnly",
+                {
+                  $let: {
+                    vars: { podium: { $add: ["$firsts", "$seconds", "$thirds"] } },
+                    in: {
+                      $cond: [
+                        { $lte: ["$topCutCount", "$$podium"] },
+                        0,
+                        { $subtract: ["$topCutCount", "$$podium"] },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
         },
-      },
-
-      // Final projection
-      {
-        $project: {
-          _id: 0,
-          slug: 1,
-          username: 1,
-          displayName: 1,
-          avatarDataUrl: 1,
-          _firsts: 1,
-          _seconds: 1,
-          _thirds: 1,
-          _topcutsOnly: 1,
-          _results: 1,
-          _name: 1,
+        {
+          $addFields: {
+            _results: { $add: ["$_firsts", "$_seconds", "$_thirds", "$_topcutsOnly"] },
+            _name: { $ifNull: [{ $trim: { input: "$username" } }, { $ifNull: ["$displayName", "$slug"] }] },
+          },
         },
-      },
+        {
+          $project: {
+            _id: 0,
+            slug: 1,
+            username: 1,
+            displayName: 1,
+            avatarDataUrl: 1,
+            _firsts: 1,
+            _seconds: 1,
+            _thirds: 1,
+            _topcutsOnly: 1,
+            _results: 1,
+            _name: 1,
+          },
+        },
+        { $sort: sortStage },
+        { $skip: (page - 1) * pageSize },
+        { $limit: pageSize },
+      ]
 
-      { $sort: sortStage },
-      { $skip: (page - 1) * pageSize },
-      { $limit: pageSize },
-    ]
+      const total = await users.countDocuments(match)
+      const rows = await users.aggregate(pipeline).toArray()
 
-    // total count for pagination (match only, not sort/skip/limit)
-    const total = await users.countDocuments(match)
-    const rows = await users.aggregate(pipeline).toArray()
-
-    return res.json({ ok: true, page, pageSize, sort: sortKey, total, rows })
-  } catch (err) {
-    console.error("[/users/leaderboard] error:", err)
-    return res.status(500).json({ ok: false, error: "Leaderboard failed" })
-  }
-})
-/* ---------- Per-user avatar (serves image bytes) ---------- */
-// GET /users/avatar/:slug
-router.get("/avatar/:slug", async (req, res) => {
-  try {
-    const slug = String(req.params.slug || "").trim().toLowerCase()
-    if (!slug) return res.status(400).send("Missing slug")
-
-    const u = await users.findOne(
-      { slug },
-      { projection: { _id: 0, avatarDataUrl: 1 } }
-    )
-    if (!u || !u.avatarDataUrl) return res.status(404).send("No avatar")
-
-    const dataUrl = String(u.avatarDataUrl)
-    // must be like: data:image/png;base64,AAAA...
-    if (!dataUrl.startsWith("data:image/") || !dataUrl.includes(";base64,")) {
-      return res.status(400).send("Invalid avatar data URL")
+      return res.json({ ok: true, page, pageSize, sort: sortKey, total, rows })
+    } catch (err) {
+      console.error("[/users/leaderboard] error:", err)
+      return res.status(500).json({ ok: false, error: "Leaderboard failed" })
     }
+  })
 
-    const [meta, b64] = dataUrl.split(",")
-    const mime = meta.slice("data:".length).replace(";base64", "") || "image/png"
-    const buf = Buffer.from(b64, "base64")
+  /* ---------- Per-user avatar (serves image bytes) ---------- */
+  // GET /users/avatar/:slug
+  router.get("/avatar/:slug", async (req, res) => {
+    try {
+      const slug = String(req.params.slug || "").trim().toLowerCase()
+      if (!slug) return res.status(400).send("Missing slug")
 
-    res.setHeader("Content-Type", mime)
-    // cache it a bit so list scrolling isn’t chatty
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable")
-    // weak ETag from size to help browser revalidation
-    res.setHeader("ETag", `W/"${buf.length.toString(16)}-${slug}"`)
+      const u = await users.findOne({ slug }, { projection: { _id: 0, avatarDataUrl: 1 } })
+      if (!u || !u.avatarDataUrl) return res.status(404).send("No avatar")
 
-    return res.status(200).end(buf)
-  } catch (e) {
-    console.error("[/users/avatar/:slug] error:", e)
-    return res.status(500).send("Avatar error")
-  }
-})
+      const dataUrl = String(u.avatarDataUrl)
+      if (!dataUrl.startsWith("data:image/") || !dataUrl.includes(";base64,")) {
+        return res.status(400).send("Invalid avatar data URL")
+      }
+
+      const [meta, b64] = dataUrl.split(",")
+      const mime = meta.slice("data:".length).replace(";base64", "") || "image/png"
+      const buf = Buffer.from(b64, "base64")
+
+      res.setHeader("Content-Type", mime)
+      res.setHeader("Cache-Control", "public, max-age=86400, immutable")
+      res.setHeader("ETag", `W/"${buf.length.toString(16)}-${slug}"`)
+
+      return res.status(200).end(buf)
+    } catch (e) {
+      console.error("[/users/avatar/:slug] error:", e)
+      return res.status(500).send("Avatar error")
+    }
+  })
 
   return router
 }

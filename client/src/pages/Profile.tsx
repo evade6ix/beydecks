@@ -22,6 +22,7 @@ import {
 import { toast } from "react-hot-toast"
 import { useAuth } from "../context/AuthContext"
 import type { OwnedParts } from "../context/AuthContext"
+import VipBanner from "../components/VipBanner"
 
 const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
 const API_BASE = RAW
@@ -60,8 +61,11 @@ export default function Profile() {
     avatarDataUrl?: string
     slug?: string
     ownedParts?: OwnedParts
+    vip?: boolean
   }
+
   const u = user as typeof user & ProfileExtras
+  const isVip = Boolean((u as any).vip)
 
   // Matchups
   const [myCombo, setMyCombo] = useState<Combo>({ blade: "", ratchet: "", bit: "", notes: "" })
@@ -148,7 +152,6 @@ export default function Profile() {
   }
 
   async function handleAvatarChange(dataUrl: string) {
-    // optimistic UI
     setAvatarDataUrl(dataUrl)
     try {
       const updated = await patchMe({ avatarDataUrl: dataUrl })
@@ -254,118 +257,122 @@ export default function Profile() {
     </span>
   )
 
-  return (
-    <motion.div className="mx-auto max-w-6xl p-4 md:p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      {/* HERO (avatar + mini stats + bio editor) */}
-      <div className="relative isolate overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-600/15 via-sky-600/10 to-fuchsia-600/10 p-5 md:p-6">
-        <div className="relative flex flex-wrap items-start gap-4">
-          {/* Avatar */}
-          <div className="relative">
-            <img
-              src={avatarDataUrl || "/default-avatar.png"}
-              alt="avatar"
-              className="h-16 w-16 rounded-2xl object-cover ring-1 ring-white/10"
-            />
-            <div className="mt-2 flex gap-2 text-xs">
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 hover:bg-white/10">
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0]
-                    if (!f) return
-                    const dataUrl = await fileToDataUrl(f)
-                    setAvatarDataUrl(dataUrl) // show immediately
-                    await handleAvatarChange(dataUrl) // persist
-                  }}
-                />
-                Change
-              </label>
-              {avatarDataUrl && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setAvatarDataUrl("")
-                    await handleAvatarChange("")
-                  }}
-                  className="inline-flex items-center gap-1 rounded-xl px-2 py-1 text-rose-300 hover:text-rose-200"
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Name + pills + bio */}
-          <div className="flex-1 min-w-[220px]">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || user.username}</h1>
-
-            {/* Mini stats */}
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
-              <Pill>
-                <Users className="mr-1 h-3.5 w-3.5" /> {matchups.length} matchups
-              </Pill>
-              <Pill>
-                <Trophy className="mr-1 h-3.5 w-3.5" /> {tournaments.length} tournaments
-              </Pill>
-              <Pill>
-                <Percent className="mr-1 h-3.5 w-3.5" /> {winRate}% win rate
-              </Pill>
-            </div>
-
-            {/* Bio editor inline */}
-            <div className="mt-3">
-              <label className="flex flex-col text-sm">
-                <textarea
-                  className="min-h-[96px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-indigo-500/50"
-                  placeholder="Tell people about you…"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value.slice(0, 500))}
-                />
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-xs text-white/60">{bio.length}/500</span>
-                  <button
-                    type="button"
-                    onClick={saveProfile}
-                    className="rounded-xl bg-emerald-600/90 px-3 py-1.5 text-xs font-medium hover:bg-emerald-500"
-                  >
-                    Save Bio
-                  </button>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="ml-auto flex items-start gap-2">
-            <Link
-              to={publicPath}
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 inline-flex items-center gap-1"
-              title="Visit Public Profile"
-              target="_blank"
-            >
-              Visit Public Profile
-            </Link>
-            <Link
-              to="/tournament-lab"
-              className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 inline-flex items-center gap-1"
-              title="Tournament Lab"
-            >
-              <BarChart3 className="h-4 w-4" />
-              Tournament Lab
-            </Link>
-            <button
-              onClick={logout}
-              className="rounded-xl bg-rose-600/90 px-3 py-1.5 text-sm hover:bg-rose-500 inline-flex items-center gap-1"
-              title="Log out"
-            >
-              <LogOut className="h-4 w-4" />
-              Logout
-            </button>
+  const HeroInner = (
+    <div className="relative isolate overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-600/15 via-sky-600/10 to-fuchsia-600/10 p-5 md:p-6">
+      <div className="relative flex flex-wrap items-start gap-4">
+        {/* Avatar */}
+        <div className="relative">
+          <img
+            src={avatarDataUrl || "/default-avatar.png"}
+            alt="avatar"
+            className="h-16 w-16 rounded-2xl object-cover ring-1 ring-white/10"
+          />
+          <div className="mt-2 flex gap-2 text-xs">
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2 py-1 hover:bg-white/10">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  if (!f) return
+                  const dataUrl = await fileToDataUrl(f)
+                  setAvatarDataUrl(dataUrl)
+                  await handleAvatarChange(dataUrl)
+                }}
+              />
+              Change
+            </label>
+            {avatarDataUrl && (
+              <button
+                type="button"
+                onClick={async () => {
+                  setAvatarDataUrl("")
+                  await handleAvatarChange("")
+                }}
+                className="inline-flex items-center gap-1 rounded-xl px-2 py-1 text-rose-300 hover:text-rose-200"
+              >
+                Remove
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Name + pills + bio */}
+        <div className="flex-1 min-w-[220px]">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || user.username}</h1>
+
+          {/* Mini stats */}
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
+            <Pill>
+              <Users className="mr-1 h-3.5 w-3.5" /> {matchups.length} matchups
+            </Pill>
+            <Pill>
+              <Trophy className="mr-1 h-3.5 w-3.5" /> {tournaments.length} tournaments
+            </Pill>
+            <Pill>
+              <Percent className="mr-1 h-3.5 w-3.5" /> {winRate}% win rate
+            </Pill>
+          </div>
+
+          {/* Bio editor inline */}
+          <div className="mt-3">
+            <label className="flex flex-col text-sm">
+              <textarea
+                className="min-h-[96px] rounded-xl border border-white/10 bg-white/5 px-3 py-2 outline-none focus:border-indigo-500/50"
+                placeholder="Tell people about you…"
+                value={bio}
+                onChange={(e) => setBio(e.target.value.slice(0, 500))}
+              />
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-white/60">{bio.length}/500</span>
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  className="rounded-xl bg-emerald-600/90 px-3 py-1.5 text-xs font-medium hover:bg-emerald-500"
+                >
+                  Save Bio
+                </button>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="ml-auto flex items-start gap-2">
+          <Link
+            to={publicPath}
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 inline-flex items-center gap-1"
+            title="Visit Public Profile"
+            target="_blank"
+          >
+            Visit Public Profile
+          </Link>
+          <Link
+            to="/tournament-lab"
+            className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 inline-flex items-center gap-1"
+            title="Tournament Lab"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Tournament Lab
+          </Link>
+          <button
+            onClick={logout}
+            className="rounded-xl bg-rose-600/90 px-3 py-1.5 text-sm hover:bg-rose-500 inline-flex items-center gap-1"
+            title="Log out"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </div>
       </div>
+    </div>
+  )
+
+  return (
+    <motion.div className="mx-auto max-w-6xl p-4 md:p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+      {/* HERO */}
+      {isVip ? <VipBanner>{HeroInner}</VipBanner> : HeroInner}
 
       {/* QUICK STATS */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -440,12 +447,7 @@ export default function Profile() {
 
             {/* Home Store inline card */}
             <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
-              <LabelInput
-                label="Home Store"
-                value={homeStore}
-                onChange={setHomeStore}
-                placeholder="Type your store name"
-              />
+              <LabelInput label="Home Store" value={homeStore} onChange={setHomeStore} placeholder="Type your store name" />
               <button
                 type="button"
                 onClick={saveProfile}
@@ -469,9 +471,7 @@ export default function Profile() {
         <div className="space-y-3">
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="mb-2 text-sm font-semibold">Tournament Lab</div>
-            <p className="text-sm text-white/70">
-              Test your deck against real event data to see how often it appears in top cut.
-            </p>
+            <p className="text-sm text-white/70">Test your deck against real event data to see how often it appears in top cut.</p>
             <Link
               to="/tournament-lab"
               className="mt-3 inline-flex items-center gap-1 rounded-xl bg-indigo-600/90 px-3 py-1.5 text-sm font-medium hover:bg-indigo-500"
@@ -493,16 +493,36 @@ export default function Profile() {
             <div>
               <div className="mb-2 font-medium">Your Combo</div>
               <TextInput placeholder="Blade" value={myCombo.blade} onChange={(v) => setMyCombo({ ...myCombo, blade: v })} />
-              <TextInput placeholder="Ratchet" value={myCombo.ratchet} onChange={(v) => setMyCombo({ ...myCombo, ratchet: v })} />
+              <TextInput
+                placeholder="Ratchet"
+                value={myCombo.ratchet}
+                onChange={(v) => setMyCombo({ ...myCombo, ratchet: v })}
+              />
               <TextInput placeholder="Bit" value={myCombo.bit} onChange={(v) => setMyCombo({ ...myCombo, bit: v })} />
-              <TextInput placeholder="Notes (optional)" value={myCombo.notes || ""} onChange={(v) => setMyCombo({ ...myCombo, notes: v })} />
+              <TextInput
+                placeholder="Notes (optional)"
+                value={myCombo.notes || ""}
+                onChange={(v) => setMyCombo({ ...myCombo, notes: v })}
+              />
             </div>
             <div>
               <div className="mb-2 font-medium">Opponent Combo</div>
-              <TextInput placeholder="Blade" value={opponentCombo.blade} onChange={(v) => setOpponentCombo({ ...opponentCombo, blade: v })} />
-              <TextInput placeholder="Ratchet" value={opponentCombo.ratchet} onChange={(v) => setOpponentCombo({ ...opponentCombo, ratchet: v })} />
+              <TextInput
+                placeholder="Blade"
+                value={opponentCombo.blade}
+                onChange={(v) => setOpponentCombo({ ...opponentCombo, blade: v })}
+              />
+              <TextInput
+                placeholder="Ratchet"
+                value={opponentCombo.ratchet}
+                onChange={(v) => setOpponentCombo({ ...opponentCombo, ratchet: v })}
+              />
               <TextInput placeholder="Bit" value={opponentCombo.bit} onChange={(v) => setOpponentCombo({ ...opponentCombo, bit: v })} />
-              <TextInput placeholder="Notes (optional)" value={opponentCombo.notes || ""} onChange={(v) => setOpponentCombo({ ...opponentCombo, notes: v })} />
+              <TextInput
+                placeholder="Notes (optional)"
+                value={opponentCombo.notes || ""}
+                onChange={(v) => setOpponentCombo({ ...opponentCombo, notes: v })}
+              />
             </div>
           </div>
 
@@ -517,7 +537,10 @@ export default function Profile() {
             </label>
           </div>
 
-          <button type="submit" className="mt-3 inline-flex items-center gap-1 rounded-xl bg-indigo-600/90 px-3 py-1.5 text-sm font-medium hover:bg-indigo-500">
+          <button
+            type="submit"
+            className="mt-3 inline-flex items-center gap-1 rounded-xl bg-indigo-600/90 px-3 py-1.5 text-sm font-medium hover:bg-indigo-500"
+          >
             <Plus className="h-4 w-4" /> Submit Matchup
           </button>
         </form>
@@ -527,7 +550,10 @@ export default function Profile() {
             <div className="text-sm font-semibold flex items-center gap-2">
               <History className="h-4 w-4" /> Matchup History
             </div>
-            <Link to="/profile/matchup-stats" className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10">
+            <Link
+              to="/profile/matchup-stats"
+              className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10"
+            >
               <BarChart3 className="h-4 w-4" /> View Data
             </Link>
           </div>
@@ -556,12 +582,16 @@ export default function Profile() {
                     <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                       <div className="rounded-xl bg-white/5 p-2">
                         <div className="mb-1 font-medium">Your Combo</div>
-                        <div>{m.myCombo.blade} / {m.myCombo.ratchet} / {m.myCombo.bit}</div>
+                        <div>
+                          {m.myCombo.blade} / {m.myCombo.ratchet} / {m.myCombo.bit}
+                        </div>
                         {m.myCombo.notes ? <div className="mt-0.5 text-xs text-white/60">{m.myCombo.notes}</div> : null}
                       </div>
                       <div className="rounded-xl bg-white/5 p-2">
                         <div className="mb-1 font-medium">Opponent Combo</div>
-                        <div>{m.opponentCombo.blade} / {m.opponentCombo.ratchet} / {m.opponentCombo.bit}</div>
+                        <div>
+                          {m.opponentCombo.blade} / {m.opponentCombo.ratchet} / {m.opponentCombo.bit}
+                        </div>
                         {m.opponentCombo.notes ? <div className="mt-0.5 text-xs text-white/60">{m.opponentCombo.notes}</div> : null}
                       </div>
                     </div>
@@ -613,17 +643,19 @@ export default function Profile() {
                     return (
                       <li key={globalIndex} className="rounded-2xl border border-white/10 bg-white/5 p-3">
                         <div className="flex items-center justify-between gap-2">
-                          <div className={`text-sm font-semibold ${
-                            t.placement === "First Place"
-                              ? "text-yellow-300"
-                              : t.placement === "Second Place"
-                              ? "text-slate-200"
-                              : t.placement === "Third Place"
-                              ? "text-amber-400"
-                              : t.placement === "Top Cut"
-                              ? "text-indigo-300"
-                              : "text-white/70"
-                          }`}>
+                          <div
+                            className={`text-sm font-semibold ${
+                              t.placement === "First Place"
+                                ? "text-yellow-300"
+                                : t.placement === "Second Place"
+                                ? "text-slate-200"
+                                : t.placement === "Third Place"
+                                ? "text-amber-400"
+                                : t.placement === "Top Cut"
+                                ? "text-indigo-300"
+                                : "text-white/70"
+                            }`}
+                          >
                             {t.placement}
                           </div>
                           <div className="flex items-center gap-2">
@@ -652,9 +684,7 @@ export default function Profile() {
                           </div>
                           <div className="rounded-xl bg-white/5 p-2">
                             <div className="text-xs uppercase tracking-wide text-white/60">Date</div>
-                            <div className="mt-0.5">
-                              {t.date ? new Date(t.date).toLocaleDateString() : "—"}
-                            </div>
+                            <div className="mt-0.5">{t.date ? new Date(t.date).toLocaleDateString() : "—"}</div>
                           </div>
                           <div className="rounded-xl bg-white/5 p-2">
                             <div className="text-xs uppercase tracking-wide text-white/60">Players</div>
