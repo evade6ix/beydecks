@@ -15,6 +15,8 @@ import {
   CalendarDays,
 } from "lucide-react"
 
+import { TROPHY_AWARDS } from "../data/trophies"
+
 // --- API base (no double /api) ---
 const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
 const ROOT = RAW.replace(/\/api\/?$/i, "")
@@ -178,7 +180,7 @@ export default function UserPublic() {
   const thirds = tournaments.filter((t) => t.placement === "Third Place").length
   const topCuts = tournaments.filter((t) => t.placement === "Top Cut").length
 
-  // Performance snapshot
+  // Performance snapshot (kept for other UI uses if needed)
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
   const totalLosses = tournaments.reduce((a, t) => a + (t.roundLosses || 0), 0)
   const totalMatches = totalWins + totalLosses
@@ -192,6 +194,12 @@ export default function UserPublic() {
   // ✅ VIP logic: true if backend says vip OR username is in forced list
   const isForceVip = FORCE_VIP_USERNAMES.has(String(u.username || "").trim())
   const isVip = Boolean(u.vip) || isForceVip
+
+  // ✅ Trophy logic (same concept as VIP forcing)
+  const currentUsername = String(u.username || "").trim()
+  const userTrophies = TROPHY_AWARDS
+    .filter((t) => t.username === currentUsername)
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime())
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
@@ -346,20 +354,43 @@ export default function UserPublic() {
             </ul>
           </Card>
 
-          {/* Performance Snapshot */}
+          {/* Trophies */}
           <Card>
-            <div className="mb-2 text-sm font-semibold">Performance Snapshot</div>
-            <div className="grid grid-cols-2 gap-3">
-              <MiniStat label="Matches" value={totalMatches} />
-              <MiniStat label="Win rate" valueStr={`${winRate}%`} />
-              <MiniStat label="Wins" value={totalWins} />
-              <MiniStat label="Losses" value={totalLosses} />
-            </div>
-            <div className="mt-3 text-xs text-white/60">
-              {firstEvent ? <>First: {safeDate(firstEvent.date)}</> : "First: —"}
-              {" · "}
-              {latestEvent ? <>Latest: {safeDate(latestEvent.date)}</> : "Latest: —"}
-            </div>
+            <div className="mb-2 text-sm font-semibold">Trophies</div>
+
+            {userTrophies.length === 0 ? (
+              <div className="text-sm text-white/70">No trophies yet.</div>
+            ) : (
+              <ul className="space-y-3">
+                {userTrophies.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2"
+                  >
+                    <img
+                      src={t.image}
+                      alt={t.placement}
+                      className="h-12 w-12 rounded-lg object-cover ring-1 ring-white/10"
+                      draggable={false}
+                    />
+
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-white/90">
+                        {t.placement} — {t.event}
+                      </div>
+                      <div className="truncate text-xs text-white/60">
+                        {t.note ? t.note : (t.date ? safeDate(t.date) : "")}
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs text-indigo-200">
+                      <Trophy className="h-4 w-4" />
+                      {t.placement}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
       </div>
