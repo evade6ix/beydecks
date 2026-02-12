@@ -1,5 +1,5 @@
 // File: src/pages/UserPublic.tsx
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion } from "framer-motion"
@@ -14,6 +14,8 @@ import {
   Sparkles,
   CalendarDays,
 } from "lucide-react"
+
+import { TROPHY_AWARDS } from "../data/trophies"
 
 // --- API base (no double /api) ---
 const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
@@ -51,7 +53,6 @@ type PublicUser = {
   bio?: string
   homeStore?: string
   ownedParts?: OwnedParts
-  // Prefer top-level arrays provided by Mongo
   blades?: string[]
   assistBlades?: string[]
   ratchets?: string[]
@@ -73,7 +74,7 @@ export default function UserPublic() {
   const [u, setU] = useState<PublicUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [invTab, setInvTab] = useState<InvKey>("blades") // inventory tab
+  const [invTab, setInvTab] = useState<InvKey>("blades")
 
   useEffect(() => {
     let mounted = true
@@ -83,45 +84,18 @@ export default function UserPublic() {
     const slugStr = String(slug || "")
     const url = api(`/api/users/slug/${encodeURIComponent(slugStr)}`)
 
-    // ✅ HARD LOGS (these will tell us immediately what's happening)
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    console.log("🟦 UserPublic useEffect fired")
-    console.log("Slug param:", slug)
-    console.log("RAW:", RAW)
-    console.log("ROOT:", ROOT)
-    console.log("Final request URL:", url)
-
     fetch(url)
       .then(async (r) => {
-        console.log("🟨 Response status:", r.status)
-        console.log("🟨 Response ok:", r.ok)
-
-        // Clone lets us read body for logs without breaking r.json()
-        const clone = r.clone()
-        clone
-          .text()
-          .then((txt) => console.log("🟨 Response body (raw):", txt))
-          .catch((e) => console.log("🟨 Failed to read response text:", e))
-
         if (!r.ok) throw new Error(await r.text())
-
-        const json = await r.json()
-        console.log("🟩 Parsed JSON object:", json)
-        console.log("🟩 vip field:", (json as any)?.vip)
-        console.log("🟩 username:", (json as any)?.username)
-        console.log("🟩 slug:", (json as any)?.slug)
-        return json
+        return r.json()
       })
       .then((data) => {
-        console.log("🟪 Setting React state (setU)")
         if (mounted) setU(data)
       })
       .catch((e) => {
-        console.error("🟥 Fetch failed:", e)
         if (mounted) setError(e?.message || "Failed to load profile")
       })
       .finally(() => {
-        console.log("⬜ Done loading (setLoading false)")
         if (mounted) setLoading(false)
       })
 
@@ -150,7 +124,6 @@ export default function UserPublic() {
     )
   }
 
-  // Prefer top-level arrays; fall back to ownedParts if they’re not present.
   const parts: OwnedParts = {
     blades: (u.blades && u.blades.length ? u.blades : u.ownedParts?.blades) || [],
     assistBlades:
@@ -161,7 +134,6 @@ export default function UserPublic() {
 
   const shareUrl = `${window.location.origin}/u/${u.slug}`
 
-  // ── Tournaments: use ONLY curated rows (must have eventId) ────────────────────
   const tournamentsRaw =
     Array.isArray(u.tournamentsPlayed)
       ? [...u.tournamentsPlayed]
@@ -171,19 +143,30 @@ export default function UserPublic() {
 
   const tournaments = tournamentsRaw.filter((t) => Boolean((t as TournamentEntry).eventId))
 
-  // All counters derived from the filtered list
   const tournamentsCount = tournaments.length
   const firsts = tournaments.filter((t) => t.placement === "First Place").length
   const seconds = tournaments.filter((t) => t.placement === "Second Place").length
   const thirds = tournaments.filter((t) => t.placement === "Third Place").length
   const topCuts = tournaments.filter((t) => t.placement === "Top Cut").length
 
-  // Show ONLY username (fallback to displayName if username missing)
   const nameForDisplay = u.username && u.username.trim().length > 0 ? u.username : u.displayName
 
-  // ✅ VIP logic: true if backend says vip OR username is in forced list
   const isForceVip = FORCE_VIP_USERNAMES.has(String(u.username || "").trim())
   const isVip = Boolean(u.vip) || isForceVip
+
+  // ✅ Trophies: match by exact username (same style as VIP forcing)
+  const trophies = useMemo(() => {
+    const uname = String(u.username || "").trim()
+    if (!uname) return []
+    return TROPHY_AWARDS
+      .filter((t) => String(t.username || "").trim() === uname)
+      .slice()
+      .sort((a, b) => {
+        const ad = a.date ? new Date(a.date).getTime() : 0
+        const bd = b.date ? new Date(b.date).getTime() : 0
+        return bd - ad
+      })
+  }, [u.username])
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
@@ -323,6 +306,46 @@ export default function UserPublic() {
 
         {/* Right column */}
         <div className="space-y-4">
+          {/* ✅ TROPHIES */}
+          <Card>
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+              <Trophy className="h-4 w-4" /> Trophies
+            </div>
+
+            {!trophies.length ? (
+              <div className="text-sm text-white/70">No trophies yet.</div>
+            ) : (
+              <ul className="space-y-2">
+                {trophies.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3"
+                  >
+                    <img
+                      src={t.image}
+                      alt={`${t.placement} trophy`}
+                      className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/10"
+                      draggable={false}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="truncate font-medium">{t.event}</div>
+                        <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80">
+                          {t.placement}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-xs text-white/60">
+                        {t.date ? safeDate(t.date) : null}
+                        {t.note ? (t.date ? " · " : "") : null}
+                        {t.note ? t.note : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           {/* Quick Facts */}
           <Card>
             <div className="mb-2 text-sm font-semibold">Quick Facts</div>

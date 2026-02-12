@@ -27,7 +27,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     event: "Example Event",
     date: "2026-01-01",
     placement: "Champion",
-    username: "Karl6ix",
+    username: "kwfors1",
     image: "/hondatest.png",
     note: "Game 3 Oakville",
   },
