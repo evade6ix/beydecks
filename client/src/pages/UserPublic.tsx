@@ -155,11 +155,13 @@ export default function UserPublic() {
   const isVip = Boolean(u.vip) || isForceVip
 
   // ✅ Trophies: match by exact username (same style as VIP forcing)
-const uname = String(u.username || "").trim()
-const trophies = !uname
+// ✅ Trophies: match case-insensitive, fallback to displayName
+const userKey = String(u.username || u.displayName || "").trim().toLowerCase()
+
+const trophies = !userKey
   ? []
   : TROPHY_AWARDS
-      .filter((t) => String(t.username || "").trim() === uname)
+      .filter((t) => String(t.username || "").trim().toLowerCase() === userKey)
       .slice()
       .sort((a, b) => {
         const ad = a.date ? new Date(a.date).getTime() : 0
