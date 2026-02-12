@@ -65,7 +65,8 @@ export default function Profile() {
   }
 
   const u = user as typeof user & ProfileExtras
-  const isVip = Boolean((u as any).vip)
+const isVip = Boolean((u as any).vip)
+console.log("VIP FIELD:", (u as any).vip, "USER:", user)
 
   // Matchups
   const [myCombo, setMyCombo] = useState<Combo>({ blade: "", ratchet: "", bit: "", notes: "" })
@@ -370,9 +371,9 @@ export default function Profile() {
   )
 
   return (
-    <motion.div className="mx-auto max-w-6xl p-4 md:p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      {/* HERO */}
-      {isVip ? <VipBanner>{HeroInner}</VipBanner> : HeroInner}
+  <motion.div className="mx-auto max-w-6xl p-4 md:p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+    {/* HERO */}
+    {isVip ? <VipBanner>{HeroInner}</VipBanner> : HeroInner}
 
       {/* QUICK STATS */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
