@@ -77,17 +77,50 @@ export default function UserPublic() {
     setLoading(true)
     setError(null)
 
-    const url = api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`)
+    const slugStr = String(slug || "")
+    const url = api(`/api/users/slug/${encodeURIComponent(slugStr)}`)
+
+    // ✅ HARD LOGS (these will tell us immediately what's happening)
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    console.log("🟦 UserPublic useEffect fired")
+    console.log("Slug param:", slug)
+    console.log("RAW:", RAW)
+    console.log("ROOT:", ROOT)
+    console.log("Final request URL:", url)
+
     fetch(url)
       .then(async (r) => {
+        console.log("🟨 Response status:", r.status)
+        console.log("🟨 Response ok:", r.ok)
+
+        // Clone lets us read body for logs without breaking r.json()
+        const clone = r.clone()
+        clone
+          .text()
+          .then((txt) => console.log("🟨 Response body (raw):", txt))
+          .catch((e) => console.log("🟨 Failed to read response text:", e))
+
         if (!r.ok) throw new Error(await r.text())
-        return r.json()
+
+        const json = await r.json()
+        console.log("🟩 Parsed JSON object:", json)
+        console.log("🟩 vip field:", (json as any)?.vip)
+        console.log("🟩 username:", (json as any)?.username)
+        console.log("🟩 slug:", (json as any)?.slug)
+        return json
       })
       .then((data) => {
+        console.log("🟪 Setting React state (setU)")
         if (mounted) setU(data)
       })
-      .catch((e) => mounted && setError(e?.message || "Failed to load profile"))
-      .finally(() => mounted && setLoading(false))
+      .catch((e) => {
+        console.error("🟥 Fetch failed:", e)
+        if (mounted) setError(e?.message || "Failed to load profile")
+      })
+      .finally(() => {
+        console.log("⬜ Done loading (setLoading false)")
+        if (mounted) setLoading(false)
+      })
 
     return () => {
       mounted = false
