@@ -142,7 +142,12 @@ const [isVip, setIsVip] = useState(false)
       const slugOrUsername = (u.slug || u.username || authUser.username || "").trim()
       if (!slugOrUsername) return
 
-      const res = await fetch(api(`/users/slug/${encodeURIComponent(slugOrUsername)}`))
+      const base = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
+      const url = base.endsWith("/api")
+        ? `${base}/users/slug/${encodeURIComponent(slugOrUsername)}`
+        : `${base}/api/users/slug/${encodeURIComponent(slugOrUsername)}`
+
+      const res = await fetch(url, { method: "GET" })
       if (!res.ok) return
 
       const data = await res.json()
@@ -156,8 +161,8 @@ const [isVip, setIsVip] = useState(false)
   return () => {
     cancelled = true
   }
-  // IMPORTANT: re-run if user changes (login/logout)
 }, [u.slug, u.username, authUser.username])
+
 
 
   // Helpers
@@ -332,8 +337,7 @@ const [isVip, setIsVip] = useState(false)
 
         {/* Name + pills + bio */}
         <div className="flex-1 min-w-[220px]">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || authUser.username}</h1>
-
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || user.username}</h1>
 
           {/* Mini stats */}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
