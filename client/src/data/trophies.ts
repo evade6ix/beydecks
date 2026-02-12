@@ -19,16 +19,24 @@ export type TrophyAward = {
   note?: string
 }
 
-// Keep adding forever
 export const TROPHY_AWARDS: TrophyAward[] = [
-  // Example (replace later)
   {
-    id: "example_champion_Karl6ix",
+    id: "zankyesdog_champion_kwfors1",
     event: "Zankye's Dog",
     date: "2026-01-01",
     placement: "Champion",
     username: "kwfors1",
     image: "/hondatest.png",
     note: "Zankye Basement",
+  },
+
+  {
+    id: "animenorth2025_champion_nxk",
+    event: "Anime North 2025",
+    date: "2025-05-01", // change if you want exact date
+    placement: "Champion",
+    username: "nxk",
+    image: "/animenorth24.webp",
+    note: "Anime North",
   },
 ]
