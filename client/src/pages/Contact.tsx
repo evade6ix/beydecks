@@ -183,8 +183,7 @@ export default function Contact() {
                 <div className="mt-5 text-sm text-white/60">
                   Email: <span className="text-white/80">{email}</span>
                   <span className="mx-2 text-white/30">•</span>
-                  Discord: <span className="text-white/80">Invite link</span>
-                </div>
+=                </div>
               </div>
             </div>
 
