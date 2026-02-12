@@ -792,7 +792,7 @@ setLeaders(derived)
           </div>
 
           <div className="mt-10 text-center text-xs text-white/40">
-            Metabeys is owned by @Karl6ix and @Aysus | Logo(s) done by AustieFrosty 
+            Metabeys is owned by Karl6ix, FlamingoPapi, SwiftMFB | Logo(s) done by AustieFrosty | Honorable Mention to Aysus
           </div>
         </motion.div>
       </div>
