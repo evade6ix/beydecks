@@ -24,11 +24,11 @@ export const TROPHY_AWARDS: TrophyAward[] = [
   // Example (replace later)
   {
     id: "example_champion_Karl6ix",
-    event: "Example Event",
+    event: "Zankye's Dog",
     date: "2026-01-01",
     placement: "Champion",
     username: "kwfors1",
     image: "/hondatest.png",
-    note: "Game 3 Oakville",
+    note: "Zankye Basement",
   },
 ]
