@@ -77,7 +77,7 @@ export default function UserPublic() {
     setLoading(true)
     setError(null)
 
-    const url = api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`)
+    const url = api(`/users/slug/${encodeURIComponent(String(slug || ""))}`)
     fetch(url)
       .then(async (r) => {
         if (!r.ok) throw new Error(await r.text())
