@@ -321,7 +321,7 @@ export default function Landing() {
                   </Link>
 
                   <Link
-                    to="/events"
+                    to="/events/completed"
                     className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/5 px-6 py-3 font-semibold hover:bg-white/10 transition"
                   >
                     Browse events <ChevronRight className="w-4 h-4" />
