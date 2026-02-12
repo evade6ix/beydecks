@@ -602,7 +602,7 @@ export default function Landing() {
                   </div>
 
                   <div className="mt-6 text-xs text-white/55">
-                    © {new Date().getFullYear()} MetaBeys. Built by @Aysus & @Karl6ix.
+                    © {new Date().getFullYear()} MetaBeys. Owned by Karl6ix, FlamingoPapi & SwiftMFB 
                   </div>
                 </div>
 
