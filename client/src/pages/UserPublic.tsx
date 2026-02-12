@@ -323,11 +323,12 @@ const trophies = !trophyKey
                     className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3"
                   >
                     <img
-                      src={t.image}
-                      alt={`${t.placement} trophy`}
-                      className="h-12 w-12 rounded-xl object-cover ring-1 ring-white/10"
-                      draggable={false}
-                    />
+  src={t.image}
+  alt={`${t.placement} trophy`}
+  className="h-12 w-12 object-contain"
+  draggable={false}
+/>
+
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <div className="truncate font-medium">{t.event}</div>
