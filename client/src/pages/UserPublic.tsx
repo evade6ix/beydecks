@@ -1,5 +1,5 @@
 // File: src/pages/UserPublic.tsx
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams, Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
 import { motion } from "framer-motion"
@@ -155,10 +155,10 @@ export default function UserPublic() {
   const isVip = Boolean(u.vip) || isForceVip
 
   // ✅ Trophies: match by exact username (same style as VIP forcing)
-  const trophies = useMemo(() => {
-    const uname = String(u.username || "").trim()
-    if (!uname) return []
-    return TROPHY_AWARDS
+const uname = String(u.username || "").trim()
+const trophies = !uname
+  ? []
+  : TROPHY_AWARDS
       .filter((t) => String(t.username || "").trim() === uname)
       .slice()
       .sort((a, b) => {
@@ -166,7 +166,7 @@ export default function UserPublic() {
         const bd = b.date ? new Date(b.date).getTime() : 0
         return bd - ad
       })
-  }, [u.username])
+
 
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
