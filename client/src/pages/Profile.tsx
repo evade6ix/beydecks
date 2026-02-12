@@ -135,33 +135,49 @@ const [isVip, setIsVip] = useState(false)
   // Public profile URL
   const publicPath = `/u/${(u.slug || u.username || authUser.username || "").trim()}`
   useEffect(() => {
-  let cancelled = false
+  const ctrl = new AbortController()
+  let alive = true
 
   async function loadVip() {
     try {
-      const slugOrUsername = (u.slug || u.username || authUser.username || "").trim()
-      if (!slugOrUsername) return
+      // Prefer slug for /users/slug/:slug (because that endpoint ONLY matches slug)
+      const slug = String(u.slug || "").trim().toLowerCase()
+      const username = String(u.username || authUser.username || "").trim()
 
-      const base = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/+$/, "")
-      const url = base.endsWith("/api")
-        ? `${base}/users/slug/${encodeURIComponent(slugOrUsername)}`
-        : `${base}/api/users/slug/${encodeURIComponent(slugOrUsername)}`
+      let data: any = null
 
-      const res = await fetch(url, { method: "GET" })
-      if (!res.ok) return
+      // 1) If we have a slug, use the slug endpoint
+      if (slug) {
+        const r1 = await fetch(api(`/api/users/slug/${encodeURIComponent(slug)}`), {
+          signal: ctrl.signal,
+        })
+        if (r1.ok) data = await r1.json()
+      }
 
-      const data = await res.json()
-      if (!cancelled) setIsVip(Boolean(data?.vip))
+      // 2) Fallback: if slug missing or slug lookup failed, use auth route by identifier
+      //    (auth.js has GET /user/:identifier and it includes vip in the returned user)
+      if (!data && username) {
+        const r2 = await fetch(api(`/api/auth/user/${encodeURIComponent(username)}`), {
+          signal: ctrl.signal,
+        })
+        if (r2.ok) data = await r2.json()
+      }
+
+      if (!alive) return
+      setIsVip(Boolean(data?.vip))
     } catch {
-      // ignore
+      if (!alive) return
+      setIsVip(false)
     }
   }
 
   loadVip()
   return () => {
-    cancelled = true
+    alive = false
+    ctrl.abort()
   }
 }, [u.slug, u.username, authUser.username])
+
 
 
 

@@ -20,6 +20,9 @@ const RAW = (import.meta.env.VITE_API_URL || window.location.origin).replace(/\/
 const ROOT = RAW.replace(/\/api\/?$/i, "")
 const api = (path: string) => `${ROOT}/${String(path).replace(/^\/+/, "")}`
 
+// ✅ TEMP: force VIP badge for specific usernames (public profile override)
+const FORCE_VIP_USERNAMES = new Set(["Karl6ix"])
+
 type OwnedParts = {
   blades: string[]
   assistBlades?: string[]
@@ -186,6 +189,10 @@ export default function UserPublic() {
   // Show ONLY username (fallback to displayName if username missing)
   const nameForDisplay = u.username && u.username.trim().length > 0 ? u.username : u.displayName
 
+  // ✅ VIP logic: true if backend says vip OR username is in forced list
+  const isForceVip = FORCE_VIP_USERNAMES.has(String(u.username || "").trim())
+  const isVip = Boolean(u.vip) || isForceVip
+
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       <Helmet>
@@ -226,7 +233,7 @@ export default function UserPublic() {
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs md:text-sm text-white/80">
-              {u.vip ? (
+              {isVip ? (
                 <span className="inline-flex items-center gap-1 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1 text-yellow-200">
                   <Crown className="h-4 w-4" /> VIP
                 </span>
