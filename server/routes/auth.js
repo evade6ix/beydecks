@@ -97,13 +97,15 @@ export default (collections) => {
     if (!match) return res.status(401).json({ error: "Invalid credentials" })
 
     const token = jwt.sign(
-      {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        badge: user.badge || null,
-        storeAccess: user.storeAccess || null,
-      },
+  {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    badge: user.badge || null,
+    vip: user.vip || false, // 🔥 ADD THIS
+    storeAccess: user.storeAccess || null,
+  },
+
       JWT_SECRET,
       { expiresIn: "7d" }
     )
