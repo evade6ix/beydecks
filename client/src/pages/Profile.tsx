@@ -55,6 +55,9 @@ export default function Profile() {
   const { isAuthenticated, user, logout } = useAuth()
   if (!isAuthenticated || !user) return <Navigate to="/user-auth" />
 
+  const authUser = user // ✅ TS now knows this is not null
+
+
   type ProfileExtras = {
     bio?: string
     homeStore?: string
@@ -64,8 +67,7 @@ export default function Profile() {
     vip?: boolean
   }
 
-const u = user as typeof user & ProfileExtras
-
+const u = authUser as typeof authUser & ProfileExtras
 // Profile-only VIP flag (do NOT rely on AuthContext user.vip)
 const [isVip, setIsVip] = useState(false)
 
@@ -75,12 +77,14 @@ const [isVip, setIsVip] = useState(false)
   const [opponentCombo, setOpponentCombo] = useState<Combo>({ blade: "", ratchet: "", bit: "", notes: "" })
   const [result, setResult] = useState<"win" | "loss">("win")
   const [matchups, setMatchups] = useState<Matchup[]>(
-    (user.matchupHistory as Matchup[] | undefined)?.filter((m) => m?.id) ?? []
-  )
+  ((authUser.matchupHistory as Matchup[] | undefined) ?? []).filter((m) => m?.id)
+)
+
   const [page, setPage] = useState(1)
   const perPage = 5
 
-  const [tournaments, setTournaments] = useState<Tournament[]>(user.tournamentsPlayed || [])
+  const [tournaments, setTournaments] = useState<Tournament[]>(authUser.tournamentsPlayed || [])
+
   const [tournamentPage, setTournamentPage] = useState(1)
   const tournamentsPerPage = 5
 
@@ -129,13 +133,13 @@ const [isVip, setIsVip] = useState(false)
   const [avatarDataUrl, setAvatarDataUrl] = useState<string>(u.avatarDataUrl || "")
 
   // Public profile URL
-  const publicPath = `/u/${(u.slug || u.username || user.username || "").trim()}`
+  const publicPath = `/u/${(u.slug || u.username || authUser.username || "").trim()}`
   useEffect(() => {
   let cancelled = false
 
   async function loadVip() {
     try {
-      const slugOrUsername = (u.slug || u.username || user.username || "").trim()
+      const slugOrUsername = (u.slug || u.username || authUser.username || "").trim()
       if (!slugOrUsername) return
 
       const res = await fetch(api(`/users/slug/${encodeURIComponent(slugOrUsername)}`))
@@ -153,7 +157,7 @@ const [isVip, setIsVip] = useState(false)
     cancelled = true
   }
   // IMPORTANT: re-run if user changes (login/logout)
-}, [u.slug, u.username, user.username])
+}, [u.slug, u.username, authUser.username])
 
 
   // Helpers
@@ -223,7 +227,7 @@ const [isVip, setIsVip] = useState(false)
       const { matchup } = await res.json()
       const updated = [matchup, ...matchups]
       setMatchups(updated)
-      user.matchupHistory = updated
+      authUser.matchupHistory = updated
       setMyCombo({ blade: "", ratchet: "", bit: "", notes: "" })
       setOpponentCombo({ blade: "", ratchet: "", bit: "", notes: "" })
       toast.success("Matchup submitted!")
@@ -242,7 +246,7 @@ const [isVip, setIsVip] = useState(false)
     if (res.ok) {
       const updated = matchups.filter((m) => m.id !== toDeleteId)
       setMatchups(updated)
-      user.matchupHistory = updated
+      authUser.matchupHistory = updated
       toast.success("Matchup deleted.")
     } else {
       toast.error("Failed to delete matchup.")
@@ -260,7 +264,7 @@ const [isVip, setIsVip] = useState(false)
       if (res.ok) {
         const updated = tournaments.filter((_, i) => i !== index)
         setTournaments(updated)
-        user.tournamentsPlayed = updated
+        authUser.tournamentsPlayed = updated
         toast.success("Tournament deleted.")
       } else {
         toast.error("Failed to delete tournament.")
@@ -328,7 +332,8 @@ const [isVip, setIsVip] = useState(false)
 
         {/* Name + pills + bio */}
         <div className="flex-1 min-w-[220px]">
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || user.username}</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{u.username || authUser.username}</h1>
+
 
           {/* Mini stats */}
           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/70">
