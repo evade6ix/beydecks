@@ -64,9 +64,11 @@ export default function Profile() {
     vip?: boolean
   }
 
-  const u = user as typeof user & ProfileExtras
-const isVip = Boolean((u as any).vip)
-console.log("VIP FIELD:", (u as any).vip, "USER:", user)
+const u = user as typeof user & ProfileExtras
+
+// Profile-only VIP flag (do NOT rely on AuthContext user.vip)
+const [isVip, setIsVip] = useState(false)
+
 
   // Matchups
   const [myCombo, setMyCombo] = useState<Combo>({ blade: "", ratchet: "", bit: "", notes: "" })
@@ -128,6 +130,31 @@ console.log("VIP FIELD:", (u as any).vip, "USER:", user)
 
   // Public profile URL
   const publicPath = `/u/${(u.slug || u.username || user.username || "").trim()}`
+  useEffect(() => {
+  let cancelled = false
+
+  async function loadVip() {
+    try {
+      const slugOrUsername = (u.slug || u.username || user.username || "").trim()
+      if (!slugOrUsername) return
+
+      const res = await fetch(api(`/users/slug/${encodeURIComponent(slugOrUsername)}`))
+      if (!res.ok) return
+
+      const data = await res.json()
+      if (!cancelled) setIsVip(Boolean(data?.vip))
+    } catch {
+      // ignore
+    }
+  }
+
+  loadVip()
+  return () => {
+    cancelled = true
+  }
+  // IMPORTANT: re-run if user changes (login/logout)
+}, [u.slug, u.username, user.username])
+
 
   // Helpers
   async function fileToDataUrl(file: File): Promise<string> {

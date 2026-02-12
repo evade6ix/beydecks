@@ -42,6 +42,8 @@ type PublicUser = {
   username?: string
   displayName: string
   slug: string
+  vip?: boolean
+
   avatarDataUrl?: string
   bio?: string
   homeStore?: string
@@ -73,6 +75,7 @@ export default function UserPublic() {
   useEffect(() => {
     let mounted = true
     setLoading(true)
+    setError(null)
 
     const url = api(`/api/users/slug/${encodeURIComponent(String(slug || ""))}`)
     fetch(url)
@@ -80,11 +83,15 @@ export default function UserPublic() {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
       })
-      .then((data) => { if (mounted) setU(data) })
+      .then((data) => {
+        if (mounted) setU(data)
+      })
       .catch((e) => mounted && setError(e?.message || "Failed to load profile"))
       .finally(() => mounted && setLoading(false))
 
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+    }
   }, [slug])
 
   if (loading) {
@@ -130,10 +137,10 @@ export default function UserPublic() {
 
   // All counters derived from the filtered list
   const tournamentsCount = tournaments.length
-  const firsts  = tournaments.filter(t => t.placement === "First Place").length
-  const seconds = tournaments.filter(t => t.placement === "Second Place").length
-  const thirds  = tournaments.filter(t => t.placement === "Third Place").length
-  const topCuts = tournaments.filter(t => t.placement === "Top Cut").length
+  const firsts = tournaments.filter((t) => t.placement === "First Place").length
+  const seconds = tournaments.filter((t) => t.placement === "Second Place").length
+  const thirds = tournaments.filter((t) => t.placement === "Third Place").length
+  const topCuts = tournaments.filter((t) => t.placement === "Top Cut").length
 
   // Performance snapshot
   const totalWins = tournaments.reduce((a, t) => a + (t.roundWins || 0), 0)
@@ -186,11 +193,18 @@ export default function UserPublic() {
             </div>
 
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs md:text-sm text-white/80">
+              {u.vip ? (
+                <span className="inline-flex items-center gap-1 rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-2.5 py-1 text-yellow-200">
+                  <Crown className="h-4 w-4" /> VIP
+                </span>
+              ) : null}
+
               {u.homeStore ? (
                 <span className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1">
                   <MapPin className="h-4 w-4" /> {u.homeStore}
                 </span>
               ) : null}
+
               <span className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1">
                 <Users className="h-4 w-4" />
                 {tournamentsCount} tournaments
