@@ -406,7 +406,7 @@ export default function Home() {
           </div>
 
           {/* Hero Slider */}
-<div className="mb-6 hidden md:block">
+<div className="mb-6">
   <HeroSlider banners={HOME_BANNERS} intervalMs={6500} />
 </div>
 
