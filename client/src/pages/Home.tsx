@@ -20,6 +20,8 @@ import {
   Users,
 } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
+import HeroSlider from "../components/HeroSlider"
+import { HOME_BANNERS } from "../data/homeBanners"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -402,6 +404,11 @@ export default function Home() {
               </Link>
             </div>
           </div>
+
+          {/* Hero Slider */}
+<div className="mb-6">
+  <HeroSlider banners={HOME_BANNERS} height={360} intervalMs={6500} />
+</div>
 
           {/* KPI cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
