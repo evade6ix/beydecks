@@ -11,9 +11,8 @@ export type HomeBanner = {
 export const HOME_BANNERS: HomeBanner[] = [
   {
     id: "precx",
-    image: "/banners/precx.jpg", // make sure this exists in /public/banners
+    image: "/banners/cximprve.jpg", // make sure this exists in /public/banners
     link: "https://game3.ca/collections/beyblade-x-all-products",
     external: true,
-    title: "Beyblade X Pre-Orders Now Live",
   },
 ]
