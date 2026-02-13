@@ -12,11 +12,9 @@ type HomeBanner = {
 
 export default function HeroSlider({
   banners,
-  height = 360,
   intervalMs = 6500,
 }: {
   banners: HomeBanner[]
-  height?: number
   intervalMs?: number
 }) {
   const safe = useMemo(() => (Array.isArray(banners) ? banners.filter(Boolean) : []), [banners])
