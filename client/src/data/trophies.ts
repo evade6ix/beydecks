@@ -33,10 +33,30 @@ export const TROPHY_AWARDS: TrophyAward[] = [
   {
     id: "animenorth2025_champion_nxk",
     event: "Anime North 2025",
-    date: "2025-05-01", // change if you want exact date
+    date: "2025-05-01",
     placement: "Champion",
     username: "nxk",
     image: "/animenorth24.webp",
     note: "Anime North",
+  },
+
+  {
+    id: "banana10k_champion_danielhanick2002",
+    event: "Banana $10k Main Event",
+    date: "2026-01-01", // update if needed
+    placement: "Champion",
+    username: "danielhanick2002",
+    image: "/money.png",
+    note: "Banana $10k Main Event",
+  },
+
+  {
+    id: "banana10k_finalist_swift",
+    event: "Banana $10k Main Event",
+    date: "2026-01-01", // same event date
+    placement: "Finalist",
+    username: "swift",
+    image: "/money.png",
+    note: "Banana $10k Main Event",
   },
 ]
