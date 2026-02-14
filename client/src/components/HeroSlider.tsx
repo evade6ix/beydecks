@@ -65,7 +65,7 @@ export default function HeroSlider({
           >
             <img
               src={b.image}
-              alt={b.title || "Hero banner"}
+              alt="Hero banner"
               className="h-full w-full object-cover"
               draggable={false}
             />
@@ -74,59 +74,51 @@ export default function HeroSlider({
             <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/20 to-transparent" />
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,.35),transparent_55%)]" />
 
-            {/* Title + Buttons */}
-            {(b.title || b.buttons?.length) ? (
-              <div className="absolute left-5 bottom-5 md:left-10 md:bottom-10 flex flex-col gap-3">
-                {b.title ? (
-                  <div className="text-xl md:text-3xl font-bold text-white drop-shadow-lg">
-                    {b.title}
-                  </div>
-                ) : null}
-
-                {b.buttons?.length ? (
-                  <div className="flex gap-3 flex-wrap">
-                    {b.buttons.map((btn, bi) => {
-                      // Disabled button (Coming soon)
-                      if (btn.disabled) {
-                        return (
-                          <div
-                            key={bi}
-                            className="px-5 py-2.5 rounded-2xl border border-white/10 bg-white/15 text-white/80 text-sm md:text-base backdrop-blur-sm cursor-not-allowed select-none"
-                            title="Coming soon"
-                          >
-                            {btn.label}
-                          </div>
-                        )
-                      }
-
-                      // External link button
-                      if (btn.external) {
-                        return (
-                          <a
-                            key={bi}
-                            href={btn.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
-                          >
-                            {btn.label}
-                          </a>
-                        )
-                      }
-
-                      // Internal link button
+            {/* ✅ Centered Buttons ONLY (no title) */}
+            {b.buttons?.length ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex gap-4 flex-wrap items-center justify-center rounded-2xl border border-white/10 bg-black/30 px-6 py-4 backdrop-blur-sm">
+                  {b.buttons.map((btn, bi) => {
+                    // Disabled button (Coming soon)
+                    if (btn.disabled) {
                       return (
-                        <Link
+                        <div
                           key={bi}
-                          to={btn.link || "#"}
-                          className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
+                          className="px-6 py-3 rounded-2xl border border-white/10 bg-white/10 text-white/80 text-sm md:text-base cursor-not-allowed select-none"
+                          title="Coming soon"
                         >
                           {btn.label}
-                        </Link>
+                        </div>
                       )
-                    })}
-                  </div>
-                ) : null}
+                    }
+
+                    // External link button
+                    if (btn.external) {
+                      return (
+                        <a
+                          key={bi}
+                          href={btn.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
+                        >
+                          {btn.label}
+                        </a>
+                      )
+                    }
+
+                    // Internal link button
+                    return (
+                      <Link
+                        key={bi}
+                        to={btn.link || "#"}
+                        className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
+                      >
+                        {btn.label}
+                      </Link>
+                    )
+                  })}
+                </div>
               </div>
             ) : null}
           </div>
