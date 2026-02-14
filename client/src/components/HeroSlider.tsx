@@ -1,14 +1,7 @@
 // File: src/components/HeroSlider.tsx
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
-
-type HomeBanner = {
-  id: string
-  image: string
-  link: string
-  external?: boolean
-  title?: string
-}
+import type { HomeBanner } from "../data/homeBanners" // ✅ single source of truth
 
 export default function HeroSlider({
   banners,
@@ -39,7 +32,6 @@ export default function HeroSlider({
   useEffect(() => {
     if (safe.length <= 1) return
 
-    // clear any existing timer
     if (timerRef.current) window.clearInterval(timerRef.current)
 
     timerRef.current = window.setInterval(() => {
@@ -54,17 +46,14 @@ export default function HeroSlider({
 
   if (!safe.length) return null
 
-  const active = safe[idx]
-
   const Frame = ({ children }: { children: React.ReactNode }) => (
-  <div className="relative isolate w-full overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-    {/* 2400x900 ratio = 8:3 */}
-    <div className="relative w-full aspect-[8/3]">
-      {children}
+    <div className="relative isolate w-full overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      {/* 2400x900 ratio = 8:3 */}
+      <div className="relative w-full aspect-[8/3]">{children}</div>
     </div>
-  </div>
-)
-  const Inner = (
+  )
+
+  return (
     <Frame>
       {/* Slides (never unmount -> no flicker) */}
       <div className="absolute inset-0">
@@ -85,11 +74,59 @@ export default function HeroSlider({
             <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/20 to-transparent" />
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,.35),transparent_55%)]" />
 
-            {b.title ? (
-              <div className="absolute left-5 right-5 bottom-5 md:left-8 md:right-8 md:bottom-7">
-                <div className="inline-flex items-center rounded-2xl border border-white/10 bg-black/35 px-4 py-2 backdrop-blur-sm">
-                  <div className="text-base md:text-lg font-semibold text-white">{b.title}</div>
-                </div>
+            {/* Title + Buttons */}
+            {(b.title || b.buttons?.length) ? (
+              <div className="absolute left-5 bottom-5 md:left-10 md:bottom-10 flex flex-col gap-3">
+                {b.title ? (
+                  <div className="text-xl md:text-3xl font-bold text-white drop-shadow-lg">
+                    {b.title}
+                  </div>
+                ) : null}
+
+                {b.buttons?.length ? (
+                  <div className="flex gap-3 flex-wrap">
+                    {b.buttons.map((btn, bi) => {
+                      // Disabled button (Coming soon)
+                      if (btn.disabled) {
+                        return (
+                          <div
+                            key={bi}
+                            className="px-5 py-2.5 rounded-2xl border border-white/10 bg-white/15 text-white/80 text-sm md:text-base backdrop-blur-sm cursor-not-allowed select-none"
+                            title="Coming soon"
+                          >
+                            {btn.label}
+                          </div>
+                        )
+                      }
+
+                      // External link button
+                      if (btn.external) {
+                        return (
+                          <a
+                            key={bi}
+                            href={btn.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
+                          >
+                            {btn.label}
+                          </a>
+                        )
+                      }
+
+                      // Internal link button
+                      return (
+                        <Link
+                          key={bi}
+                          to={btn.link || "#"}
+                          className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
+                        >
+                          {btn.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -99,20 +136,5 @@ export default function HeroSlider({
       {/* subtle highlight ring */}
       <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-white/10" />
     </Frame>
-  )
-
-  // Click behavior
-  if (active.external) {
-    return (
-      <a href={active.link} target="_blank" rel="noreferrer" className="block">
-        {Inner}
-      </a>
-    )
-  }
-
-  return (
-    <Link to={active.link} className="block">
-      {Inner}
-    </Link>
   )
 }
