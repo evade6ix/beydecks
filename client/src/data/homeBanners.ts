@@ -26,8 +26,9 @@ export const HOME_BANNERS: HomeBanner[] = [
         external: true,
       },
       {
-        label: "Buy USA (Coming Soon)",
-        disabled: true,
+        label: "Buy USA",
+        link: "https://spincityimports.com/collections/beyblade-x-4th-generation",
+        external: true,
       },
     ],
   },
