@@ -63,7 +63,7 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
         <div className="flex items-center space-x-3 overflow-hidden shrink-0 z-10 relative">
           <Link to="/home">
             <img
-              src="/mlogo.png"
+              src="/logolarger.png"
               alt="Meta Beys Logo"
               className="h-12 w-auto max-w-[180px] object-contain"
             />
