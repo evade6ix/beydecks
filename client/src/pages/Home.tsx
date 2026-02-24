@@ -346,7 +346,7 @@ export default function Home() {
         <meta name="robots" content="index, follow" />
         <meta property="og:title" content="MetaBeys — Competitive Beyblade X Dashboard" />
         <meta property="og:url" content="https://www.metabeys.com/" />
-        <meta property="og:image" content="https://www.metabeys.com/og.png" />
+        <meta property="og:image" content="https://www.metabeys.com/mlogo.png" />
       </Helmet>
 
       {/* Canvas background */}
