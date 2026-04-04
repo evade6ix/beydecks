@@ -1,4 +1,3 @@
-// src/components/Banner.tsx
 import * as React from "react"
 import { X } from "lucide-react"
 
@@ -72,55 +71,58 @@ export function Banner({
   if (!show) return null
 
   return (
-    <div className="relative isolate flex flex-col justify-between gap-3 overflow-hidden rounded-lg border border-green-600/15 bg-gradient-to-r from-lime-100/80 to-emerald-100/80 py-3 pl-4 pr-12 sm:flex-row sm:items-center sm:py-2">
+    <div className="relative isolate overflow-hidden rounded-2xl border border-green-600/15 bg-gradient-to-r from-lime-100/80 to-emerald-100/80 px-4 py-3 sm:px-6">
       <Grid
         cellSize={13}
         patternOffset={[0, -1]}
         className="text-black/30 mix-blend-overlay [mask-image:linear-gradient(to_right,black,transparent)] md:[mask-image:linear-gradient(to_right,black_60%,transparent)]"
       />
 
-      <div className="flex items-center gap-3">
-        {icon && (
-          <div className="hidden rounded-full border border-green-600/50 bg-white/50 p-1 shadow-[inset_0_0_1px_1px_#fff] sm:block">
-            {icon}
-          </div>
-        )}
-        <p className="text-sm text-gray-900">
-          {title}
-          {learnMoreUrl && (
-            <>
-              {" "}
-              <a
-                href={learnMoreUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-gray-700 underline transition-colors hover:text-black"
-              >
-                Learn more
-              </a>
-            </>
+      <div className="relative z-10 flex flex-col items-center justify-center gap-3 text-center sm:flex-row sm:flex-wrap">
+        <div className="flex items-center justify-center gap-3 text-center">
+          {icon && (
+            <div className="hidden rounded-full border border-green-600/50 bg-white/50 p-1 shadow-[inset_0_0_1px_1px_#fff] sm:block">
+              {icon}
+            </div>
           )}
-        </p>
-      </div>
 
-      <div className="flex items-center sm:-my-1">
-        <button
-          type="button"
-          className="whitespace-nowrap rounded-md border border-green-700/50 px-3 py-1 text-sm text-gray-800 transition-colors hover:bg-green-500/10"
-          onClick={action.onClick}
-        >
-          {action.label}
-        </button>
-      </div>
+          <p className="text-sm text-gray-900">
+            {title}
+            {learnMoreUrl && (
+              <>
+                {" "}
+                <a
+                  href={learnMoreUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-gray-700 underline transition-colors hover:text-black"
+                >
+                  Learn more
+                </a>
+              </>
+            )}
+          </p>
+        </div>
 
-      <button
-        type="button"
-        className="absolute inset-y-0 right-2.5 p-1 text-sm text-green-700 underline transition-colors hover:text-green-900"
-        onClick={onHide}
-        aria-label="Close banner"
-      >
-        <X className="h-[18px] w-[18px]" />
-      </button>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            className="whitespace-nowrap rounded-md border border-green-700/50 px-3 py-1 text-sm text-gray-800 transition-colors hover:bg-green-500/10"
+            onClick={action.onClick}
+          >
+            {action.label}
+          </button>
+
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md p-1 text-green-700 transition-colors hover:bg-green-500/10 hover:text-green-900"
+            onClick={onHide}
+            aria-label="Close banner"
+          >
+            <X className="h-[18px] w-[18px]" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
