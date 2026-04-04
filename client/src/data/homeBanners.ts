@@ -17,17 +17,12 @@ export type HomeBanner = {
 export const HOME_BANNERS: HomeBanner[] = [
   {
     id: "precx",
-    image: "/banners/image.jpg",
+    image: "/banners/evangelion.png",
     title: "Beyblade X Pre-Orders",
     buttons: [
       {
         label: "Buy Canada",
-        link: "https://game3.ca/collections/beyblade-x-all-products",
-        external: true,
-      },
-      {
-        label: "Buy USA",
-        link: "https://spincityimports.com/collections/beyblade-x-4th-generation",
+        link: "https://game3.ca/products/beyblade-x-cx-00-evangelion-deck-set",
         external: true,
       },
     ],
