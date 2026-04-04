@@ -17,7 +17,7 @@ export type HomeBanner = {
 export const HOME_BANNERS: HomeBanner[] = [
   {
     id: "precx",
-    image: "/banners/evangelion.png",
+    image: "/banners/evangelionslider.jpg",
     title: "Beyblade X Pre-Orders",
     buttons: [
       {
