@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
 import HeroSlider from "../components/HeroSlider"
+import { Banner } from "../components/Banner"
 import { HOME_BANNERS } from "../data/homeBanners"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -109,6 +110,7 @@ export default function Home() {
   const [stats, setStats] = useState({ totalUpcoming: 0, totalCompleted: 0, monthEvents: 0 })
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
+  const [showAnnouncement, setShowAnnouncement] = useState(true)
 
   const navigate = useNavigate()
 
@@ -405,7 +407,24 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Hero Slider */}
+          {/* Announcement Bar */}
+<div className="mb-4">
+  <Banner
+    show={showAnnouncement}
+    onHide={() => setShowAnnouncement(false)}
+    title={
+      <>
+        <span className="font-semibold">Announcement:</span> 30% Off Beycase! 
+      </>
+    }
+    action={{
+      label: "Shop Now",
+      onClick: () => window.open("https://www.beycase.com/product-page/beycase", "_blank"),
+    }}
+  />
+</div>
+
+{/* Hero Slider */}
 <div className="mb-6">
   <HeroSlider banners={HOME_BANNERS} intervalMs={6500} />
 </div>
