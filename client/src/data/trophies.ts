@@ -55,7 +55,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     event: "G3 AN Qualifier",
     placement: "Champion",
     username: "takedojcob",
-    image: "/g3logogood.png",
+    image: "/g3light.png",
     note: "G3 AN Qualifier",
   },
 
@@ -64,7 +64,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     event: "G3 AN Qualifier",
     placement: "Finalist",
     username: "artizan",
-    image: "/g3logogood.png",
+    image: "/g3light.png",
     note: "G3 AN Qualifier",
   },
 
@@ -73,7 +73,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     event: "G3 AN Qualifier",
     placement: "Qualified",
     username: "jayjay",
-    image: "/g3logogood.png",
+    image: "/g3light.png",
     note: "G3 AN Qualifier",
   },
 ]
