@@ -5,7 +5,7 @@ export type TrophyPlacement =
   | "Finalist"
   | "Top 3"
   | "Top Cut"
-  | "MVP"
+  | "Qualified"
   | "Staff"
   | "Special"
 
@@ -71,7 +71,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
   {
     id: "g3anqualifier_topcut_jayjay",
     event: "G3 AN Qualifier",
-    placement: "Top Cut",
+    placement: "Qualified",
     username: "jayjay",
     image: "/g3anquali.jpg",
     note: "G3 AN Qualifier",
