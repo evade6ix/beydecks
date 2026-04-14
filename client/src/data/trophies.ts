@@ -21,16 +21,6 @@ export type TrophyAward = {
 
 export const TROPHY_AWARDS: TrophyAward[] = [
   {
-    id: "zankyesdog_champion_kwfors1",
-    event: "Zankye's Dog",
-    date: "2026-01-01",
-    placement: "Champion",
-    username: "kwfors1",
-    image: "/hondatest.png",
-    note: "Zankye Basement",
-  },
-
-  {
     id: "animenorth2025_champion_nxk",
     event: "Anime North 2025",
     date: "2025-05-01",
@@ -58,5 +48,32 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     username: "swift",
     image: "/money.png",
     note: "Banana $10k Main Event",
+  },
+
+  {
+    id: "g3anqualifier_champion_takedojcob",
+    event: "G3 AN Qualifier",
+    placement: "Champion",
+    username: "takedojcob",
+    image: "/g3anquali.jpg",
+    note: "G3 AN Qualifier",
+  },
+
+  {
+    id: "g3anqualifier_finalist_artizan",
+    event: "G3 AN Qualifier",
+    placement: "Finalist",
+    username: "artizan",
+    image: "/g3anquali.jpg",
+    note: "G3 AN Qualifier",
+  },
+
+  {
+    id: "g3anqualifier_topcut_jayjay",
+    event: "G3 AN Qualifier",
+    placement: "Top Cut",
+    username: "jayjay",
+    image: "/g3anquali.jpg",
+    note: "G3 AN Qualifier",
   },
 ]
