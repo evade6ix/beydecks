@@ -4,16 +4,20 @@ import { Link } from "react-router-dom"
 
 const API = import.meta.env.VITE_API_URL
 
-/* ─────────────────────────────────────────
+/* =======================================
    Types
-───────────────────────────────────────── */
+======================================= */
 type Combo = { blade: string; ratchet: string; bit: string }
 
 type DeckGrade = {
   score: number
   grade: "S" | "A" | "B" | "C" | "D"
   confidence: "Low" | "Medium" | "High"
-  components: { strength: number; recency: number; diversity: number }
+  components: {
+    strength: number
+    recency: number
+    diversity: number
+  }
   reasons: string[]
   partsUniqueRatio: number
 }
@@ -22,7 +26,11 @@ type ValidationResult = {
   status: "ok" | "incomplete" | "illegal"
   messages: string[]
   missingCombos: number
-  duplicateParts: { blades: string[]; ratchets: string[]; bits: string[] }
+  duplicateParts: {
+    blades: string[]
+    ratchets: string[]
+    bits: string[]
+  }
   recommendations: Combo[]
   swaps: { comboIndex: number; field: keyof Combo; from: string; to: string }[]
 }
@@ -32,30 +40,701 @@ type GlobalMeta = {
   comboAppearancesAll: number[]
 }
 
-/* ─────────────────────────────────────────
-   Pure helpers (no UI)
-───────────────────────────────────────── */
+/* =======================================
+   Component
+======================================= */
+export default function TournamentLab() {
+  const { user, isAuthenticated, loading: authLoading } = useAuth()
+
+  const [combos, setCombos] = useState<Combo[]>([
+    { blade: "", ratchet: "", bit: "" },
+    { blade: "", ratchet: "", bit: "" },
+    { blade: "", ratchet: "", bit: "" },
+  ])
+  const [visibleCombos, setVisibleCombos] = useState(1)
+
+  const [results, setResults] = useState<any[]>([])
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false)
+  const [previousPrep, setPreviousPrep] = useState<any | null>(null)
+
+  // Parts lists + frequency for swaps
+  const [blades, setBlades] = useState<string[]>([])
+  const [ratchets, setRatchets] = useState<string[]>([])
+  const [bits, setBits] = useState<string[]>([])
+  const [bladeFreq, setBladeFreq] = useState<Record<string, number>>({})
+  const [ratchetFreq, setRatchetFreq] = useState<Record<string, number>>({})
+  const [bitFreq, setBitFreq] = useState<Record<string, number>>({})
+
+    // Global meta (for recs + normalization)
+  const [globalMeta, setGlobalMeta] = useState<GlobalMeta>({
+    topCutCombosSorted: [],
+    comboAppearancesAll: [],
+  })
+
+  // === NEW: EventDetail-parity evidence ===
+  // Index of combos across all events (appearances, unique events, recency)
+  const [comboIndex, setComboIndex] = useState<Record<string, {
+    appearances: number
+    uniqueEvents: Set<string>
+    mostRecent?: string
+    firstSeen?: string
+  }>>({})
+
+  // p95 baseline input for grading (from appearances across all combos)
+  const [tlGlobalMeta, setTlGlobalMeta] = useState<{ comboAppearancesAll: number[] }>({
+    comboAppearancesAll: [],
+  })
+
+
+  // Legality + grade
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+  const [deckGrade, setDeckGrade] = useState<DeckGrade | null>(null)
+
+  // Only show warnings after user tries Analyze
+  const [hasTriedAnalyze, setHasTriedAnalyze] = useState(false)
+
+  const resultsRef = useRef<HTMLDivElement | null>(null)
+
+  // Build results from the precomputed comboIndex.
+// includeSelf = true → add a "self" appearance dated now (EventDetail parity)
+// includeSelf = false → show only historical appearances (truthful cards & component pills)
+function buildResultsFromIndex(
+  combos: Combo[],
+  index: Record<string, { appearances: number; uniqueEvents: Set<string>; mostRecent?: string; firstSeen?: string }>,
+  includeSelf: boolean
+) {
+  const nowIso = new Date().toISOString()
+  return combos.map(c => {
+    const k = tlKey(c)
+    const rec = index[k]
+    let appearances = rec?.appearances ?? 0
+    let uniqueEvents = rec?.uniqueEvents?.size ?? 0
+    let mostRecent = rec?.mostRecent
+    let firstSeen = rec?.firstSeen
+
+    if (includeSelf) {
+      appearances += 1
+      uniqueEvents += 1
+      mostRecent = nowIso
+      if (!firstSeen) firstSeen = nowIso
+    }
+
+    return {
+      submittedCombo: c,
+      topCutAppearances: appearances,
+      uniqueEvents,
+      mostRecentAppearance: mostRecent,
+      firstSeen,
+    }
+  })
+}
+
+
+  /* =======================================
+     Effects
+  ======================================= */
+
+  useEffect(() => {
+    if (!user?.id) return
+    fetch(`${API}/prep-decks/user/${user.id}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.combos) setPreviousPrep(data)
+      })
+      .catch(() => null)
+  }, [user])
+
+  // Load events → part sets/freq + global combo counts
+  useEffect(() => {
+    fetch(`${API}/events`)
+      .then(res => res.json())
+      .then((data: any[]) => {
+        const bladeSet = new Set<string>()
+        const ratchetSet = new Set<string>()
+        const bitSet = new Set<string>()
+
+        const bFreq: Record<string, number> = {}
+        const rFreq: Record<string, number> = {}
+        const btFreq: Record<string, number> = {}
+
+        const comboFreq: Record<string, number> = {}
+
+        data.forEach((event: any) => {
+          event.topCut?.forEach((player: any) => {
+            player.combos?.forEach((combo: any) => {
+              if (combo.blade) {
+                bladeSet.add(combo.blade)
+                bFreq[combo.blade] = (bFreq[combo.blade] || 0) + 1
+              }
+              if (combo.ratchet) {
+                ratchetSet.add(combo.ratchet)
+                rFreq[combo.ratchet] = (rFreq[combo.ratchet] || 0) + 1
+              }
+              if (combo.bit) {
+                bitSet.add(combo.bit)
+                btFreq[combo.bit] = (btFreq[combo.bit] || 0) + 1
+              }
+              if (combo.blade && combo.ratchet && combo.bit) {
+                const key = comboKey(combo)
+                comboFreq[key] = (comboFreq[key] || 0) + 1
+              }
+            })
+          })
+        })
+
+        // Sort by frequency
+        const sortByFreq = (arr: string[], map: Record<string, number>) =>
+          [...arr].sort((a, b) => (map[b] || 0) - (map[a] || 0))
+
+        setBlades(sortByFreq([...bladeSet], bFreq))
+        setRatchets(sortByFreq([...ratchetSet], rFreq))
+        setBits(sortByFreq([...bitSet], btFreq))
+        setBladeFreq(bFreq)
+        setRatchetFreq(rFreq)
+        setBitFreq(btFreq)
+
+        // Real top-cut combos (sorted by frequency)
+        const topCutCombosSorted: Combo[] = Object.entries(comboFreq)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k]) => parseComboKey(k))
+
+                const comboAppearancesAll = Object.values(comboFreq)
+
+        setGlobalMeta({ topCutCombosSorted, comboAppearancesAll })
+
+        // ---- NEW: Build EventDetail-parity evidence (appearances, recency, p95 inputs) ----
+        const idx: Record<string, {
+          appearances: number
+          uniqueEvents: Set<string>
+          mostRecent?: string
+          firstSeen?: string
+        }> = {}
+        const appCounts: number[] = []
+
+        for (const ev of data) {
+          const evId = String(ev.id)
+          const evDate = ev.endTime || ev.startTime // parity with EventDetail
+          ev?.topCut?.forEach((p: any) => {
+            p?.combos?.forEach((c: any) => {
+              if (!c?.blade || !c?.ratchet || !c?.bit) return
+              const key = tlKey({ blade: c.blade, ratchet: c.ratchet, bit: c.bit })
+              if (!idx[key]) idx[key] = { appearances: 0, uniqueEvents: new Set<string>() }
+              idx[key].appearances += 1
+              idx[key].uniqueEvents.add(evId)
+
+              if (evDate) {
+                if (!idx[key].mostRecent || new Date(evDate) > new Date(idx[key].mostRecent)) {
+                  idx[key].mostRecent = evDate
+                }
+                if (!idx[key].firstSeen || new Date(evDate) < new Date(idx[key].firstSeen)) {
+                  idx[key].firstSeen = evDate
+                }
+              }
+            })
+          })
+        }
+
+        for (const k of Object.keys(idx)) appCounts.push(idx[k].appearances)
+
+        setComboIndex(idx)
+        setTlGlobalMeta({ comboAppearancesAll: appCounts })
+        // ---- /NEW ----
+      })
+      .catch(err => console.error("Failed to load parts", err))
+  }, [])
+
+  // Scroll to results when they appear
+  useEffect(() => {
+    if (results.length > 0 && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: "smooth" })
+    }
+  }, [results])
+
+  /* =======================================
+     Handlers
+  ======================================= */
+
+  const revalidate = (nextCombos: Combo[]) => {
+    setValidation(
+      validateDeck({
+        combos: nextCombos,
+        visibleCombos,
+        blades,
+        ratchets,
+        bits,
+        bladeFreq,
+        ratchetFreq,
+        bitFreq,
+        topCutCombosSorted: globalMeta.topCutCombosSorted,
+      })
+    )
+  }
+
+  const updateCombo = (index: number, field: keyof Combo, value: string) => {
+    const next = [...combos]
+    next[index] = { ...next[index], [field]: value }
+    setCombos(next)
+    if (hasTriedAnalyze) revalidate(next)
+  }
+
+  const removeCombo = () => {
+    if (visibleCombos > 1) {
+      const nextVisible = visibleCombos - 1
+      const trimmed = [...combos]
+      trimmed[visibleCombos - 1] = { blade: "", ratchet: "", bit: "" }
+      setCombos(trimmed)
+      setVisibleCombos(nextVisible)
+      if (hasTriedAnalyze) revalidate(trimmed)
+    }
+  }
+
+  const applySuggestedCombo = (slotIndex: number, c: Combo) => {
+    const nextVisible = Math.max(visibleCombos, slotIndex + 1)
+    const next = [...combos]
+    next[slotIndex] = c
+    setCombos(next)
+    if (nextVisible !== visibleCombos) setVisibleCombos(nextVisible)
+    revalidate(next)
+  }
+
+  const applySwap = (comboIndex: number, field: keyof Combo, value: string) => {
+    const next = [...combos]
+    next[comboIndex] = { ...next[comboIndex], [field]: value }
+    setCombos(next)
+    revalidate(next)
+  }
+
+ const analyzeCombos = async () => {
+  setHasTriedAnalyze(true)
+
+  // Validate on click
+  const v = validateDeck({
+    combos,
+    visibleCombos,
+    blades,
+    ratchets,
+    bits,
+    bladeFreq,
+    ratchetFreq,
+    bitFreq,
+    topCutCombosSorted: globalMeta.topCutCombosSorted,
+  })
+  setValidation(v)
+
+  if (v.status !== "ok") {
+    window.scrollTo({ top: 0, behavior: "smooth" })
+    return
+  }
+
+  const validCombos = combos.slice(0, 3).filter(c => c.blade && c.ratchet && c.bit)
+  if (validCombos.length !== 3) {
+    alert("Please enter three full combos.")
+    return
+  }
+
+ setLoadingAnalysis(true)
+try {
+  // A) What users SEE in the cards & component pills (truthful history only)
+  const displayResults = buildResultsFromIndex(validCombos, comboIndex, /* includeSelf */ false)
+  setResults(displayResults)
+
+  // B) What we GRADE by (EventDetail parity = add "self" today)
+  const gradeResults = buildResultsFromIndex(validCombos, comboIndex, /* includeSelf */ true)
+
+  const commonMeta = {
+    ...globalMeta,
+    comboAppearancesAll: tlGlobalMeta.comboAppearancesAll, // EventDetail p95 pool
+  }
+
+  // Compute both — components from display, score/letter from parity
+  const dgForDisplay = computeDeckGrade({
+    results: displayResults,
+    combos: validCombos,
+    visibleCombos: 3,
+    globalMeta: commonMeta,
+  })
+
+  const dgForGrade = computeDeckGrade({
+    results: gradeResults,
+    combos: validCombos,
+    visibleCombos: 3,
+    globalMeta: commonMeta,
+  })
+
+  if (dgForDisplay && dgForGrade) {
+    setDeckGrade({
+      score: dgForGrade.score,            // EventDetail-matching number
+      grade: dgForGrade.grade,            // EventDetail letter
+      confidence: dgForGrade.confidence,  // confidence from parity too
+      components: dgForDisplay.components, // truthful Strength/Recency/Diversity
+      reasons: dgForDisplay.reasons,       // reasons based on history
+      partsUniqueRatio: dgForDisplay.partsUniqueRatio,
+    })
+  } else {
+    setDeckGrade(null)
+  }
+} catch (err) {
+  console.error(err)
+  alert("Error analyzing combos")
+} finally {
+  setLoadingAnalysis(false)
+}
+ }
+
+  /* =======================================
+     Auth Gates
+  ======================================= */
+
+  if (authLoading) {
+    return <div className="p-6 text-white">Checking login status...</div>
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="p-6 text-white text-center max-w-xl mx-auto mt-12 space-y-4">
+        <h1 className="text-2xl font-bold">🔒 Tournament Lab Locked</h1>
+        <p className="text-sm text-gray-400">
+          You must be logged in to use Tournament Lab and analyze your combos.
+        </p>
+        <a
+          href="/user-auth"
+          className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded"
+        >
+          Log In to Continue
+        </a>
+      </div>
+    )
+  }
+
+  /* =======================================
+     UI
+  ======================================= */
+
+  return (
+    <div className="p-6 text-white max-w-3xl mx-auto space-y-6">
+      <h1 className="text-2xl font-bold">Tournament Lab</h1>
+      <p>Prep your deck by entering exactly 3 unique combos below.</p>
+
+      {/* Deck Status / Guidance — only after Analyze, and only if not OK */}
+      {hasTriedAnalyze && validation && validation.status !== "ok" && (
+        <div
+          className={`border rounded p-4 ${
+            validation.status === "illegal"
+              ? "bg-red-900/30 border-red-700"
+              : "bg-yellow-900/30 border-yellow-700"
+          }`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold">
+                {validation.status === "incomplete" && "Deck incomplete — needs attention ⚠️"}
+                {validation.status === "illegal" && "Deck illegal — duplicate parts found ❌"}
+              </h2>
+              <ul className="mt-2 text-sm space-y-1 text-gray-200">
+                {validation.messages.map((m, i) => (
+                  <li key={i}>• {m}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Missing combos → recommendations (from real Top Cut) */}
+          {validation.recommendations.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-semibold mb-2 text-sm">
+                Recommended combo{validation.recommendations.length > 1 ? "s" : ""} to complete your deck:
+              </h3>
+              <div className="grid sm:grid-cols-2 gap-2">
+                {validation.recommendations.map((c, idx) => {
+                  const slot = findNextEmptySlot(combos)
+                  const targetIndex = slot !== -1 ? slot : Math.min(visibleCombos, 2)
+                  const disabled = conflictsWithDeck(c, combos)
+                  return (
+                    <div key={idx} className="bg-gray-800 border border-gray-700 rounded p-3 text-sm flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold">Combo Suggestion {idx + 1}</div>
+                        <div className="opacity-90">{c.blade} / {c.ratchet} / {c.bit}</div>
+                      </div>
+                      <button
+                        disabled={disabled}
+                        className={`ml-3 whitespace-nowrap px-3 py-1.5 rounded text-sm font-semibold ${
+                          disabled ? "bg-gray-600 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                        }`}
+                        onClick={() => applySuggestedCombo(targetIndex, c)}
+                      >
+                        {disabled ? "Already in Deck" : `Apply to Combo ${targetIndex + 1}`}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Duplicates → swaps */}
+          {validation.status === "illegal" && validation.swaps.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-semibold mb-2 text-sm">Fix duplicate parts with one click:</h3>
+              <div className="space-y-2">
+                {validation.swaps.map((s, idx) => (
+                  <div key={idx} className="bg-gray-800 border border-gray-700 rounded p-3 text-sm flex items-center justify-between">
+                    <div>
+                      Combo {s.comboIndex + 1} — {capitalize(s.field)}:{" "}
+                      <span className="line-through opacity-70">{s.from}</span>{" "}
+                      → <span className="font-semibold">{s.to}</span>
+                    </div>
+                    <button
+                      className="ml-3 whitespace-nowrap bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded text-sm font-semibold"
+                      onClick={() => applySwap(s.comboIndex, s.field, s.to)}
+                    >
+                      Replace
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {previousPrep && (
+        <div className="bg-gray-900 border border-gray-700 p-4 rounded">
+          <h2 className="text-lg font-bold mb-2">Previous Prep Deck</h2>
+          {previousPrep.combos.map((combo: any, i: number) => (
+            <p key={i} className="text-sm">
+              {combo.blade} / {combo.ratchet} / {combo.bit}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Combo Inputs */}
+      {combos.slice(0, visibleCombos).map((combo, i) => (
+        <div key={i} className="space-y-2 border border-gray-700 p-4 rounded-lg">
+          <h2 className="font-semibold">Combo {i + 1}</h2>
+          <AutoCompleteInput
+            label="Blade"
+            value={combo.blade}
+            options={blades}
+            onChange={(val) => updateCombo(i, "blade", val)}
+          />
+          <AutoCompleteInput
+            label="Ratchet"
+            value={combo.ratchet}
+            options={ratchets}
+            onChange={(val) => updateCombo(i, "ratchet", val)}
+          />
+          <AutoCompleteInput
+            label="Bit"
+            value={combo.bit}
+            options={bits}
+            onChange={(val) => updateCombo(i, "bit", val)}
+          />
+          {visibleCombos > 1 && i === visibleCombos - 1 && (
+            <button
+              onClick={removeCombo}
+              className="text-red-400 text-sm underline mt-2"
+            >
+              Remove Combo
+            </button>
+          )}
+        </div>
+      ))}
+
+      {visibleCombos < 3 && (
+        <button
+          onClick={() => setVisibleCombos(visibleCombos + 1)}
+          className="text-blue-400 text-sm underline"
+        >
+          + Add Combo
+        </button>
+      )}
+
+      <div className="flex space-x-4">
+        <button
+          onClick={analyzeCombos}
+          className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold"
+          disabled={loadingAnalysis}
+        >
+          {loadingAnalysis ? "Analyzing..." : "Analyze Combos"}
+        </button>
+
+        {/* CTA to Builder */}
+        <Link
+          to="/build-from-my-parts"
+          className="px-4 py-2 rounded font-semibold border border-blue-600 text-blue-300 hover:bg-blue-600/10"
+        >
+          Build From My Parts
+        </Link>
+      </div>
+
+      {/* Deck Grade Card */}
+      {deckGrade && (
+        <div className="mt-6 bg-gray-900 border border-gray-700 p-4 rounded">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">Deck Grade</h2>
+              <p className="text-sm text-gray-400">
+                Score: <span className="font-semibold text-white">{deckGrade.score}</span> / 100
+                {" · "}
+                Confidence: <span className="font-semibold">{deckGrade.confidence}</span>
+              </p>
+            </div>
+            <div className="text-3xl font-extrabold">
+              {deckGrade.grade}
+            </div>
+          </div>
+
+          <div className="mt-3 grid sm:grid-cols-3 gap-2 text-sm">
+            <MetricPill label="Strength" value={deckGrade.components.strength} />
+            <MetricPill label="Recency" value={deckGrade.components.recency} />
+            <MetricPill label="Diversity" value={deckGrade.components.diversity} />
+          </div>
+
+          <div className="mt-3 grid sm:grid-cols-3 gap-2">
+            {deckGrade.reasons.slice(0, 3).map((reason, i) => (
+              <div key={i} className="text-sm bg-gray-800 rounded px-3 py-2 border border-gray-700">
+                {reason}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 text-xs text-gray-400">
+            Parts diversity: {(deckGrade.partsUniqueRatio * 100).toFixed(0)}%
+          </div>
+        </div>
+      )}
+
+      {/* Raw Results */}
+      {results.length > 0 && (
+        <div ref={resultsRef} className="space-y-4 mt-6">
+          <h2 className="text-xl font-bold">Top Cut Stats (Global)</h2>
+          {results.map((r, i) => (
+            <div key={i} className="bg-gray-800 p-4 rounded space-y-2">
+              <p className="font-semibold">
+                Your Combo: {r.submittedCombo.blade} / {r.submittedCombo.ratchet} / {r.submittedCombo.bit}
+              </p>
+              <p>Top Cut Appearances: <strong>{r.topCutAppearances}</strong></p>
+              <p>Unique Events: <strong>{r.uniqueEvents}</strong></p>
+              <p>Most Recent Appearance: <strong>{r.mostRecentAppearance || "N/A"}</strong></p>
+              <p>First Seen: <strong>{r.firstSeen || "N/A"}</strong></p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* =======================================
+   Inputs
+======================================= */
+
+function AutoCompleteInput({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (val: string) => void
+}) {
+  const [showDropdown, setShowDropdown] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const matches = options.filter(
+    (opt) => value && opt.toLowerCase().includes(value.toLowerCase())
+  )
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder={label}
+        className="w-full p-2 bg-black border border-gray-600 rounded"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => setTimeout(() => setShowDropdown(false), 100)}
+      />
+      {showDropdown && matches.length > 0 && (
+        <ul className="absolute z-10 bg-white text-black w-full mt-1 rounded shadow max-h-48 overflow-y-auto">
+          {matches.map((opt, idx) => (
+            <li
+              key={idx}
+              className="px-3 py-1 hover:bg-blue-100 cursor-pointer"
+              onMouseDown={() => {
+                onChange(opt)
+                setShowDropdown(false)
+              }}
+            >
+              {highlightMatch(opt, value)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function highlightMatch(text: string, input: string) {
+  const i = text.toLowerCase().indexOf(input.toLowerCase())
+  if (i === -1) return text
+  return (
+    <>
+      {text.slice(0, i)}
+      <strong>{text.slice(i, i + input.length)}</strong>
+      {text.slice(i + input.length)}
+    </>
+  )
+}
+
+function MetricPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-gray-800 border border-gray-700 rounded px-3 py-2 flex items-center justify-between">
+      <span>{label}</span>
+      <span className="font-semibold">{Math.round(value)}</span>
+    </div>
+  )
+}
+
+/* =======================================
+   Validation / Suggestions
+======================================= */
+
 function normalize(s: string) {
   return (s || "").trim().toLowerCase().replace(/\s+/g, " ")
 }
+
 function comboKey(c: Combo) {
   return `${normalize(c.blade)}|${normalize(c.ratchet)}|${normalize(c.bit)}`
 }
+
+// EventDetail-parity key (same normalization here; alias keeps intent clear)
 const tlKey = comboKey
+
+
 function parseComboKey(key: string): Combo {
   const [blade, ratchet, bit] = key.split("|")
   return { blade, ratchet, bit }
 }
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1)
-}
+
 function findNextEmptySlot(combos: Combo[]) {
   for (let i = 0; i < 3; i++) {
     const c = combos[i]
-    if (!c || !c.blade || !c.ratchet || !c.bit) return i
+    if (!c) return i
+    if (!c.blade || !c.ratchet || !c.bit) return i
   }
   return -1
 }
+
+function capitalize(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
+
 function uniquePartsByCategory(slice: Combo[]) {
   const blades = new Set<string>()
   const ratchets = new Set<string>()
@@ -67,55 +746,65 @@ function uniquePartsByCategory(slice: Combo[]) {
   })
   return { blades, ratchets, bits }
 }
+
 function duplicatesByCategory(slice: Combo[]) {
   const count = (arr: string[]) => {
     const map: Record<string, number> = {}
     arr.forEach(v => { map[normalize(v)] = (map[normalize(v)] || 0) + 1 })
     return Object.entries(map).filter(([, n]) => n > 1).map(([k]) => k)
   }
-  const blades: string[] = [], ratchets: string[] = [], bits: string[] = []
+  const blades: string[] = []
+  const ratchets: string[] = []
+  const bits: string[] = []
   slice.forEach(c => {
     if (c.blade) blades.push(c.blade)
     if (c.ratchet) ratchets.push(c.ratchet)
     if (c.bit) bits.push(c.bit)
   })
-  return { blades: count(blades), ratchets: count(ratchets), bits: count(bits) }
+  return {
+    blades: count(blades),
+    ratchets: count(ratchets),
+    bits: count(bits),
+  }
 }
-function sortByFreqArray(arr: string[], map: Record<string, number>) {
-  return [...arr].sort((a, b) => (map[b] || 0) - (map[a] || 0))
-}
-function conflictsWithDeck(c: Combo, deck: Combo[]) {
-  const used = uniquePartsByCategory(deck.slice(0, 3))
-  return (
-    used.blades.has(normalize(c.blade)) ||
-    used.ratchets.has(normalize(c.ratchet)) ||
-    used.bits.has(normalize(c.bit)) ||
-    deck.slice(0, 3).some(d => comboKey(d) === comboKey(c))
-  )
-}
-function recommendMissingCombosFromTopCut(params: { count: number; currentCombos: Combo[]; topCutCombosSorted: Combo[] }) {
+
+// Recommend *real* combos that have actually appeared in Top Cut
+function recommendMissingCombosFromTopCut(params: {
+  count: number
+  currentCombos: Combo[]
+  topCutCombosSorted: Combo[]
+}) {
   const { count, currentCombos, topCutCombosSorted } = params
   const used = uniquePartsByCategory(currentCombos.slice(0, 3))
   const currentKeys = new Set(currentCombos.slice(0, 3).map(comboKey))
+
   const recs: Combo[] = []
   for (const cand of topCutCombosSorted) {
     if (recs.length >= count) break
     const key = comboKey(cand)
     if (currentKeys.has(key)) continue
-    const b = normalize(cand.blade), r = normalize(cand.ratchet), bt = normalize(cand.bit)
+    const b = normalize(cand.blade)
+    const r = normalize(cand.ratchet)
+    const bt = normalize(cand.bit)
     if (used.blades.has(b) || used.ratchets.has(r) || used.bits.has(bt)) continue
     recs.push(cand)
     used.blades.add(b); used.ratchets.add(r); used.bits.add(bt)
   }
   return recs
 }
+
 function proposeSwapsForDuplicates(params: {
-  combos: Combo[]; dupes: { blades: string[]; ratchets: string[]; bits: string[] }
-  topBlades: string[]; topRatchets: string[]; topBits: string[]
+  combos: Combo[]
+  dupes: { blades: string[]; ratchets: string[]; bits: string[] }
+  topBlades: string[]
+  topRatchets: string[]
+  topBits: string[]
 }) {
   const { combos, dupes, topBlades, topRatchets, topBits } = params
   const swaps: { comboIndex: number; field: keyof Combo; from: string; to: string }[] = []
+
   const used = uniquePartsByCategory(combos)
+
   const propose = (field: keyof Combo, dupVals: string[], topList: string[], usedSet: Set<string>) => {
     dupVals.forEach(dup => {
       const idx = combos.findIndex(c => normalize(c[field]) === normalize(dup))
@@ -126,28 +815,41 @@ function proposeSwapsForDuplicates(params: {
       usedSet.add(normalize(alt))
     })
   }
+
   propose("blade", dupes.blades, topBlades, used.blades)
   propose("ratchet", dupes.ratchets, topRatchets, used.ratchets)
   propose("bit", dupes.bits, topBits, used.bits)
+
   return swaps
 }
+
 function validateDeck(args: {
-  combos: Combo[]; visibleCombos: number; blades: string[]; ratchets: string[]
-  bits: string[]; bladeFreq: Record<string, number>; ratchetFreq: Record<string, number>
-  bitFreq: Record<string, number>; topCutCombosSorted: Combo[]
+  combos: Combo[]
+  visibleCombos: number
+  blades: string[]
+  ratchets: string[]
+  bits: string[]
+  bladeFreq: Record<string, number>
+  ratchetFreq: Record<string, number>
+  bitFreq: Record<string, number>
+  topCutCombosSorted: Combo[]
 }): ValidationResult {
   const { combos, visibleCombos, blades, ratchets, bits, bladeFreq, ratchetFreq, bitFreq, topCutCombosSorted } = args
+
   const full = combos.slice(0, 3).map(c => Boolean(c.blade && c.ratchet && c.bit))
   const fullCount = full.filter(Boolean).length
+
   const messages: string[] = []
   let status: ValidationResult["status"] = "ok"
 
+  // Must be exactly 3 full combos
   if (fullCount < 3) {
     status = "incomplete"
     const missing = 3 - fullCount
-    messages.push(`${fullCount}/3 combos complete. Add ${missing} more.`)
+    messages.push(`You have ${fullCount}/3 complete combos. Add ${missing} more unique combo${missing > 1 ? "s" : ""}.`)
   }
 
+  // No duplicate parts across combos (by category)
   const dupes = duplicatesByCategory(combos.slice(0, 3))
   const hasDupes = dupes.blades.length + dupes.ratchets.length + dupes.bits.length > 0
   if (hasDupes) {
@@ -156,52 +858,90 @@ function validateDeck(args: {
     if (dupes.blades.length) list.push(`Blades: ${dupes.blades.join(", ")}`)
     if (dupes.ratchets.length) list.push(`Ratchets: ${dupes.ratchets.join(", ")}`)
     if (dupes.bits.length) list.push(`Bits: ${dupes.bits.join(", ")}`)
-    messages.push(`Duplicate parts — ${list.join(" · ")}`)
+    messages.push(`Duplicate parts detected — deck is illegal. (${list.join(" · ")})`)
   }
 
+  // Incomplete → recommend real top-cut combos that don't conflict
   let recommendations: Combo[] = []
   if (status === "incomplete") {
     const missing = 3 - fullCount
-    recommendations = recommendMissingCombosFromTopCut({ count: missing, currentCombos: combos, topCutCombosSorted })
+    recommendations = recommendMissingCombosFromTopCut({
+      count: missing,
+      currentCombos: combos,
+      topCutCombosSorted,
+    })
     if (recommendations.length === 0 && topCutCombosSorted.length > 0) {
-      messages.push("No non-conflicting top-cut combos found. Try changing a part.")
+      messages.push("No non-conflicting top-cut combos found. Try changing one part to open up options.")
     }
   }
 
+  // Illegal → propose swaps
   let swaps: ValidationResult["swaps"] = []
   if (status === "illegal") {
     swaps = proposeSwapsForDuplicates({
-      combos, dupes,
+      combos,
+      dupes,
       topBlades: sortByFreqArray(blades, bladeFreq),
       topRatchets: sortByFreqArray(ratchets, ratchetFreq),
       topBits: sortByFreqArray(bits, bitFreq),
     })
-    if (swaps.length === 0) messages.push("No auto-swaps available — manually change a duplicated part.")
-    else messages.push("Quick-fix suggestions available below.")
+    if (swaps.length === 0) {
+      messages.push("No safe automatic swaps available — try changing one duplicated part to a different popular option.")
+    } else {
+      messages.push("Use the suggestions below to fix duplicates automatically.")
+    }
   }
 
-  if (status === "ok" && visibleCombos < 3) messages.push("Tip: Keep all 3 combos visible for quick edits.")
+  if (status === "ok" && visibleCombos < 3) {
+    messages.push("Tip: Keep all 3 combos visible for quick edits.")
+  }
 
-  return { status, messages, missingCombos: Math.max(0, 3 - fullCount), duplicateParts: dupes, recommendations, swaps }
+  return {
+    status,
+    messages,
+    missingCombos: Math.max(0, 3 - fullCount),
+    duplicateParts: dupes,
+    recommendations,
+    swaps,
+  }
 }
 
-/* ─────────────────────────────────────────
-   Grade helpers
-───────────────────────────────────────── */
+function sortByFreqArray(arr: string[], map: Record<string, number>) {
+  return [...arr].sort((a, b) => (map[b] || 0) - (map[a] || 0))
+}
+
+function conflictsWithDeck(c: Combo, deck: Combo[]) {
+  const used = uniquePartsByCategory(deck.slice(0, 3))
+  return (
+    used.blades.has(normalize(c.blade)) ||
+    used.ratchets.has(normalize(c.ratchet)) ||
+    used.bits.has(normalize(c.bit)) ||
+    deck.slice(0, 3).some(d => comboKey(d) === comboKey(c))
+  )
+}
+
+/* =======================================
+   Deck Grade (no coverage)
+======================================= */
+
 function daysSince(iso?: string) {
   if (!iso) return Infinity
   const d = new Date(iso).getTime()
   if (Number.isNaN(d)) return Infinity
+  // If future-dated, treat as "0 days ago" to avoid >100 recency
   return Math.max(0, (Date.now() - d) / (1000 * 60 * 60 * 24))
 }
+
 function decayFromDays(days: number, lambda = 60) {
   if (!Number.isFinite(days)) return 0
   return Math.exp(-days / lambda)
 }
+
 function clamp01(x: number) {
   if (!Number.isFinite(x)) return 0
   return x < 0 ? 0 : x > 1 ? 1 : x
 }
+
 function mapScoreToGrade(score: number): DeckGrade["grade"] {
   if (score >= 90) return "S"
   if (score >= 80) return "A"
@@ -209,20 +949,34 @@ function mapScoreToGrade(score: number): DeckGrade["grade"] {
   if (score >= 55) return "C"
   return "D"
 }
+
 function percentile(arr: number[], p: number) {
   if (!arr.length) return 1
   const sorted = [...arr].sort((a, b) => a - b)
   const idx = Math.max(0, Math.min(sorted.length - 1, Math.floor((p / 100) * (sorted.length - 1))))
   return Math.max(1, sorted[idx])
 }
+
+/* === helpers mirroring BuildFromMyParts grading === */
 function mean(xs: number[]) {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0
 }
-function computeDeckGrade({ results, combos, visibleCombos, globalMeta }: {
-  results: any[]; combos: Combo[]; visibleCombos: number; globalMeta: GlobalMeta
+function computeDeckGrade({
+  results,
+  combos,
+  visibleCombos,
+  globalMeta,
+}: {
+  results: any[]
+  combos: Combo[]
+  visibleCombos: number
+  globalMeta: GlobalMeta
 }): DeckGrade | null {
   if (!results || results.length === 0) return null
+
   const used = results.slice(0, Math.min(3, visibleCombos))
+
+  // Per-combo strength/recency (diminishing returns + slightly longer half-life)
   const p95 = Math.max(1, percentile(globalMeta.comboAppearancesAll, 95))
   const recencies: number[] = []
   const comboScores: number[] = []
@@ -230,1063 +984,72 @@ function computeDeckGrade({ results, combos, visibleCombos, globalMeta }: {
   for (const r of used) {
     const appearances = Math.max(0, Number(r?.topCutAppearances ?? 0))
     const mostRecent = r?.mostRecentAppearance as string | undefined
+
     const strength_i = Math.pow(Math.min(appearances / p95, 1), 0.60) * 100
-    const recency_i = clamp01(decayFromDays(daysSince(mostRecent), 75)) * 100
+    const recency_i = clamp01(decayFromDays(daysSince(mostRecent), 75)) * 100 // ← clamp here
+
     recencies.push(recency_i)
     comboScores.push(0.70 * strength_i + 0.30 * recency_i)
   }
 
+  // Weakest-link penalty + average
   const deckStrength = 0.60 * Math.min(...comboScores) + 0.40 * mean(comboScores)
+  // Stale combo drags the deck (also clamp to [0,100] to be safe)
   const deckRecency = 0.60 * Math.min(...recencies) + 0.40 * mean(recencies)
+
+  // Diversity
   const slice = combos.slice(0, Math.min(3, visibleCombos))
   const parts = slice.flatMap(c => [c.blade, c.ratchet, c.bit]).filter(Boolean)
   const unique = new Set(parts.map(normalize)).size
   const partsUniqueRatio = parts.length ? unique / parts.length : 0
   const diversity = Math.round(partsUniqueRatio * 100)
 
+  // Base score (no coverage)
   let score = Math.round(0.60 * deckStrength + 0.25 * deckRecency + 0.15 * diversity)
 
+  // Safety caps — no free S with a shaky third
   const anyZeroApps = used.some(r => Number(r?.topCutAppearances ?? 0) === 0)
-  const anyLowApps = used.some(r => Number(r?.topCutAppearances ?? 0) < 2)
-  const anyStale = used.some(r => daysSince(r?.mostRecentAppearance) > 180)
+  const anyLowApps  = used.some(r => Number(r?.topCutAppearances ?? 0) < 2)
+  const anyStale    = used.some(r => daysSince(r?.mostRecentAppearance) > 180)
 
   let cap = 100
   if (anyZeroApps) cap = Math.min(cap, 70)
   else if (anyLowApps) cap = Math.min(cap, 85)
   if (anyStale) cap = Math.min(cap, 80)
+
   score = Math.min(score, cap)
 
   const grade = mapScoreToGrade(score)
-  const totalAppearances = used.reduce((a, r) => a + Number(r?.topCutAppearances ?? 0), 0)
-  const confidence: DeckGrade["confidence"] = totalAppearances >= 30 ? "High" : totalAppearances >= 10 ? "Medium" : "Low"
 
+  // Confidence by total appearances evidence
+  const totalAppearances = used.reduce((a, r) => a + Number(r?.topCutAppearances ?? 0), 0)
+  const confidence: DeckGrade["confidence"] =
+    totalAppearances >= 30 ? "High" : totalAppearances >= 10 ? "Medium" : "Low"
+
+  // Reasons
   const reasons: string[] = []
   if (deckStrength >= 70) reasons.push("Strong historical appearances")
   else if (deckStrength >= 40) reasons.push("Moderate historical strength")
   else reasons.push("Low historical strength")
+
   if (deckRecency >= 70) reasons.push("Recently active in top cut")
   else if (deckRecency >= 40) reasons.push("Some recent activity")
   else reasons.push("Stale — few recent appearances")
-  if (diversity >= 70) reasons.push("Excellent part diversity")
-  else if (diversity >= 40) reasons.push("Moderate diversity")
-  else reasons.push("Redundant parts detected")
+
+  if (diversity >= 70) reasons.push("Good part diversity")
+  else if (diversity >= 40) reasons.push("Okay diversity")
+  else reasons.push("Redundant parts — consider varying picks")
 
   return {
-    score, grade, confidence,
-    components: { strength: Math.round(deckStrength), recency: Math.round(deckRecency), diversity },
-    reasons, partsUniqueRatio,
+    score,
+    grade,
+    confidence,
+    components: {
+      strength: Math.round(deckStrength),
+      recency: Math.round(deckRecency),
+      diversity,
+    },
+    reasons,
+    partsUniqueRatio,
   }
 }
-function formatDate(iso: string) {
-  try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" }) }
-  catch { return "—" }
-}
-
-/* ─────────────────────────────────────────
-   AutoComplete Part Input
-───────────────────────────────────────── */
-function PartInput({ label, value, options, onChange }: {
-  label: string; value: string; options: string[]; onChange: (v: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const matches = options.filter(o => value && o.toLowerCase().includes(value.toLowerCase()))
-
-  return (
-    <div className="tl-pinput-wrap">
-      <div className="tl-pinput-row">
-        <span className="tl-pinput-label">{label}</span>
-        <div className="tl-pinput-inner">
-          <input
-            className="tl-pinput"
-            type="text"
-            value={value}
-            placeholder={`Search ${label}...`}
-            onChange={e => onChange(e.target.value)}
-            onFocus={() => setOpen(true)}
-            onBlur={() => setTimeout(() => setOpen(false), 120)}
-          />
-          {value && (
-            <button className="tl-pinput-clear" onClick={() => onChange("")} type="button">
-              &#x00D7;
-            </button>
-          )}
-        </div>
-      </div>
-      {open && matches.length > 0 && (
-        <ul className="tl-dropdown" role="listbox">
-          {matches.slice(0, 10).map((opt, i) => (
-            <li
-              key={i}
-              className="tl-dropdown-item"
-              role="option"
-              onMouseDown={() => { onChange(opt); setOpen(false) }}
-            >
-              {(() => {
-                const idx = opt.toLowerCase().indexOf(value.toLowerCase())
-                if (idx === -1) return opt
-                return (
-                  <>
-                    {opt.slice(0, idx)}
-                    <strong className="tl-match">{opt.slice(idx, idx + value.length)}</strong>
-                    {opt.slice(idx + value.length)}
-                  </>
-                )
-              })()}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-/* ─────────────────────────────────────────
-   Grade colour map
-───────────────────────────────────────── */
-const GRADE_COLOR: Record<string, string> = {
-  S: "#FACC15",
-  A: "#4ADE80",
-  B: "#38BDF8",
-  C: "#FB923C",
-  D: "#F87171",
-}
-
-/* ─────────────────────────────────────────
-   Main
-───────────────────────────────────────── */
-export default function TournamentLab() {
-  const { user, isAuthenticated, loading: authLoading } = useAuth()
-
-  const [combos, setCombos] = useState<Combo[]>([
-    { blade: "", ratchet: "", bit: "" },
-    { blade: "", ratchet: "", bit: "" },
-    { blade: "", ratchet: "", bit: "" },
-  ])
-  const [visibleCombos, setVisibleCombos] = useState(1)
-  const [results, setResults] = useState<any[]>([])
-  const [loadingAnalysis, setLoadingAnalysis] = useState(false)
-  const [previousPrep, setPreviousPrep] = useState<any | null>(null)
-
-  const [blades, setBlades] = useState<string[]>([])
-  const [ratchets, setRatchets] = useState<string[]>([])
-  const [bits, setBits] = useState<string[]>([])
-  const [bladeFreq, setBladeFreq] = useState<Record<string, number>>({})
-  const [ratchetFreq, setRatchetFreq] = useState<Record<string, number>>({})
-  const [bitFreq, setBitFreq] = useState<Record<string, number>>({})
-
-  const [globalMeta, setGlobalMeta] = useState<GlobalMeta>({ topCutCombosSorted: [], comboAppearancesAll: [] })
-  const [comboIndex, setComboIndex] = useState<Record<string, {
-    appearances: number; uniqueEvents: Set<string>; mostRecent?: string; firstSeen?: string
-  }>>({})
-  const [tlGlobalMeta, setTlGlobalMeta] = useState<{ comboAppearancesAll: number[] }>({ comboAppearancesAll: [] })
-
-  const [validation, setValidation] = useState<ValidationResult | null>(null)
-  const [deckGrade, setDeckGrade] = useState<DeckGrade | null>(null)
-  const [hasTriedAnalyze, setHasTriedAnalyze] = useState(false)
-
-  const resultsRef = useRef<HTMLDivElement | null>(null)
-
-  function buildResultsFromIndex(cs: Combo[], index: typeof comboIndex, includeSelf: boolean) {
-    const nowIso = new Date().toISOString()
-    return cs.map(c => {
-      const k = tlKey(c)
-      const rec = index[k]
-      let appearances = rec?.appearances ?? 0
-      let uniqueEvents = rec?.uniqueEvents?.size ?? 0
-      let mostRecent = rec?.mostRecent
-      let firstSeen = rec?.firstSeen
-      if (includeSelf) {
-        appearances++; uniqueEvents++; mostRecent = nowIso
-        if (!firstSeen) firstSeen = nowIso
-      }
-      return { submittedCombo: c, topCutAppearances: appearances, uniqueEvents, mostRecentAppearance: mostRecent, firstSeen }
-    })
-  }
-
-  useEffect(() => {
-    if (!user?.id) return
-    fetch(`${API}/prep-decks/user/${user.id}`)
-      .then(r => r.json())
-      .then(d => { if (d?.combos) setPreviousPrep(d) })
-      .catch(() => null)
-  }, [user])
-
-  useEffect(() => {
-    fetch(`${API}/events`)
-      .then(r => r.json())
-      .then((data: any[]) => {
-        const bSet = new Set<string>(), rSet = new Set<string>(), btSet = new Set<string>()
-        const bF: Record<string, number> = {}, rF: Record<string, number> = {}, btF: Record<string, number> = {}
-        const cF: Record<string, number> = {}
-
-        data.forEach(ev => {
-          ev.topCut?.forEach((p: any) => {
-            p.combos?.forEach((c: any) => {
-              if (c.blade) { bSet.add(c.blade); bF[c.blade] = (bF[c.blade] || 0) + 1 }
-              if (c.ratchet) { rSet.add(c.ratchet); rF[c.ratchet] = (rF[c.ratchet] || 0) + 1 }
-              if (c.bit) { btSet.add(c.bit); btF[c.bit] = (btF[c.bit] || 0) + 1 }
-              if (c.blade && c.ratchet && c.bit) { const k = comboKey(c); cF[k] = (cF[k] || 0) + 1 }
-            })
-          })
-        })
-
-        const byFreq = (a: string[], m: Record<string, number>) => [...a].sort((x, y) => (m[y] || 0) - (m[x] || 0))
-        setBlades(byFreq([...bSet], bF)); setRatchets(byFreq([...rSet], rF)); setBits(byFreq([...btSet], btF))
-        setBladeFreq(bF); setRatchetFreq(rF); setBitFreq(btF)
-        const topCutCombosSorted = Object.entries(cF).sort((a, b) => b[1] - a[1]).map(([k]) => parseComboKey(k))
-        setGlobalMeta({ topCutCombosSorted, comboAppearancesAll: Object.values(cF) })
-
-        const idx: typeof comboIndex = {}; const appCounts: number[] = []
-        for (const ev of data) {
-          const evId = String(ev.id); const evDate = ev.endTime || ev.startTime
-          ev?.topCut?.forEach((p: any) => {
-            p?.combos?.forEach((c: any) => {
-              if (!c?.blade || !c?.ratchet || !c?.bit) return
-              const k = tlKey({ blade: c.blade, ratchet: c.ratchet, bit: c.bit })
-              if (!idx[k]) idx[k] = { appearances: 0, uniqueEvents: new Set<string>() }
-              idx[k].appearances++; idx[k].uniqueEvents.add(evId)
-              if (evDate) {
-                if (!idx[k].mostRecent || new Date(evDate) > new Date(idx[k].mostRecent!)) idx[k].mostRecent = evDate
-                if (!idx[k].firstSeen || new Date(evDate) < new Date(idx[k].firstSeen!)) idx[k].firstSeen = evDate
-              }
-            })
-          })
-        }
-        for (const k of Object.keys(idx)) appCounts.push(idx[k].appearances)
-        setComboIndex(idx); setTlGlobalMeta({ comboAppearancesAll: appCounts })
-      })
-      .catch(e => console.error("Failed to load events", e))
-  }, [])
-
-  useEffect(() => {
-    if (results.length > 0 && resultsRef.current) resultsRef.current.scrollIntoView({ behavior: "smooth" })
-  }, [results])
-
-  const revalidate = (next: Combo[]) =>
-    setValidation(validateDeck({ combos: next, visibleCombos, blades, ratchets, bits, bladeFreq, ratchetFreq, bitFreq, topCutCombosSorted: globalMeta.topCutCombosSorted }))
-
-  const updateCombo = (i: number, field: keyof Combo, val: string) => {
-    const next = [...combos]; next[i] = { ...next[i], [field]: val }; setCombos(next)
-    if (hasTriedAnalyze) revalidate(next)
-  }
-  const removeCombo = () => {
-    if (visibleCombos <= 1) return
-    const nv = visibleCombos - 1; const t = [...combos]; t[visibleCombos - 1] = { blade: "", ratchet: "", bit: "" }
-    setCombos(t); setVisibleCombos(nv)
-    if (hasTriedAnalyze) revalidate(t)
-  }
-  const applySuggestedCombo = (slotIndex: number, c: Combo) => {
-    const nv = Math.max(visibleCombos, slotIndex + 1)
-    const next = [...combos]; next[slotIndex] = c; setCombos(next)
-    if (nv !== visibleCombos) setVisibleCombos(nv)
-    revalidate(next)
-  }
-  const applySwap = (ci: number, field: keyof Combo, val: string) => {
-    const next = [...combos]; next[ci] = { ...next[ci], [field]: val }; setCombos(next); revalidate(next)
-  }
-
-  const analyzeCombos = async () => {
-    setHasTriedAnalyze(true)
-    const v = validateDeck({ combos, visibleCombos, blades, ratchets, bits, bladeFreq, ratchetFreq, bitFreq, topCutCombosSorted: globalMeta.topCutCombosSorted })
-    setValidation(v)
-    if (v.status !== "ok") { window.scrollTo({ top: 0, behavior: "smooth" }); return }
-    const valid = combos.slice(0, 3).filter(c => c.blade && c.ratchet && c.bit)
-    if (valid.length !== 3) { alert("Please enter three full combos."); return }
-
-    setLoadingAnalysis(true)
-    try {
-      const displayResults = buildResultsFromIndex(valid, comboIndex, false)
-      setResults(displayResults)
-      const gradeResults = buildResultsFromIndex(valid, comboIndex, true)
-      const meta = { ...globalMeta, comboAppearancesAll: tlGlobalMeta.comboAppearancesAll }
-      const dgD = computeDeckGrade({ results: displayResults, combos: valid, visibleCombos: 3, globalMeta: meta })
-      const dgG = computeDeckGrade({ results: gradeResults, combos: valid, visibleCombos: 3, globalMeta: meta })
-      if (dgD && dgG) {
-        setDeckGrade({
-          score: dgG.score, grade: dgG.grade, confidence: dgG.confidence,
-          components: dgD.components, reasons: dgD.reasons, partsUniqueRatio: dgD.partsUniqueRatio,
-        })
-      } else setDeckGrade(null)
-    } catch (e) { console.error(e); alert("Error analyzing combos") }
-    finally { setLoadingAnalysis(false) }
-  }
-
-  /* ── Auth gates ── */
-  if (authLoading) return (
-    <div className="tl-root tl-center-screen">
-      <span className="tl-spinner-lg" />
-      <style>{TL_CSS}</style>
-    </div>
-  )
-
-  if (!isAuthenticated) return (
-    <div className="tl-root tl-center-screen">
-      <div className="tl-lock-card">
-        <div className="tl-lock-icon">&#x2B21;</div>
-        <h2 className="tl-lock-title">Access Restricted</h2>
-        <p className="tl-lock-body">Tournament Lab is available to registered players only.</p>
-        <a href="/user-auth" className="tl-btn-primary">Sign In to Continue</a>
-      </div>
-      <style>{TL_CSS}</style>
-    </div>
-  )
-
-  const gc = deckGrade ? GRADE_COLOR[deckGrade.grade] : "#fff"
-
-  return (
-    <div className="tl-root">
-      <div className="tl-noise" />
-
-      <div className="tl-wrap">
-
-        {/* ── Header ── */}
-        <header className="tl-header">
-          <div>
-            <p className="tl-eyebrow">Tournament Preparation</p>
-            <h1 className="tl-page-title">Deck Lab</h1>
-          </div>
-          <Link to="/build-from-my-parts" className="tl-btn-ghost">
-            Build from My Parts
-          </Link>
-        </header>
-
-        {/* ── Previous prep ── */}
-        {previousPrep && (
-          <div className="tl-prev-card">
-            <p className="tl-eyebrow" style={{ marginBottom: "8px" }}>Previous Submission</p>
-            <div className="tl-prev-list">
-              {previousPrep.combos.map((c: any, i: number) => (
-                <span key={i} className="tl-prev-pill">
-                  {c.blade} / {c.ratchet} / {c.bit}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Validation banner ── */}
-        {hasTriedAnalyze && validation && validation.status !== "ok" && (
-          <div className={validation.status === "illegal" ? "tl-alert tl-alert-illegal" : "tl-alert tl-alert-incomplete"}>
-            <div className="tl-alert-head">
-              <span className="tl-alert-icon-badge">
-                {validation.status === "illegal" ? "!" : "!"}
-              </span>
-              <span className="tl-alert-title">
-                {validation.status === "illegal" ? "Illegal Deck" : "Incomplete Deck"}
-              </span>
-            </div>
-
-            {validation.messages.map((m, i) => (
-              <p key={i} className="tl-alert-msg">{m}</p>
-            ))}
-
-            {validation.recommendations.length > 0 && (
-              <div className="tl-alert-sub">
-                <p className="tl-eyebrow" style={{ marginBottom: "10px" }}>Recommended Completions</p>
-                <div className="tl-rec-grid">
-                  {validation.recommendations.map((c, i) => {
-                    const slot = findNextEmptySlot(combos)
-                    const target = slot !== -1 ? slot : Math.min(visibleCombos, 2)
-                    const disabled = conflictsWithDeck(c, combos)
-                    return (
-                      <div key={i} className="tl-rec-card">
-                        <div>
-                          <p className="tl-eyebrow" style={{ marginBottom: "4px" }}>Option {i + 1}</p>
-                          <p className="tl-rec-combo">{c.blade} / {c.ratchet} / {c.bit}</p>
-                        </div>
-                        <button
-                          disabled={disabled}
-                          className={disabled ? "tl-btn-muted" : "tl-btn-sm"}
-                          onClick={() => !disabled && applySuggestedCombo(target, c)}
-                          type="button"
-                        >
-                          {disabled ? "In Deck" : `Slot ${target + 1}`}
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-
-            {validation.status === "illegal" && validation.swaps.length > 0 && (
-              <div className="tl-alert-sub">
-                <p className="tl-eyebrow" style={{ marginBottom: "10px" }}>Quick Fixes</p>
-                <div className="tl-swap-list">
-                  {validation.swaps.map((s, i) => (
-                    <div key={i} className="tl-swap-row">
-                      <span className="tl-swap-slot">C{s.comboIndex + 1}</span>
-                      <span className="tl-swap-field">{capitalize(s.field)}</span>
-                      <span className="tl-swap-from">{s.from}</span>
-                      <span className="tl-swap-sep">&#8594;</span>
-                      <span className="tl-swap-to">{s.to}</span>
-                      <button className="tl-btn-fix" onClick={() => applySwap(s.comboIndex, s.field, s.to)} type="button">
-                        Apply
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Combo slots ── */}
-        <div className="tl-combos">
-          {combos.slice(0, visibleCombos).map((combo, i) => {
-            const done = !!(combo.blade && combo.ratchet && combo.bit)
-            return (
-              <div key={i} className={done ? "tl-combo-card tl-combo-done" : "tl-combo-card"}>
-                <div className="tl-combo-top">
-                  <div className="tl-combo-heading-group">
-                    <span className={done ? "tl-combo-num tl-combo-num-done" : "tl-combo-num"}>
-                      0{i + 1}
-                    </span>
-                    <span className="tl-combo-word">Combo</span>
-                  </div>
-                  <span className={done ? "tl-status-badge tl-badge-ready" : "tl-status-badge tl-badge-pending"}>
-                    {done ? "Ready" : "Incomplete"}
-                  </span>
-                </div>
-
-                <div className="tl-part-fields">
-                  <PartInput label="Blade" value={combo.blade} options={blades} onChange={v => updateCombo(i, "blade", v)} />
-                  <PartInput label="Ratchet" value={combo.ratchet} options={ratchets} onChange={v => updateCombo(i, "ratchet", v)} />
-                  <PartInput label="Bit" value={combo.bit} options={bits} onChange={v => updateCombo(i, "bit", v)} />
-                </div>
-
-                {visibleCombos > 1 && i === visibleCombos - 1 && (
-                  <button className="tl-remove-link" onClick={removeCombo} type="button">
-                    Remove this slot
-                  </button>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* ── Add slot ── */}
-        {visibleCombos < 3 && (
-          <button className="tl-add-slot" onClick={() => setVisibleCombos(v => v + 1)} type="button">
-            <span className="tl-add-plus">+</span>
-            <span>Add Combo Slot</span>
-            <span className="tl-slot-count">{visibleCombos} / 3</span>
-          </button>
-        )}
-
-        {/* ── Analyze ── */}
-        <button className="tl-analyze-btn" onClick={analyzeCombos} disabled={loadingAnalysis} type="button">
-          {loadingAnalysis
-            ? <><span className="tl-btn-spin" />Analyzing Deck...</>
-            : "Analyze Deck"}
-        </button>
-
-        {/* ── Deck Grade ── */}
-        {deckGrade && (
-          <div className="tl-grade-card">
-            <div className="tl-grade-body">
-              <p className="tl-eyebrow" style={{ marginBottom: "6px" }}>Deck Rating</p>
-              <div className="tl-grade-score-row">
-                <span className="tl-grade-score">{deckGrade.score}</span>
-                <span className="tl-grade-max">/100</span>
-              </div>
-              <div className="tl-grade-chips">
-                <span className="tl-chip">{deckGrade.confidence} confidence</span>
-                <span className="tl-chip-plain">{(deckGrade.partsUniqueRatio * 100).toFixed(0)}% diversity</span>
-              </div>
-
-              <div className="tl-metrics">
-                {(["strength", "recency", "diversity"] as const).map(k => {
-                  const v = deckGrade.components[k]
-                  const barColor = v >= 70 ? "#4ADE80" : v >= 40 ? "#FB923C" : "#F87171"
-                  return (
-                    <div key={k} className="tl-metric-row">
-                      <span className="tl-metric-name">{k}</span>
-                      <div className="tl-metric-track">
-                        <div className="tl-metric-fill" style={{ width: `${v}%`, background: barColor }} />
-                      </div>
-                      <span className="tl-metric-val">{Math.round(v)}</span>
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="tl-reasons">
-                {deckGrade.reasons.slice(0, 3).map((r, i) => (
-                  <span key={i} className="tl-reason-tag">{r}</span>
-                ))}
-              </div>
-            </div>
-
-            <div className="tl-grade-letter-wrap">
-              <div className="tl-grade-letter-box" style={{ borderColor: gc }}>
-                <span className="tl-grade-letter" style={{ color: gc }}>{deckGrade.grade}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Top cut stats ── */}
-        {results.length > 0 && (
-          <section ref={resultsRef} className="tl-stats-section">
-            <p className="tl-eyebrow" style={{ marginBottom: "14px" }}>Top Cut Statistics</p>
-            <div className="tl-stats-grid">
-              {results.map((r, i) => (
-                <div key={i} className="tl-stat-card">
-                  <div className="tl-stat-idx">0{i + 1}</div>
-                  <p className="tl-stat-combo-name">
-                    {r.submittedCombo.blade}
-                    <span className="tl-stat-sep"> / </span>
-                    {r.submittedCombo.ratchet}
-                    <span className="tl-stat-sep"> / </span>
-                    {r.submittedCombo.bit}
-                  </p>
-                  <div className="tl-stat-nums">
-                    <div className="tl-stat-num-blk">
-                      <span className="tl-stat-big">{r.topCutAppearances}</span>
-                      <span className="tl-stat-lbl">Top Cut</span>
-                    </div>
-                    <div className="tl-stat-num-blk">
-                      <span className="tl-stat-big">{r.uniqueEvents}</span>
-                      <span className="tl-stat-lbl">Events</span>
-                    </div>
-                  </div>
-                  <div className="tl-stat-dates">
-                    <div>
-                      <span className="tl-stat-date-label">Latest</span>
-                      <span className="tl-stat-date-val">{r.mostRecentAppearance ? formatDate(r.mostRecentAppearance) : "—"}</span>
-                    </div>
-                    <div>
-                      <span className="tl-stat-date-label">First Seen</span>
-                      <span className="tl-stat-date-val">{r.firstSeen ? formatDate(r.firstSeen) : "—"}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-
-      <style>{TL_CSS}</style>
-    </div>
-  )
-}
-
-/* ─────────────────────────────────────────
-   All CSS in one template literal — no
-   encoding issues, clean separation
-───────────────────────────────────────── */
-const TL_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&display=swap');
-
-  .tl-root {
-    min-height: 100vh;
-    background: #0c0c0e;
-    color: #e6e6e8;
-    font-family: 'Syne', sans-serif;
-    position: relative;
-    overflow-x: hidden;
-  }
-  .tl-noise {
-    position: fixed; inset: 0; pointer-events: none; z-index: 0;
-    opacity: 0.4;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
-  }
-  .tl-center-screen {
-    display: flex; align-items: center; justify-content: center;
-  }
-  .tl-wrap {
-    position: relative; z-index: 1;
-    max-width: 680px; margin: 0 auto;
-    padding: 52px 20px 100px;
-  }
-
-  /* ── Typography ── */
-  .tl-eyebrow {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase;
-    color: #484858; margin: 0;
-  }
-  .tl-page-title {
-    font-size: 44px; font-weight: 800; letter-spacing: -0.025em;
-    line-height: 1; margin: 6px 0 0;
-    color: #e6e6e8;
-  }
-
-  /* ── Header ── */
-  .tl-header {
-    display: flex; align-items: flex-end;
-    justify-content: space-between;
-    margin-bottom: 40px; gap: 16px;
-  }
-
-  /* ── Buttons ── */
-  .tl-btn-ghost {
-    display: inline-flex; align-items: center;
-    padding: 10px 18px;
-    border: 1px solid rgba(255,255,255,0.11);
-    border-radius: 8px;
-    color: rgba(255,255,255,0.45);
-    font-size: 13px; font-weight: 600;
-    font-family: 'Syne', sans-serif;
-    text-decoration: none;
-    white-space: nowrap;
-    transition: border-color 0.18s, color 0.18s;
-  }
-  .tl-btn-ghost:hover {
-    border-color: rgba(255,255,255,0.26);
-    color: #e6e6e8;
-  }
-  .tl-btn-primary {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 13px 28px;
-    background: #e6e6e8; border-radius: 8px;
-    color: #0c0c0e; font-size: 14px; font-weight: 700;
-    font-family: 'Syne', sans-serif;
-    text-decoration: none;
-    transition: opacity 0.15s;
-  }
-  .tl-btn-primary:hover { opacity: 0.88; }
-
-  .tl-btn-sm {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 8px 14px; white-space: nowrap; cursor: pointer;
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 6px; color: #e6e6e8;
-    font-size: 12px; font-weight: 600;
-    font-family: 'Syne', sans-serif;
-    transition: background 0.15s;
-  }
-  .tl-btn-sm:hover { background: rgba(255,255,255,0.13); }
-
-  .tl-btn-muted {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 8px 14px; white-space: nowrap;
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 6px; color: #303040;
-    font-size: 12px; cursor: not-allowed;
-    font-family: 'Syne', sans-serif;
-  }
-
-  .tl-btn-fix {
-    display: inline-flex; align-items: center; justify-content: center;
-    padding: 6px 12px; white-space: nowrap; cursor: pointer;
-    background: transparent;
-    border: 1px solid rgba(96,165,250,0.35);
-    border-radius: 5px; color: #93c5fd;
-    font-size: 11px; font-weight: 600;
-    font-family: 'Syne', sans-serif;
-    transition: background 0.15s;
-  }
-  .tl-btn-fix:hover { background: rgba(96,165,250,0.1); }
-
-  .tl-analyze-btn {
-    width: 100%; padding: 17px 24px;
-    background: #e6e6e8; border: none;
-    border-radius: 10px; color: #0c0c0e;
-    font-size: 15px; font-weight: 700;
-    font-family: 'Syne', sans-serif;
-    letter-spacing: 0.01em; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    margin-bottom: 32px;
-    transition: opacity 0.15s, transform 0.12s;
-  }
-  .tl-analyze-btn:hover:not(:disabled) {
-    opacity: 0.9; transform: translateY(-1px);
-  }
-  .tl-analyze-btn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-  .tl-remove-link {
-    background: none; border: none;
-    color: #3a1e1e; font-size: 11px; cursor: pointer;
-    padding: 0; margin-top: 12px;
-    font-family: 'DM Mono', monospace; letter-spacing: 0.06em;
-    transition: color 0.15s;
-  }
-  .tl-remove-link:hover { color: #f87171; }
-
-  /* ── Spinners ── */
-  .tl-spinner-lg {
-    width: 22px; height: 22px; border-radius: 50%;
-    border: 2px solid rgba(230,230,232,0.12);
-    border-top-color: #e6e6e8;
-    animation: tl-spin 0.65s linear infinite;
-    display: inline-block;
-  }
-  .tl-btn-spin {
-    width: 14px; height: 14px; border-radius: 50%;
-    border: 2px solid rgba(12,12,14,0.18);
-    border-top-color: #0c0c0e;
-    animation: tl-spin 0.65s linear infinite;
-    display: inline-block; flex-shrink: 0;
-  }
-  @keyframes tl-spin { to { transform: rotate(360deg); } }
-  @keyframes tl-fade-up {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── Lock screen ── */
-  .tl-lock-card {
-    text-align: center; padding: 52px 40px;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 18px;
-    background: rgba(255,255,255,0.02);
-    max-width: 360px;
-  }
-  .tl-lock-icon { font-size: 34px; opacity: 0.18; margin-bottom: 22px; }
-  .tl-lock-title { font-size: 22px; font-weight: 800; margin: 0 0 10px; }
-  .tl-lock-body { font-size: 14px; color: #484858; line-height: 1.65; margin: 0 0 26px; }
-
-  /* ── Previous prep ── */
-  .tl-prev-card {
-    padding: 16px 20px; margin-bottom: 28px;
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 10px;
-    background: rgba(255,255,255,0.02);
-  }
-  .tl-prev-list { display: flex; flex-direction: column; gap: 5px; }
-  .tl-prev-pill {
-    font-size: 12px; color: #404055;
-    font-family: 'DM Mono', monospace;
-  }
-
-  /* ── Alert banner ── */
-  .tl-alert {
-    border-radius: 12px; padding: 20px 22px;
-    margin-bottom: 28px;
-    animation: tl-fade-up 0.2s ease;
-  }
-  .tl-alert-incomplete {
-    border: 1px solid rgba(251,146,60,0.3);
-    background: rgba(251,146,60,0.05);
-  }
-  .tl-alert-illegal {
-    border: 1px solid rgba(248,113,113,0.3);
-    background: rgba(248,113,113,0.05);
-  }
-  .tl-alert-head {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
-  }
-  .tl-alert-icon-badge {
-    width: 20px; height: 20px; border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 800; flex-shrink: 0;
-  }
-  .tl-alert-incomplete .tl-alert-icon-badge {
-    background: rgba(251,146,60,0.18); color: #fb923c;
-  }
-  .tl-alert-illegal .tl-alert-icon-badge {
-    background: rgba(248,113,113,0.18); color: #f87171;
-  }
-  .tl-alert-title { font-size: 15px; font-weight: 700; }
-  .tl-alert-incomplete .tl-alert-title { color: #fb923c; }
-  .tl-alert-illegal .tl-alert-title { color: #f87171; }
-  .tl-alert-msg {
-    font-size: 13px; color: rgba(230,230,232,0.5);
-    margin: 0 0 4px; line-height: 1.55;
-  }
-  .tl-alert-sub { margin-top: 18px; }
-
-  .tl-rec-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
-  .tl-rec-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 8px; padding: 12px 14px;
-    display: flex; align-items: center;
-    justify-content: space-between; gap: 12px;
-  }
-  .tl-rec-combo {
-    font-size: 12px; font-weight: 600;
-    color: rgba(230,230,232,0.75); margin: 0;
-    line-height: 1.45;
-  }
-
-  .tl-swap-list { display: flex; flex-direction: column; gap: 6px; }
-  .tl-swap-row {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 7px; padding: 10px 14px;
-  }
-  .tl-swap-slot {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: #303040;
-  }
-  .tl-swap-field {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; color: #484858;
-  }
-  .tl-swap-from {
-    font-size: 13px; color: rgba(248,113,113,0.6);
-    text-decoration: line-through;
-  }
-  .tl-swap-sep { font-size: 13px; color: #303040; }
-  .tl-swap-to { font-size: 13px; font-weight: 600; color: #4ade80; flex: 1; }
-
-  /* ── Combo cards ── */
-  .tl-combos { display: flex; flex-direction: column; gap: 14px; margin-bottom: 14px; }
-  .tl-combo-card {
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 14px; padding: 22px 22px 18px;
-    background: rgba(255,255,255,0.025);
-    transition: border-color 0.22s;
-  }
-  .tl-combo-done {
-    border-color: rgba(74,222,128,0.25);
-    background: rgba(74,222,128,0.025);
-  }
-  .tl-combo-top {
-    display: flex; align-items: center;
-    justify-content: space-between; margin-bottom: 18px;
-  }
-  .tl-combo-heading-group {
-    display: flex; align-items: baseline; gap: 8px;
-  }
-  .tl-combo-num {
-    font-size: 40px; font-weight: 800; line-height: 1;
-    letter-spacing: -0.04em; color: rgba(255,255,255,0.12);
-    transition: color 0.22s;
-  }
-  .tl-combo-num-done { color: rgba(74,222,128,0.55); }
-  .tl-combo-word {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase;
-    color: #303040;
-  }
-  .tl-status-badge {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; font-weight: 500;
-    padding: 4px 10px; border-radius: 100px;
-    letter-spacing: 0.06em;
-  }
-  .tl-badge-ready {
-    background: rgba(74,222,128,0.1);
-    color: #4ade80;
-    border: 1px solid rgba(74,222,128,0.22);
-  }
-  .tl-badge-pending {
-    background: rgba(255,255,255,0.04);
-    color: #303040;
-    border: 1px solid rgba(255,255,255,0.07);
-  }
-  .tl-part-fields { display: flex; flex-direction: column; gap: 6px; }
-
-  /* ── Part input ── */
-  .tl-pinput-wrap { position: relative; }
-  .tl-pinput-row {
-    display: flex; align-items: stretch;
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 8px; background: rgba(0,0,0,0.28);
-    overflow: hidden; transition: border-color 0.15s;
-  }
-  .tl-pinput-row:focus-within {
-    border-color: rgba(255,255,255,0.22);
-  }
-  .tl-pinput-label {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: #404055; padding: 0 14px;
-    display: flex; align-items: center;
-    border-right: 1px solid rgba(255,255,255,0.06);
-    white-space: nowrap; min-width: 72px;
-    justify-content: center; user-select: none; flex-shrink: 0;
-  }
-  .tl-pinput-inner {
-    flex: 1; position: relative; display: flex; align-items: center;
-  }
-  .tl-pinput {
-    width: 100%; background: transparent; border: none; outline: none;
-    color: #e6e6e8; font-size: 14px; font-weight: 500;
-    padding: 12px 36px 12px 14px;
-    font-family: 'Syne', sans-serif;
-  }
-  .tl-pinput::placeholder {
-    color: rgba(255,255,255,0.14);
-    font-size: 12px;
-    font-family: 'DM Mono', monospace;
-  }
-  .tl-pinput-clear {
-    position: absolute; right: 10px;
-    background: none; border: none;
-    color: rgba(255,255,255,0.22); font-size: 18px;
-    cursor: pointer; line-height: 1; padding: 2px 4px;
-    transition: color 0.15s;
-  }
-  .tl-pinput-clear:hover { color: rgba(255,255,255,0.55); }
-  .tl-dropdown {
-    position: absolute; z-index: 200;
-    top: calc(100% + 4px); left: 0; right: 0;
-    background: #16161e;
-    border: 1px solid rgba(255,255,255,0.11);
-    border-radius: 10px; list-style: none;
-    margin: 0; padding: 4px 0;
-    max-height: 210px; overflow-y: auto;
-    box-shadow: 0 24px 64px rgba(0,0,0,0.75);
-  }
-  .tl-dropdown-item {
-    padding: 10px 16px; cursor: pointer;
-    font-size: 13px; font-weight: 500;
-    color: rgba(230,230,232,0.7);
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    transition: background 0.1s, color 0.1s;
-    font-family: 'Syne', sans-serif;
-  }
-  .tl-dropdown-item:last-child { border-bottom: none; }
-  .tl-dropdown-item:hover {
-    background: rgba(255,255,255,0.07); color: #e6e6e8;
-  }
-  .tl-match { background: none; color: #4ade80; font-weight: 700; }
-
-  /* ── Add slot ── */
-  .tl-add-slot {
-    width: 100%; padding: 15px 20px; margin-bottom: 16px;
-    background: transparent;
-    border: 1px dashed rgba(255,255,255,0.1);
-    border-radius: 10px;
-    color: rgba(255,255,255,0.28);
-    font-size: 13px; font-weight: 600; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    font-family: 'Syne', sans-serif;
-    transition: border-color 0.18s, color 0.18s;
-  }
-  .tl-add-slot:hover {
-    border-color: rgba(255,255,255,0.22);
-    color: rgba(255,255,255,0.55);
-  }
-  .tl-add-plus { font-size: 18px; font-weight: 300; line-height: 1; }
-  .tl-slot-count {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; letter-spacing: 0.12em;
-    color: #303040; margin-left: auto;
-  }
-
-  /* ── Grade card ── */
-  .tl-grade-card {
-    border: 1px solid rgba(255,255,255,0.09);
-    border-radius: 16px; padding: 28px;
-    background: rgba(255,255,255,0.025);
-    display: flex; gap: 24px; margin-bottom: 30px;
-    animation: tl-fade-up 0.25s ease;
-  }
-  .tl-grade-body { flex: 1; }
-  .tl-grade-letter-wrap {
-    display: flex; align-items: flex-start; padding-top: 4px;
-  }
-  .tl-grade-score-row {
-    display: flex; align-items: baseline; gap: 6px; margin-bottom: 10px;
-  }
-  .tl-grade-score {
-    font-size: 66px; font-weight: 800; line-height: 1;
-    letter-spacing: -0.04em; color: #e6e6e8;
-  }
-  .tl-grade-max {
-    font-size: 20px; color: #303040; font-weight: 400;
-  }
-  .tl-grade-chips {
-    display: flex; gap: 10px; align-items: center; margin-bottom: 22px;
-  }
-  .tl-chip {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; letter-spacing: 0.12em;
-    padding: 4px 10px;
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 100px; color: rgba(230,230,232,0.38);
-  }
-  .tl-chip-plain {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; letter-spacing: 0.1em; color: #303040;
-  }
-  .tl-metrics { display: flex; flex-direction: column; gap: 11px; margin-bottom: 18px; }
-  .tl-metric-row { display: flex; align-items: center; gap: 12px; }
-  .tl-metric-name {
-    font-family: 'DM Mono', monospace;
-    font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase;
-    color: #404055; width: 58px;
-  }
-  .tl-metric-track {
-    flex: 1; height: 3px; background: rgba(255,255,255,0.07);
-    border-radius: 2px; overflow: hidden;
-  }
-  .tl-metric-fill {
-    height: 100%; border-radius: 2px;
-    transition: width 0.5s ease;
-  }
-  .tl-metric-val {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px; font-weight: 500; width: 28px; text-align: right;
-  }
-  .tl-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
-  .tl-reason-tag {
-    font-size: 11px; padding: 5px 12px; border-radius: 100px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: rgba(230,230,232,0.45); font-weight: 500;
-  }
-  .tl-grade-letter-box {
-    width: 88px; height: 88px; border-radius: 14px; border: 2px solid;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .tl-grade-letter {
-    font-size: 58px; font-weight: 800; line-height: 1; letter-spacing: -0.04em;
-  }
-
-  /* ── Stats ── */
-  .tl-stats-section { animation: tl-fade-up 0.25s ease; }
-  .tl-stats-grid {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
-  }
-  .tl-stat-card {
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px; padding: 18px 16px;
-    background: rgba(255,255,255,0.02);
-  }
-  .tl-stat-idx {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px; letter-spacing: 0.12em;
-    color: #252530; margin-bottom: 8px;
-  }
-  .tl-stat-combo-name {
-    font-size: 12px; font-weight: 600;
-    color: rgba(230,230,232,0.6); margin: 0 0 14px;
-    line-height: 1.55;
-  }
-  .tl-stat-sep { color: #252530; }
-  .tl-stat-nums { display: flex; gap: 18px; margin-bottom: 14px; }
-  .tl-stat-num-blk { display: flex; flex-direction: column; gap: 3px; }
-  .tl-stat-big {
-    font-size: 34px; font-weight: 800; line-height: 1;
-    letter-spacing: -0.02em; color: #e6e6e8;
-  }
-  .tl-stat-lbl {
-    font-family: 'DM Mono', monospace;
-    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: #303040;
-  }
-  .tl-stat-dates { display: flex; gap: 14px; }
-  .tl-stat-date-label {
-    display: block;
-    font-family: 'DM Mono', monospace;
-    font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: #252530; margin-bottom: 3px;
-  }
-  .tl-stat-date-val {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px; color: #404055;
-  }
-
-  /* ── Responsive ── */
-  @media (max-width: 540px) {
-    .tl-stats-grid { grid-template-columns: 1fr; }
-    .tl-rec-grid { grid-template-columns: 1fr; }
-    .tl-grade-card { flex-direction: column; }
-    .tl-grade-letter-wrap { justify-content: flex-start; }
-    .tl-page-title { font-size: 34px; }
-  }
-`
