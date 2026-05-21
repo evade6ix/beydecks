@@ -414,7 +414,7 @@ export default function Home() {
     onHide={() => setShowAnnouncement(false)}
     title={
       <>
-        <span className="font-semibold">Announcement:</span> 30% Off Beycase! 
+        <span className="font-semibold">Announcement:</span> Support Locl - Buy a Baycase! 
       </>
     }
     action={{
