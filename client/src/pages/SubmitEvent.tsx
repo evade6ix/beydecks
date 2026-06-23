@@ -132,7 +132,7 @@ export default function SubmitEvent() {
     try {
       setPendingLoaded(false)
 
-      const res = await fetch(`${API}/event-submissions/pending`)
+      const res = await fetch(`${API}/event-submissions`)
       if (!res.ok) {
         setPendingSubmissions([])
         return
