@@ -308,46 +308,88 @@ const trophies = !trophyKey
         {/* Right column */}
         <div className="space-y-4">
           {/* ✅ TROPHIES */}
-          <Card>
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-              <Trophy className="h-4 w-4" /> Trophies
+          {/* ✅ TROPHIES */}
+<Card>
+  <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+    <Trophy className="h-4 w-4" /> Trophies
+  </div>
+
+  {!trophies.length ? (
+    <div className="text-sm text-white/70">No trophies yet.</div>
+  ) : (
+    <ul className="space-y-2">
+      {trophies.map((t) => {
+        const content = (
+          <>
+            <img
+              src={t.image}
+              alt={`${t.placement} trophy`}
+              className="h-12 w-12 shrink-0 object-contain"
+              draggable={false}
+            />
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="truncate font-medium">{t.event}</div>
+                <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80">
+                  {t.placement}
+                </span>
+              </div>
+
+              <div className="mt-0.5 text-xs text-white/60">
+                {t.date ? safeDate(t.date) : null}
+                {t.note ? (t.date ? " · " : "") : null}
+                {t.note ? t.note : null}
+              </div>
             </div>
+          </>
+        )
 
-            {!trophies.length ? (
-              <div className="text-sm text-white/70">No trophies yet.</div>
+        const baseClass =
+          "flex w-full items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 text-left"
+
+        const clickableClass =
+          `${baseClass} cursor-pointer transition hover:scale-[1.02] hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/50`
+
+        if (!t.eventUrl) {
+          return (
+            <li key={t.id}>
+              <div className={baseClass}>{content}</div>
+            </li>
+          )
+        }
+
+        const isExternal = /^https?:\/\//i.test(t.eventUrl)
+
+        return (
+          <li key={t.id}>
+            {isExternal ? (
+              <a
+                href={t.eventUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={clickableClass}
+                title={`View ${t.event}`}
+                aria-label={`View event page for ${t.event}`}
+              >
+                {content}
+              </a>
             ) : (
-              <ul className="space-y-2">
-                {trophies.map((t) => (
-                  <li
-                    key={t.id}
-                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3"
-                  >
-                    <img
-  src={t.image}
-  alt={`${t.placement} trophy`}
-  className="h-12 w-12 object-contain"
-  draggable={false}
-/>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate font-medium">{t.event}</div>
-                        <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-white/80">
-                          {t.placement}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 text-xs text-white/60">
-                        {t.date ? safeDate(t.date) : null}
-                        {t.note ? (t.date ? " · " : "") : null}
-                        {t.note ? t.note : null}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <Link
+                to={t.eventUrl}
+                className={clickableClass}
+                title={`View ${t.event}`}
+                aria-label={`View event page for ${t.event}`}
+              >
+                {content}
+              </Link>
             )}
-          </Card>
-
+          </li>
+        )
+      })}
+    </ul>
+  )}
+</Card>
           {/* Quick Facts */}
           <Card>
             <div className="mb-2 text-sm font-semibold">Quick Facts</div>
