@@ -96,14 +96,34 @@ const [isVip, setIsVip] = useState(false)
   [wins, matchups.length]
 )
 
-const specialWinRateUsers = new Set(["karl6ix", "kwfors1", "tian-mandani"])
+const winRateOverrides: Record<string, { title: string; suffix: string }> = {
+  karl6ix: {
+    title: "Does Tian Pull?",
+    suffix: "No Hoes LOL",
+  },
+  kwfors1: {
+    title: "Does Tian Pull?",
+    suffix: "No Hoes LOL",
+  },
+  "tian-mandani": {
+    title: "Does Tian Pull?",
+    suffix: "No Hoes LOL",
+  },
+  martindeasis: {
+    title: "WBO Win Rate",
+    suffix: "Back to Gundam Lil Bro",
+  },
+}
 
-const isSpecialWinRateUser = [u.slug, u.username, authUser.username].some((value) =>
-  specialWinRateUsers.has(String(value || "").trim().toLowerCase())
-)
+const winRateOverride = [u.slug, u.username, authUser.username]
+  .map((value) => String(value || "").trim().toLowerCase())
+  .map((key) => winRateOverrides[key])
+  .find(Boolean)
 
-const winRateTitle = isSpecialWinRateUser ? "Does Tian Pull?" : "Win Rate"
-const winRateSuffix = isSpecialWinRateUser && Number(winRate) === 0 ? "No Hoes LOL" : ""
+const isSpecialWinRateUser = Boolean(winRateOverride)
+
+const winRateTitle = winRateOverride?.title ?? "Win Rate"
+const winRateSuffix = winRateOverride && Number(winRate) === 0 ? winRateOverride.suffix : ""
 
   const firsts = useMemo(() => tournaments.filter((t) => t.placement === "First Place").length, [tournaments])
   const seconds = useMemo(() => tournaments.filter((t) => t.placement === "Second Place").length, [tournaments])
