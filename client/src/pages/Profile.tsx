@@ -96,12 +96,14 @@ const [isVip, setIsVip] = useState(false)
   [wins, matchups.length]
 )
 
-const isKwfors1User = [u.slug, u.username, authUser.username].some(
-  (value) => String(value || "").trim().toLowerCase() === "kwfors1"
+const specialWinRateUsers = new Set(["kwfors1", "tian-mandani"])
+
+const isSpecialWinRateUser = [u.slug, u.username, authUser.username].some((value) =>
+  specialWinRateUsers.has(String(value || "").trim().toLowerCase())
 )
 
-const winRateTitle = isKwfors1User ? "No Hoes?" : "Win Rate"
-const winRateSuffix = isKwfors1User && Number(winRate) === 0 ? "No Hoes LOL" : ""
+const winRateTitle = isSpecialWinRateUser ? "Does Tian Pull?" : "Win Rate"
+const winRateSuffix = isSpecialWinRateUser && Number(winRate) === 0 ? "No Hoes LOL" : ""
 
   const firsts = useMemo(() => tournaments.filter((t) => t.placement === "First Place").length, [tournaments])
   const seconds = useMemo(() => tournaments.filter((t) => t.placement === "Second Place").length, [tournaments])
@@ -372,7 +374,7 @@ const winRateSuffix = isKwfors1User && Number(winRate) === 0 ? "No Hoes LOL" : "
             </Pill>
             <Pill>
   <Percent className="mr-1 h-3.5 w-3.5" />{" "}
-  {isKwfors1User ? (
+  {isSpecialWinRateUser ? (
     <>
       {winRate}%{winRateSuffix ? ` ${winRateSuffix}` : ""}
     </>
