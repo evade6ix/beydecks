@@ -96,7 +96,7 @@ const [isVip, setIsVip] = useState(false)
   [wins, matchups.length]
 )
 
-const specialWinRateUsers = new Set(["kwfors1", "tian-mandani"])
+const specialWinRateUsers = new Set(["karl6ix", "kwfors1", "tian-mandani"])
 
 const isSpecialWinRateUser = [u.slug, u.username, authUser.username].some((value) =>
   specialWinRateUsers.has(String(value || "").trim().toLowerCase())
