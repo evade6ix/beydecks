@@ -122,6 +122,7 @@ export default function SubmitEvent() {
   // Public pending approval list
   const [pendingSubmissions, setPendingSubmissions] = useState<EventSubmission[]>([])
   const [pendingLoaded, setPendingLoaded] = useState(false)
+  const [pendingIndex, setPendingIndex] = useState(0)
 
   // Suggestions (kept identical so it feels 1:1)
   const [nameSuggestions, setNameSuggestions] = useState<UserHit[][]>([])
@@ -131,7 +132,7 @@ export default function SubmitEvent() {
     try {
       setPendingLoaded(false)
 
-      const res = await fetch(`${API}/event-submissions`)
+      const res = await fetch(`${API}/event-submissions/pending`)
       if (!res.ok) {
         setPendingSubmissions([])
         return
@@ -155,6 +156,27 @@ export default function SubmitEvent() {
   useEffect(() => {
     loadPendingSubmissions()
   }, [])
+
+  useEffect(() => {
+    setPendingIndex((prev) => {
+      if (pendingSubmissions.length === 0) return 0
+      return Math.min(prev, pendingSubmissions.length - 1)
+    })
+  }, [pendingSubmissions.length])
+
+  const previousPendingSubmission = () => {
+    setPendingIndex((prev) => {
+      if (pendingSubmissions.length <= 1) return prev
+      return prev === 0 ? pendingSubmissions.length - 1 : prev - 1
+    })
+  }
+
+  const nextPendingSubmission = () => {
+    setPendingIndex((prev) => {
+      if (pendingSubmissions.length <= 1) return prev
+      return prev === pendingSubmissions.length - 1 ? 0 : prev + 1
+    })
+  }
 
   const resetForm = () => {
     setTitle("")
@@ -353,15 +375,55 @@ export default function SubmitEvent() {
             No events are currently waiting approval.
           </div>
         ) : (
-          <div className="grid gap-3">
-            {pendingSubmissions.map((submission, index) => {
-              const draft = submission.eventDraft || {}
-              const id = submission._id || submission.id || String(index)
-              const topCutCount = draft.topCut?.length || 0
-              const location = [draft.city, draft.region, draft.country].filter(Boolean).join(", ")
+          (() => {
+            const submission = pendingSubmissions[pendingIndex] || pendingSubmissions[0]
+            const draft = submission?.eventDraft || {}
+            const topCutCount = draft.topCut?.length || 0
+            const location = [draft.city, draft.region, draft.country].filter(Boolean).join(", ")
 
-              return (
-                <div key={id} className="rounded-xl border border-base-300 bg-base-100 p-4">
+            return (
+              <div className="space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div className="text-sm opacity-70">
+                    Showing{" "}
+                    <span className="font-semibold opacity-100">
+                      {pendingIndex + 1}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold opacity-100">
+                      {pendingSubmissions.length}
+                    </span>{" "}
+                    pending event{pendingSubmissions.length === 1 ? "" : "s"}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={previousPendingSubmission}
+                      disabled={pendingSubmissions.length <= 1}
+                    >
+                      ← Previous
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={nextPendingSubmission}
+                      disabled={pendingSubmissions.length <= 1}
+                    >
+                      Next →
+                    </button>
+                  </div>
+                </div>
+
+                <motion.div
+                  key={submission?._id || submission?.id || pendingIndex}
+                  className="rounded-xl border border-base-300 bg-base-100 p-4"
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex flex-wrap items-center gap-2">
@@ -397,10 +459,28 @@ export default function SubmitEvent() {
                       ) : null}
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                </motion.div>
+
+                {pendingSubmissions.length > 1 ? (
+                  <div className="flex justify-center gap-1.5">
+                    {pendingSubmissions.map((_, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className={`h-2 rounded-full transition-all ${
+                          i === pendingIndex
+                            ? "w-6 bg-primary"
+                            : "w-2 bg-base-content/25"
+                        }`}
+                        aria-label={`View pending event ${i + 1}`}
+                        onClick={() => setPendingIndex(i)}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            )
+          })()
         )}
       </div>
 
