@@ -76,4 +76,22 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     image: "/g3light.png",
     note: "G3 AN Qualifier",
   },
+
+  {
+    id: "banana15kchamps_champion_mikaqt",
+    event: "Banana 15K Champs",
+    placement: "Champion",
+    username: "mikaqt",
+    image: "/singlebanana.webp",
+    note: "15k Winner",
+  },
+
+  {
+    id: "banana15kchamps_top3_danielhanick2002",
+    event: "Banana 15K Champs",
+    placement: "Top 3",
+    username: "danielhanick2002",
+    image: "/bananalol.webp",
+    note: "Banana 15k 3rd Place",
+  },
 ]
