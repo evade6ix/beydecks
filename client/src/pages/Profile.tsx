@@ -92,9 +92,16 @@ const [isVip, setIsVip] = useState(false)
   const wins = useMemo(() => matchups.filter((m) => m.result === "win").length, [matchups])
   const losses = useMemo(() => matchups.filter((m) => m.result === "loss").length, [matchups])
   const winRate = useMemo(
-    () => (matchups.length > 0 ? ((wins / matchups.length) * 100).toFixed(1) : "0"),
-    [wins, matchups.length]
-  )
+  () => (matchups.length > 0 ? ((wins / matchups.length) * 100).toFixed(1) : "0"),
+  [wins, matchups.length]
+)
+
+const isKwfors1User = [u.slug, u.username, authUser.username].some(
+  (value) => String(value || "").trim().toLowerCase() === "kwfors1"
+)
+
+const winRateTitle = isKwfors1User ? "No Hoes?" : "Win Rate"
+const winRateSuffix = isKwfors1User && Number(winRate) === 0 ? "No Hoes LOL" : ""
 
   const firsts = useMemo(() => tournaments.filter((t) => t.placement === "First Place").length, [tournaments])
   const seconds = useMemo(() => tournaments.filter((t) => t.placement === "Second Place").length, [tournaments])
@@ -364,8 +371,15 @@ const [isVip, setIsVip] = useState(false)
               <Trophy className="mr-1 h-3.5 w-3.5" /> {tournaments.length} tournaments
             </Pill>
             <Pill>
-              <Percent className="mr-1 h-3.5 w-3.5" /> {winRate}% win rate
-            </Pill>
+  <Percent className="mr-1 h-3.5 w-3.5" />{" "}
+  {isKwfors1User ? (
+    <>
+      {winRate}%{winRateSuffix ? ` ${winRateSuffix}` : ""}
+    </>
+  ) : (
+    <>{winRate}% win rate</>
+  )}
+</Pill>
           </div>
 
           {/* Bio editor inline */}
@@ -430,14 +444,21 @@ const [isVip, setIsVip] = useState(false)
       {/* QUICK STATS */}
       <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-xl border border-white/10 bg-white/5 p-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Percent className="h-4 w-4" /> Win Rate
-          </div>
-          <div className="mt-1 text-2xl font-bold">{winRate}%</div>
-          <div className="mt-2">
-            <Progress pct={Number(winRate)} />
-          </div>
-        </div>
+  <div className="flex items-center gap-2 text-sm font-semibold">
+    <Percent className="h-4 w-4" /> {winRateTitle}
+  </div>
+  <div className="mt-1 text-2xl font-bold">
+    {winRate}%
+    {winRateSuffix ? (
+      <span className="ml-2 text-base font-semibold text-white/70">
+        {winRateSuffix}
+      </span>
+    ) : null}
+  </div>
+  <div className="mt-2">
+    <Progress pct={Number(winRate)} />
+  </div>
+</div>
 
         <div className="rounded-xl border border-white/10 bg-white/5 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
