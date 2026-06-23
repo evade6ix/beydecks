@@ -17,6 +17,7 @@ export type TrophyAward = {
   username: string // exact match (same as VIP forcing)
   image: string // from /public, e.g. "/trophies/event-slug/champion.png"
   note?: string
+  eventUrl?: string
 }
 
 export const TROPHY_AWARDS: TrophyAward[] = [
@@ -84,6 +85,7 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     username: "mikaqt",
     image: "/singlebanana.webp",
     note: "15k Winner",
+    eventUrl: "https://www.metabeys.com/events/1782228198058",
   },
 
   {
@@ -93,5 +95,6 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     username: "danielhanick2002",
     image: "/bananalol.webp",
     note: "Banana 15k 3rd Place",
+    eventUrl: "https://www.metabeys.com/events/1782228198058",
   },
 ]
