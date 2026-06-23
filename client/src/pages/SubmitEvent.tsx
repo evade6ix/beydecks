@@ -1,5 +1,5 @@
 // File: client/src/pages/SubmitEvent.tsx
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import toast from "react-hot-toast"
 
@@ -63,11 +63,44 @@ type UserHit = {
   avatarDataUrl?: string
 }
 
+interface EventSubmission {
+  _id?: string
+  id?: string
+  status?: "pending" | "approved" | "rejected" | string
+  submittedAt?: string
+  eventDraft?: {
+    title?: string
+    startTime?: string
+    endTime?: string
+    store?: string
+    topCut?: Player[]
+    attendeeCount?: number
+    country?: string
+    region?: string
+    city?: string
+  }
+}
+
 function placementLabel(i: number) {
   if (i === 0) return "First Place"
   if (i === 1) return "Second Place"
   if (i === 2) return "Third Place"
   return `Top Cut (${i + 1})`
+}
+
+function formatEventDate(value?: string) {
+  if (!value) return "No date provided"
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
 }
 
 export default function SubmitEvent() {
@@ -86,9 +119,42 @@ export default function SubmitEvent() {
   const [topCut, setTopCut] = useState<Player[]>([])
   const [submitting, setSubmitting] = useState(false)
 
+  // Public pending approval list
+  const [pendingSubmissions, setPendingSubmissions] = useState<EventSubmission[]>([])
+  const [pendingLoaded, setPendingLoaded] = useState(false)
+
   // Suggestions (kept identical so it feels 1:1)
   const [nameSuggestions, setNameSuggestions] = useState<UserHit[][]>([])
   const timersRef = useRef<number[]>([])
+
+  const loadPendingSubmissions = async () => {
+    try {
+      setPendingLoaded(false)
+
+      const res = await fetch(`${API}/event-submissions`)
+      if (!res.ok) {
+        setPendingSubmissions([])
+        return
+      }
+
+      const data = await res.json().catch(() => [])
+      const list: EventSubmission[] = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.items)
+          ? data.items
+          : []
+
+      setPendingSubmissions(list.filter((s) => s.status === "pending"))
+    } catch {
+      setPendingSubmissions([])
+    } finally {
+      setPendingLoaded(true)
+    }
+  }
+
+  useEffect(() => {
+    loadPendingSubmissions()
+  }, [])
 
   const resetForm = () => {
     setTitle("")
@@ -241,6 +307,7 @@ export default function SubmitEvent() {
 
       toast.success("✅ Submitted! Admin will review it.", { id: toastId })
       resetForm()
+      loadPendingSubmissions()
     } catch {
       toast.error("Submission failed (network error)", { id: toastId })
     } finally {
@@ -258,6 +325,84 @@ export default function SubmitEvent() {
       <p className="opacity-70 -mt-2">
         Submit an event + top cut combos for admin review. Once approved, it becomes a real event.
       </p>
+
+      <div className="card bg-base-200 p-4 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-bold">Events Waiting Approval</h2>
+            <p className="text-sm opacity-70">
+              Check this list before submitting so the same tournament does not get reported twice.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={loadPendingSubmissions}
+          >
+            Refresh
+          </button>
+        </div>
+
+        {!pendingLoaded ? (
+          <div className="rounded-lg border border-base-300 bg-base-100 p-4 opacity-70">
+            Loading pending submissions…
+          </div>
+        ) : pendingSubmissions.length === 0 ? (
+          <div className="rounded-lg border border-base-300 bg-base-100 p-4 opacity-70">
+            No events are currently waiting approval.
+          </div>
+        ) : (
+          <div className="grid gap-3">
+            {pendingSubmissions.map((submission, index) => {
+              const draft = submission.eventDraft || {}
+              const id = submission._id || submission.id || String(index)
+              const topCutCount = draft.topCut?.length || 0
+              const location = [draft.city, draft.region, draft.country].filter(Boolean).join(", ")
+
+              return (
+                <div key={id} className="rounded-xl border border-base-300 bg-base-100 p-4">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-bold text-lg">
+                          {draft.title || "Untitled Tournament"}
+                        </h3>
+                        <span className="badge badge-warning badge-outline">
+                          Waiting Approval
+                        </span>
+                      </div>
+
+                      <div className="text-sm opacity-80">
+                        {draft.store || "Store not provided"}
+                        {location ? ` • ${location}` : ""}
+                      </div>
+
+                      <div className="text-sm opacity-70">
+                        {formatEventDate(draft.startTime)}
+                      </div>
+                    </div>
+
+                    <div className="text-sm md:text-right opacity-70">
+                      <div>
+                        Top Cut Players:{" "}
+                        <span className="font-semibold">{topCutCount}</span>
+                      </div>
+
+                      {typeof draft.attendeeCount === "number" ? (
+                        <div>
+                          Attendees:{" "}
+                          <span className="font-semibold">{draft.attendeeCount}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="card bg-base-200 p-4 space-y-4">
         <h2 className="text-xl font-bold">Event Submission</h2>
@@ -346,7 +491,6 @@ export default function SubmitEvent() {
 
           {topCut.map((p, i) => (
             <div key={i} className="space-y-2 border rounded p-2">
-              {/* ✅ This is what you were missing */}
               <div className="text-xs font-semibold opacity-70">{placementLabel(i)}</div>
 
               <div className="relative">
@@ -407,7 +551,6 @@ export default function SubmitEvent() {
         </div>
 
         <div className="flex gap-2">
-          {/* ✅ This is the other missing piece */}
           <button className="btn btn-primary" onClick={submitEventForReview} disabled={submitting}>
             {submitting ? "Submitting..." : "Submit for Review"}
           </button>
