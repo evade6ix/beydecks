@@ -414,12 +414,12 @@ export default function Home() {
     onHide={() => setShowAnnouncement(false)}
     title={
       <>
-        <span className="font-semibold">Announcement:</span> Support Locl - Buy a Baycase! 
+        <span className="font-semibold">Announcement:</span> The largest event in Canada has been logged - hosted by Team Xtreme 
       </>
     }
     action={{
       label: "Shop Now",
-      onClick: () => window.open("https://www.beycase.com/product-page/beycase", "_blank"),
+      onClick: () => window.open("https://www.metabeys.com/events/1784493089162", "_blank"),
     }}
   />
 </div>

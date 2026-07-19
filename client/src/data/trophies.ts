@@ -3,10 +3,12 @@
 export type TrophyPlacement =
   | "Champion"
   | "Finalist"
+  | "Second Place"
   | "Top 3"
   | "Top Cut"
   | "Qualified"
   | "Staff"
+  | "Organizer"
   | "Special"
 
 export type TrophyAward = {
@@ -96,5 +98,23 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     image: "/bananalol.webp",
     note: "Banana 15k 3rd Place",
     eventUrl: "https://www.metabeys.com/events/1782228198058",
+  },
+
+  {
+    id: "grandprixcar_secondplace_danielhanick2002",
+    event: "Grand Prix Car Event",
+    placement: "Second Place",
+    username: "danielhanick2002",
+    image: "/xtremelogo.jpg",
+    note: "Grand Prix Car Event — Second Place",
+  },
+
+  {
+    id: "grandprixcar_organizer_vl97",
+    event: "Grand Prix Car Event",
+    placement: "Organizer",
+    username: "vl97",
+    image: "/xtremelogo.jpg",
+    note: "Grand Prix Car Event Organizer",
   },
 ]
