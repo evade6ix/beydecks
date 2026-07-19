@@ -106,7 +106,8 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     placement: "Second Place",
     username: "danielhanick2002",
     image: "/xtremelogo.jpg",
-    note: "Grand Prix Car Event — Second Place",
+    note: "Grand Prix Car Event",
+    eventUrl: "https://www.metabeys.com/events/1784493089162",
   },
 
   {
@@ -116,5 +117,6 @@ export const TROPHY_AWARDS: TrophyAward[] = [
     username: "vl97",
     image: "/xtremelogo.jpg",
     note: "Grand Prix Car Event Organizer",
+    eventUrl: "https://www.metabeys.com/events/1784493089162",
   },
 ]
