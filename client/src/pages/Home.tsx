@@ -414,13 +414,9 @@ export default function Home() {
     onHide={() => setShowAnnouncement(false)}
     title={
       <>
-        <span className="font-semibold">Announcement:</span> The largest event in Canada has been logged - hosted by Team Xtreme 
+        <span className="font-semibold">Announcement:</span> MYSTERY BOUNT: Win a WBO with Gear Rush. Video proof must be submitted on Discord
       </>
     }
-    action={{
-      label: "Shop Now",
-      onClick: () => window.open("https://www.metabeys.com/events/1784493089162", "_blank"),
-    }}
   />
 </div>
 
