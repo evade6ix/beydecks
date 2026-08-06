@@ -53,7 +53,7 @@ interface BannerProps {
   onHide: () => void
   icon?: React.ReactNode
   title: React.ReactNode
-  action: {
+  action?: {
     label: string
     onClick: () => void
   }
@@ -105,13 +105,15 @@ export function Banner({
         </div>
 
         <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
-            className="whitespace-nowrap rounded-md border border-green-700/50 px-3 py-1 text-sm text-gray-800 transition-colors hover:bg-green-500/10"
-            onClick={action.onClick}
-          >
-            {action.label}
-          </button>
+          {action && (
+            <button
+              type="button"
+              className="whitespace-nowrap rounded-md border border-green-700/50 px-3 py-1 text-sm text-gray-800 transition-colors hover:bg-green-500/10"
+              onClick={action.onClick}
+            >
+              {action.label}
+            </button>
+          )}
 
           <button
             type="button"
