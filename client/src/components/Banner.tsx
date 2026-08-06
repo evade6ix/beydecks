@@ -4,6 +4,38 @@ import { X } from "lucide-react"
 const cn = (...classes: (string | false | null | undefined)[]) =>
   classes.filter(Boolean).join(" ")
 
+const BOUNTY_PHRASE = "Win a WBO with Gear Rush"
+
+function formatBannerTitle(node: React.ReactNode): React.ReactNode {
+  if (typeof node === "string") {
+    const corrected = node.replace("MYSTERY BOUNT:", "MYSTERY BOUNTY:")
+    const phraseIndex = corrected.indexOf(BOUNTY_PHRASE)
+
+    if (phraseIndex === -1) return corrected
+
+    return (
+      <>
+        {corrected.slice(0, phraseIndex)}
+        <span className="mx-0.5 inline-block rounded-md border border-green-700/30 bg-green-700/10 px-1.5 py-0.5 font-bold text-green-950">
+          {BOUNTY_PHRASE}
+        </span>
+        {corrected.slice(phraseIndex + BOUNTY_PHRASE.length)}
+      </>
+    )
+  }
+
+  if (!React.isValidElement(node)) return node
+
+  const element = node as React.ReactElement<{ children?: React.ReactNode }>
+  if (element.props.children === undefined) return element
+
+  return React.cloneElement(
+    element,
+    undefined,
+    formatBannerTitle(element.props.children),
+  )
+}
+
 function Grid({
   cellSize = 12,
   strokeWidth = 1,
@@ -87,7 +119,7 @@ export function Banner({
           )}
 
           <p className="text-sm text-gray-900">
-            {title}
+            {formatBannerTitle(title)}
             {learnMoreUrl && (
               <>
                 {" "}
