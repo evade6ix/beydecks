@@ -24,6 +24,10 @@ function formatBannerTitle(node: React.ReactNode): React.ReactNode {
     )
   }
 
+  if (Array.isArray(node)) {
+    return node.map(formatBannerTitle)
+  }
+
   if (!React.isValidElement(node)) return node
 
   const element = node as React.ReactElement<{ children?: React.ReactNode }>
