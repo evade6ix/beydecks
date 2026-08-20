@@ -1,7 +1,7 @@
 // File: src/pages/Profile.tsx
 import type React from "react"
 import { useMemo, useState, useEffect } from "react"
-import { Link, Navigate } from "react-router-dom"
+import { Link, Navigate, useNavigate } from "react-router-dom"
 import { motion } from "framer-motion"
 import {
   Swords,
@@ -17,6 +17,9 @@ import {
   ChevronLeft,
   ChevronRight,
   TrendingUp,
+  AlertTriangle,
+  Loader2,
+  X,
 } from "lucide-react"
 
 import { toast } from "react-hot-toast"
@@ -53,6 +56,7 @@ interface Tournament {
 
 export default function Profile() {
   const { isAuthenticated, user, logout } = useAuth()
+  const navigate = useNavigate()
   if (!isAuthenticated || !user) return <Navigate to="/user-auth" />
 
   const authUser = user // ✅ TS now knows this is not null
@@ -70,6 +74,10 @@ export default function Profile() {
 const u = authUser as typeof authUser & ProfileExtras
 // Profile-only VIP flag (do NOT rely on AuthContext user.vip)
 const [isVip, setIsVip] = useState(false)
+const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+const [deleteConfirmation, setDeleteConfirmation] = useState("")
+const [deleteError, setDeleteError] = useState("")
+const [deletingAccount, setDeletingAccount] = useState(false)
 
 
   // Matchups
@@ -324,6 +332,49 @@ const winRateSuffix = winRateOverride && Number(winRate) === 0 ? winRateOverride
     }
   }
 
+  const accountUsername = String(u.username || authUser.username || "").trim()
+
+  const closeDeleteModal = () => {
+    if (deletingAccount) return
+    setDeleteModalOpen(false)
+    setDeleteConfirmation("")
+    setDeleteError("")
+  }
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmation.trim() !== accountUsername || deletingAccount) return
+
+    const token = localStorage.getItem("token")
+    if (!token) {
+      setDeleteError("Your session expired. Please log in again before deleting your account.")
+      return
+    }
+
+    setDeletingAccount(true)
+    setDeleteError("")
+
+    try {
+      const res = await fetch(api("/auth/me"), {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ confirmation: deleteConfirmation.trim() }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || "Failed to delete account")
+
+      logout()
+      toast.success("Your MetaBeys account has been permanently deleted.")
+      navigate("/", { replace: true })
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Failed to delete account")
+      setDeletingAccount(false)
+    }
+  }
+
   const Progress = ({ pct }: { pct: number }) => (
     <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
       <div
@@ -459,6 +510,7 @@ const winRateSuffix = winRateOverride && Number(winRate) === 0 ? winRateOverride
   )
 
   return (
+  <>
   <motion.div className="mx-auto max-w-6xl p-4 md:p-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
     {/* HERO */}
     {isVip ? <VipBanner>{HeroInner}</VipBanner> : HeroInner}
@@ -815,7 +867,142 @@ const winRateSuffix = winRateOverride && Number(winRate) === 0 ? winRateOverride
           )}
         </div>
       </div>
+
+      {/* ACCOUNT DELETION */}
+      <section className="mt-6 overflow-hidden rounded-2xl border border-rose-500/25 bg-rose-500/[0.06]">
+        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl border border-rose-400/20 bg-rose-500/10 p-2 text-rose-300">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-white">Delete account</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-white/60">
+                Permanently remove your MetaBeys profile and associated account data. This cannot be undone.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDeleteModalOpen(true)}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-rose-400/30 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/25"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete account
+          </button>
+        </div>
+      </section>
     </motion.div>
+
+    {deleteModalOpen && (
+      <div
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeDeleteModal()
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") closeDeleteModal()
+        }}
+      >
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+          aria-describedby="delete-account-description"
+          className="w-full max-w-lg overflow-hidden rounded-3xl border border-rose-400/25 bg-slate-950 shadow-2xl shadow-black/60"
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-rose-500/15 p-2.5 text-rose-300">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 id="delete-account-title" className="text-xl font-bold text-white">
+                  Are you absolutely sure?
+                </h2>
+                <p id="delete-account-description" className="mt-1 text-sm leading-6 text-white/60">
+                  This action is permanent and cannot be reversed.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={closeDeleteModal}
+              disabled={deletingAccount}
+              className="rounded-xl p-2 text-white/50 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+              aria-label="Close delete account dialog"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <div className="space-y-5 p-5 sm:p-6">
+            <div className="rounded-2xl border border-rose-400/20 bg-rose-500/[0.07] p-4 text-sm leading-6 text-white/70">
+              Your profile, login credentials, avatar, bio, owned parts, matchup history, saved prep decks, chat messages, and forum posts will be deleted.
+              Published tournament results may remain as part of MetaBeys’ historical event records.
+            </div>
+
+            <label className="block">
+              <span className="text-sm text-white/75">
+                Type <strong className="select-all text-white">{accountUsername}</strong> to confirm:
+              </span>
+              <input
+                autoFocus
+                autoComplete="off"
+                value={deleteConfirmation}
+                onChange={(event) => {
+                  setDeleteConfirmation(event.target.value)
+                  setDeleteError("")
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && deleteConfirmation.trim() === accountUsername) {
+                    event.preventDefault()
+                    handleDeleteAccount()
+                  }
+                }}
+                className="mt-2 w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-white outline-none transition placeholder:text-white/25 focus:border-rose-400/60 focus:ring-2 focus:ring-rose-400/10"
+                placeholder={accountUsername}
+              />
+            </label>
+
+            {deleteError && (
+              <div role="alert" className="rounded-xl border border-rose-400/25 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+                {deleteError}
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deletingAccount}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/75 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmation.trim() !== accountUsername || deletingAccount}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {deletingAccount ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Deleting account…
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" /> Permanently delete account
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   )
 }
 
