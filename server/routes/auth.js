@@ -4,6 +4,7 @@ import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import { body, validationResult } from "express-validator"
 import crypto from "crypto"
+import { getDb } from "../mongo.js"
 
 const slugify = (s) =>
   (s || "")
@@ -432,7 +433,65 @@ This link will expire in 10 minutes.`,
     }
   })
 
+  // --- Permanently delete the signed-in account and user-owned community data ---
+  router.delete("/me", async (req, res) => {
+    const auth = req.headers.authorization
+    if (!auth?.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Unauthorized" })
+    }
+
+    let payload
+    try {
+      payload = jwt.verify(auth.split(" ")[1], JWT_SECRET)
+    } catch {
+      return res.status(401).json({ error: "Invalid token" })
+    }
+
+    try {
+      const user = await users.findOne({ id: String(payload.id) })
+      if (!user) return res.status(404).json({ error: "User not found" })
+
+      const confirmation = String(req.body?.confirmation || "").trim()
+      if (!confirmation || confirmation !== String(user.username || "")) {
+        return res.status(400).json({ error: "Type your exact username to confirm account deletion" })
+      }
+
+      const db = getDb()
+      const username = String(user.username || "")
+
+      // Delete associated user-created content before the account itself. If cleanup
+      // fails, the account remains so the operation can be retried safely.
+      await Promise.all([
+        db.collection("chatMessages").deleteMany({ user: username }),
+        db.collection("prep_decks").deleteMany({
+          userId: { $in: [String(user.id || ""), String(user._id || "")] },
+        }),
+        db.collection("forum").updateMany(
+          { "posts.username": username },
+          { $pull: { posts: { username } } }
+        ),
+      ])
+
+      // Remove event discussion containers left empty after the user's posts are removed.
+      await db.collection("forum").deleteMany({ posts: { $size: 0 } })
+
+      const deleted = await users.deleteOne({ _id: user._id })
+      if (deleted.deletedCount !== 1) {
+        return res.status(500).json({ error: "Account could not be deleted" })
+      }
+
+      // Invalidate any outstanding password-reset links held in process memory.
+      for (const [token, data] of Object.entries(resetTokens)) {
+        if (String(data?.userId || "") === String(user.id || "")) delete resetTokens[token]
+      }
+
+      return res.status(200).json({ message: "Account deleted" })
+    } catch (error) {
+      console.error("DELETE /auth/me failed", error)
+      return res.status(500).json({ error: "Failed to delete account" })
+    }
+  })
+
   return router
 }
-
 
