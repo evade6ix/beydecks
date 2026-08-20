@@ -30,11 +30,6 @@ interface Combo {
   bit: string
 }
 
-interface Player {
-  name: string
-  combos: Combo[]
-}
-
 interface EventItem {
   id: number | string
   title: string
@@ -45,20 +40,22 @@ interface EventItem {
   city?: string
   region?: string
   country?: string
-  topCut?: Player[]
-}
-
-interface Store {
-  id: number | string
-  name: string
-  city?: string
-  region?: string
-  country?: string
+  attendeeCount?: number
+  topCutCount?: number
+  winner?: string
 }
 
 type TopCombo = Combo & { appearances: number; eventCount: number }
 
-const norm = (value: string) => (value || "").trim().toLowerCase().replace(/\s+/g, " ")
+interface LandingSnapshot {
+  stats: {
+    comboCount: number
+    eventCount: number
+    storeCount: number
+  }
+  topCombos: TopCombo[]
+  recentResults: EventItem[]
+}
 
 const fmtDate = (date: string | number | Date) =>
   new Date(date).toLocaleDateString(undefined, {
@@ -85,7 +82,7 @@ export default function Landing() {
   const [eventCount, setEventCount] = useState(0)
   const [storeCount, setStoreCount] = useState(0)
   const [topCombos, setTopCombos] = useState<TopCombo[]>([])
-  const [upcoming, setUpcoming] = useState<EventItem[]>([])
+  const [recentResults, setRecentResults] = useState<EventItem[]>([])
   const [dataLoaded, setDataLoaded] = useState(false)
 
   useEffect(() => {
@@ -93,83 +90,15 @@ export default function Landing() {
 
     async function loadSceneData() {
       try {
-        const [eventsResponse, storesResponse] = await Promise.all([
-          fetch(`${API}/events`, { signal: controller.signal }),
-          fetch(`${API}/stores`, { signal: controller.signal }),
-        ])
+        const response = await fetch(`${API}/landing-data`, { signal: controller.signal })
+        if (!response.ok) throw new Error("Scene data unavailable")
 
-        if (!eventsResponse.ok || !storesResponse.ok) throw new Error("Scene data unavailable")
-
-        const [eventsData, storesData]: [EventItem[], Store[]] = await Promise.all([
-          eventsResponse.json(),
-          storesResponse.json(),
-        ])
-
-        const events = Array.isArray(eventsData) ? eventsData : []
-        const stores = Array.isArray(storesData) ? storesData : []
-        const now = new Date()
-
-        setEventCount(events.length)
-        setStoreCount(stores.length)
-        setUpcoming(
-          events
-            .filter(event => new Date(event.startTime || event.date || 0) >= now)
-            .sort(
-              (a, b) =>
-                new Date(a.startTime || a.date || 0).getTime() -
-                new Date(b.startTime || b.date || 0).getTime()
-            )
-            .slice(0, 4)
-        )
-
-        type ComboStat = Combo & { appearances: number; eventIds: Set<string | number> }
-        const comboMap = new Map<string, ComboStat>()
-        let appearances = 0
-
-        events.forEach(event => {
-          const eventId = event.id ?? `${event.title}-${event.startTime || event.date || ""}`
-
-          ;(event.topCut || []).forEach(player => {
-            ;(player?.combos || []).forEach(combo => {
-              if (!combo?.blade || !combo?.ratchet || !combo?.bit) return
-
-              const key = `${norm(combo.blade)}|||${norm(combo.ratchet)}|||${norm(combo.bit)}`
-              const existing = comboMap.get(key)
-
-              if (existing) {
-                existing.appearances += 1
-                existing.eventIds.add(eventId)
-              } else {
-                comboMap.set(key, { ...combo, appearances: 1, eventIds: new Set([eventId]) })
-              }
-
-              appearances += 1
-            })
-          })
-        })
-
-        const sorted = [...comboMap.values()].sort((a, b) => b.appearances - a.appearances)
-        const usedParts = new Set<string>()
-        const leaders: TopCombo[] = []
-
-        for (const combo of sorted) {
-          const parts = [combo.blade, combo.ratchet, combo.bit]
-          if (parts.every(part => !usedParts.has(norm(part)))) {
-            leaders.push({
-              blade: combo.blade,
-              assistBlade: combo.assistBlade,
-              ratchet: combo.ratchet,
-              bit: combo.bit,
-              appearances: combo.appearances,
-              eventCount: combo.eventIds.size,
-            })
-            parts.forEach(part => usedParts.add(norm(part)))
-            if (leaders.length === 3) break
-          }
-        }
-
-        setComboCount(appearances)
-        setTopCombos(leaders)
+        const snapshot = (await response.json()) as LandingSnapshot
+        setComboCount(Number(snapshot.stats?.comboCount || 0))
+        setEventCount(Number(snapshot.stats?.eventCount || 0))
+        setStoreCount(Number(snapshot.stats?.storeCount || 0))
+        setTopCombos(Array.isArray(snapshot.topCombos) ? snapshot.topCombos : [])
+        setRecentResults(Array.isArray(snapshot.recentResults) ? snapshot.recentResults : [])
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return
       } finally {
@@ -191,7 +120,7 @@ export default function Landing() {
         <title>MetaBeys — The Competitive Edge for Beyblade X</title>
         <meta
           name="description"
-          content="Read the Beyblade X meta, explore verified tournament results, discover events and stores, and build with real competitive data."
+          content="Read the Beyblade X meta, explore verified tournament history, research players and parts, and build with real competitive data."
         />
         <meta name="theme-color" content="#ffffff" />
         <meta property="og:title" content="MetaBeys — The Competitive Edge for Beyblade X" />
@@ -233,7 +162,7 @@ export default function Landing() {
             <nav className="hidden items-center gap-7 text-sm font-semibold text-black/60 lg:flex" aria-label="Main navigation">
               <a href="#live-meta" className="transition hover:text-black">Live meta</a>
               <a href="#platform" className="transition hover:text-black">Platform</a>
-              <a href="#upcoming" className="transition hover:text-black">Events</a>
+              <a href="#results" className="transition hover:text-black">Latest results</a>
               <Link to="/stores" className="transition hover:text-black">Store finder</Link>
             </nav>
 
@@ -302,7 +231,7 @@ export default function Landing() {
                   className="mt-9 max-w-xl text-lg leading-8 text-black/58 sm:text-xl"
                 >
                   MetaBeys turns real Beyblade X tournament results into clear rankings, matchup intelligence,
-                  event discovery, and better decisions before your next launch.
+                  player research, and better decisions before your next launch.
                 </motion.p>
 
                 <motion.div
@@ -470,11 +399,11 @@ export default function Landing() {
 
                 <motion.div {...reveal} className="rounded-[30px] border border-[#f0d47b] bg-[#fff4bf] p-7 sm:p-9 lg:col-span-5">
                   <FeatureIcon className="bg-[#121316] text-[#ffdc54]"><CalendarDays className="h-6 w-6" /></FeatureIcon>
-                  <h3 className="mt-7 text-3xl font-black tracking-[-0.04em] text-[#24200f]">The whole tournament trail.</h3>
-                  <p className="mt-4 leading-7 text-[#3d3515]/65">Find what’s next, revisit what happened, and move from event result to player, combo, and part data without losing the thread.</p>
-                  <Link to="/events" className="mt-6 inline-flex items-center gap-2 text-sm font-black text-[#6a5400]">Discover events <ArrowRight className="h-4 w-4" /></Link>
+                  <h3 className="mt-7 text-3xl font-black tracking-[-0.04em] text-[#24200f]">Every result leaves a trail.</h3>
+                  <p className="mt-4 leading-7 text-[#3d3515]/65">Move from a completed tournament to its top cut, players, combinations, and individual parts without losing the competitive thread.</p>
+                  <Link to="/events/completed" className="mt-6 inline-flex items-center gap-2 text-sm font-black text-[#6a5400]">Explore the archive <ArrowRight className="h-4 w-4" /></Link>
                   <div className="mt-9 space-y-3">
-                    {["Upcoming events", "Verified results", "Top-cut breakdowns"].map((label, index) => (
+                    {["Completed tournaments", "Verified top cuts", "Player & combo trails"].map((label, index) => (
                       <div key={label} className="flex items-center justify-between rounded-2xl border border-black/[0.08] bg-white/70 px-4 py-3 text-sm font-bold text-black/70">
                         <span className="flex items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#121316] text-[10px] text-white">{index + 1}</span>{label}</span>
                         <ChevronRight className="h-4 w-4 text-black/30" />
@@ -486,11 +415,11 @@ export default function Landing() {
                 <motion.div {...reveal} className="rounded-[30px] border border-[#addfcf] bg-[#e6f8f1] p-7 sm:p-9 lg:col-span-5">
                   <FeatureIcon className="bg-[#1d9b73] text-white"><MapPin className="h-6 w-6" /></FeatureIcon>
                   <h3 className="mt-7 text-3xl font-black tracking-[-0.04em] text-[#102b22]">Find your local scene.</h3>
-                  <p className="mt-4 leading-7 text-[#173e31]/65">Discover Beyblade-friendly stores, browse their upcoming events, and turn online research into real competition.</p>
+                  <p className="mt-4 leading-7 text-[#173e31]/65">Discover Beyblade-friendly stores, explore where competitive history was made, and connect online research to the real scene.</p>
                   <Link to="/stores" className="mt-6 inline-flex items-center gap-2 text-sm font-black text-[#137856]">Open store finder <ArrowRight className="h-4 w-4" /></Link>
                   <div className="mt-8 rounded-2xl border border-[#8fd0bb] bg-white p-3 shadow-sm">
                     <div className="flex items-center gap-2 rounded-xl bg-[#f4f7f5] px-3 py-2.5 text-sm text-black/35"><Search className="h-4 w-4" /> Search by city or store…</div>
-                    <div className="mt-3 flex items-center gap-3 px-1"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#daf4ea] text-[#16805d]"><StoreIcon className="h-5 w-5" /></span><div><div className="text-sm font-black">Your next local event</div><div className="text-xs text-black/40">Closer than you think</div></div></div>
+                    <div className="mt-3 flex items-center gap-3 px-1"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#daf4ea] text-[#16805d]"><StoreIcon className="h-5 w-5" /></span><div><div className="text-sm font-black">Find a community store</div><div className="text-xs text-black/40">Search the scene by location</div></div></div>
                   </div>
                 </motion.div>
 
@@ -508,25 +437,27 @@ export default function Landing() {
             </div>
           </section>
 
-          {/* UPCOMING EVENTS */}
-          <section id="upcoming" className="bg-[#f4f3ed] px-5 py-24 sm:px-8 lg:px-12 lg:py-32">
+          {/* LATEST VERIFIED RESULTS */}
+          <section id="results" className="relative overflow-hidden bg-[#f4f3ed] px-5 py-24 sm:px-8 lg:px-12 lg:py-32">
+            <div aria-hidden className="absolute -right-32 top-16 h-80 w-80 rounded-full border-[48px] border-[#dfe4ff]" />
             <div className="mx-auto max-w-[1320px]">
-              <motion.div {...reveal} className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <Eyebrow icon={<Compass className="h-3.5 w-3.5" />}>Go compete</Eyebrow>
-                  <h2 className="mt-5 text-4xl font-black leading-none tracking-[-0.055em] text-[#121316] sm:text-5xl">Your next event starts here.</h2>
+              <motion.div {...reveal} className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+                <div className="max-w-3xl">
+                  <Eyebrow icon={<Compass className="h-3.5 w-3.5" />}>Latest verified results</Eyebrow>
+                  <h2 className="mt-5 text-balance text-4xl font-black leading-none tracking-[-0.055em] text-[#121316] sm:text-5xl lg:text-6xl">The archive is the advantage.</h2>
+                  <p className="mt-5 max-w-2xl text-lg leading-8 text-black/52">Every completed tournament adds another signal. See who won, what topped, and how the competitive field keeps moving.</p>
                 </div>
-                <Link to="/events" className="inline-flex w-fit items-center gap-2 rounded-xl border border-black/15 bg-white px-4 py-3 text-sm font-black text-black transition hover:-translate-y-0.5 hover:border-black/30">
-                  View every upcoming event <ArrowRight className="h-4 w-4" />
+                <Link to="/events/completed" className="inline-flex w-fit items-center gap-2 rounded-xl border border-black/15 bg-white px-4 py-3 text-sm font-black text-black transition hover:-translate-y-0.5 hover:border-black/30">
+                  Open the complete archive <ArrowRight className="h-4 w-4" />
                 </Link>
               </motion.div>
 
-              <div className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {upcoming.length > 0 ? (
-                  upcoming.map((event, index) => <EventCard key={event.id} event={event} index={index} />)
+              <div className="relative z-10 mt-12 grid gap-5 lg:grid-cols-2">
+                {recentResults.length > 0 ? (
+                  recentResults.map((event, index) => <ResultCard key={event.id} event={event} index={index} />)
                 ) : (
                   Array.from({ length: 4 }, (_, index) => (
-                    <div key={index} className="h-[260px] animate-pulse rounded-[26px] border border-black/[0.07] bg-white/70" />
+                    <div key={index} className="h-[250px] animate-pulse rounded-[28px] border border-black/[0.07] bg-white/70" />
                   ))
                 )}
               </div>
@@ -582,7 +513,7 @@ export default function Landing() {
             </div>
             <nav className="flex flex-wrap gap-x-6 gap-y-3 text-sm font-bold text-black/50" aria-label="Footer navigation">
               <Link to="/home" className="hover:text-black">Platform</Link>
-              <Link to="/events" className="hover:text-black">Events</Link>
+              <Link to="/events/completed" className="hover:text-black">Results</Link>
               <Link to="/stores" className="hover:text-black">Stores</Link>
               <Link to="/contact" className="hover:text-black">Contact</Link>
               <Link to="/privacy" className="hover:text-black">Privacy</Link>
@@ -656,28 +587,51 @@ function MetaCard({ combo, rank, loading }: { combo: TopCombo & { _placeholder?:
   )
 }
 
-function EventCard({ event, index }: { event: EventItem; index: number }) {
+function ResultCard({ event, index }: { event: EventItem; index: number }) {
   const date = event.startTime || event.date || new Date()
-  const accents = ["bg-[#5a63f2]", "bg-[#f1ba00]", "bg-[#1d9b73]", "bg-[#ff675f]"]
-  const location = [event.city, event.region].filter(Boolean).join(", ") || event.store || "Location coming soon"
+  const accents = [
+    "border-t-[#5a63f2] bg-[#edf1ff] text-[#4c55e8]",
+    "border-t-[#e6ad00] bg-[#fff3b9] text-[#856600]",
+    "border-t-[#1d9b73] bg-[#e1f7ef] text-[#147755]",
+    "border-t-[#ff675f] bg-[#ffebe8] text-[#c84a43]",
+  ]
+  const accentBars = ["bg-[#5a63f2]", "bg-[#e6ad00]", "bg-[#1d9b73]", "bg-[#ff675f]"]
+  const location = [event.city, event.region].filter(Boolean).join(", ") || event.store || "Competitive circuit"
 
   return (
     <motion.div {...reveal} transition={{ ...reveal.transition, delay: index * 0.06 }}>
       <Link
         to={`/events/${event.id}`}
-        className="group flex min-h-[260px] flex-col rounded-[26px] border border-black/[0.08] bg-white p-5 shadow-[0_10px_28px_rgba(18,19,22,0.035)] transition hover:-translate-y-2 hover:shadow-[0_24px_48px_rgba(18,19,22,0.1)]"
+        className="group relative grid min-h-[250px] overflow-hidden rounded-[28px] border border-black/[0.08] bg-white p-6 shadow-[0_10px_28px_rgba(18,19,22,0.035)] transition hover:-translate-y-2 hover:shadow-[0_24px_48px_rgba(18,19,22,0.1)] sm:grid-cols-[88px_1fr] sm:gap-6"
       >
-        <div className="flex items-start justify-between">
-          <div className={`flex h-16 w-16 flex-col items-center justify-center rounded-2xl text-white ${accents[index % accents.length]}`}>
-            <span className="text-[10px] font-black tracking-[0.12em]">{fmtMonth(date)}</span>
-            <span className="text-2xl font-black leading-none">{fmtDay(date)}</span>
+        <div className={`absolute inset-x-0 top-0 h-1 ${accentBars[index % accentBars.length]}`} />
+        <div className="flex items-start justify-between sm:block">
+          <div className={`flex h-[76px] w-[76px] flex-col items-center justify-center rounded-[22px] ${accents[index % accents.length]}`}>
+            <span className="text-[10px] font-black tracking-[0.14em]">{fmtMonth(date)}</span>
+            <span className="mt-0.5 text-3xl font-black leading-none">{fmtDay(date)}</span>
           </div>
-          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 text-black/45 transition group-hover:translate-x-1 group-hover:border-black/25 group-hover:text-black"><ArrowRight className="h-4 w-4" /></span>
+          <div className="mt-4 hidden text-center text-[10px] font-black uppercase tracking-[0.13em] text-black/28 sm:block">Verified</div>
+          <span className="flex h-9 w-9 items-center justify-center rounded-full border border-black/10 text-black/45 transition group-hover:translate-x-1 group-hover:border-black/25 group-hover:text-black sm:hidden"><ArrowRight className="h-4 w-4" /></span>
         </div>
-        <h3 className="mt-6 line-clamp-2 text-xl font-black leading-tight tracking-[-0.025em] text-[#121316]">{event.title}</h3>
-        <div className="mt-auto pt-6">
-          <div className="flex items-start gap-2 text-sm font-semibold text-black/48"><MapPin className="mt-0.5 h-4 w-4 shrink-0" /><span>{location}</span></div>
-          <div className="mt-2 text-xs font-bold text-black/32">{fmtDate(date)}</div>
+        <div className="mt-6 flex min-w-0 flex-col sm:mt-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.15em] text-black/35">Result #{String(index + 1).padStart(2, "0")}</div>
+              <h3 className="mt-2 line-clamp-2 text-2xl font-black leading-[1.08] tracking-[-0.035em] text-[#121316]">{event.title}</h3>
+            </div>
+            <span className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full border border-black/10 text-black/45 transition group-hover:translate-x-1 group-hover:border-black/25 group-hover:text-black sm:flex"><ArrowRight className="h-4 w-4" /></span>
+          </div>
+          <div className="mt-3 flex items-start gap-2 text-sm font-semibold text-black/48"><MapPin className="mt-0.5 h-4 w-4 shrink-0" /><span>{event.store ? `${event.store} · ` : ""}{location}</span></div>
+          <div className="mt-auto grid grid-cols-2 gap-3 pt-6">
+            <div className="rounded-2xl bg-[#f5f5f1] px-4 py-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-black/32">Winner</div>
+              <div className="mt-1 flex min-w-0 items-center gap-2 text-sm font-black text-black"><Trophy className="h-4 w-4 shrink-0 text-[#c99500]" /><span className="truncate">{event.winner || "See top cut"}</span></div>
+            </div>
+            <div className="rounded-2xl bg-[#f5f5f1] px-4 py-3">
+              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-black/32">Field data</div>
+              <div className="mt-1 text-sm font-black text-black">{event.attendeeCount ? `${event.attendeeCount} players` : `${event.topCutCount || 0} top cut`}</div>
+            </div>
+          </div>
         </div>
       </Link>
     </motion.div>
