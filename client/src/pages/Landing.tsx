@@ -57,13 +57,6 @@ interface LandingSnapshot {
   recentResults: EventItem[]
 }
 
-const fmtDate = (date: string | number | Date) =>
-  new Date(date).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-
 const fmtMonth = (date: string | number | Date) =>
   new Date(date).toLocaleDateString(undefined, { month: "short" }).toUpperCase()
 
