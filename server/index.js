@@ -620,6 +620,130 @@ async function recomputeUserCounters(userDoc) {
   app.use("/api/events", eventsRouter)
   app.use("/events", eventsRouter)
 
+  // ---------- LIGHTWEIGHT LANDING PAGE DATA ----------
+  // Keep the marketing page fast by returning a small, pre-aggregated payload
+  // instead of sending the full events and stores collections to the browser.
+  app.get("/api/landing-data", async (_, res) => {
+    try {
+      const [eventCount, storeCount, comboSnapshot, latestCandidates] = await Promise.all([
+        events.countDocuments({}),
+        stores.countDocuments({}),
+        events.aggregate([
+          { $unwind: "$topCut" },
+          { $unwind: "$topCut.combos" },
+          {
+            $match: {
+              "topCut.combos.blade": { $type: "string", $ne: "" },
+              "topCut.combos.ratchet": { $type: "string", $ne: "" },
+              "topCut.combos.bit": { $type: "string", $ne: "" },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                blade: { $toLower: { $trim: { input: "$topCut.combos.blade" } } },
+                ratchet: { $toLower: { $trim: { input: "$topCut.combos.ratchet" } } },
+                bit: { $toLower: { $trim: { input: "$topCut.combos.bit" } } },
+              },
+              blade: { $first: "$topCut.combos.blade" },
+              assistBlade: { $first: "$topCut.combos.assistBlade" },
+              ratchet: { $first: "$topCut.combos.ratchet" },
+              bit: { $first: "$topCut.combos.bit" },
+              appearances: { $sum: 1 },
+              eventIds: { $addToSet: "$_id" },
+            },
+          },
+          { $addFields: { eventCount: { $size: "$eventIds" } } },
+          {
+            $facet: {
+              leaders: [{ $sort: { appearances: -1, eventCount: -1 } }, { $limit: 80 }],
+              totals: [{ $group: { _id: null, appearances: { $sum: "$appearances" } } }],
+            },
+          },
+        ]).toArray(),
+        events.find(
+          { topCut: { $exists: true, $ne: [] } },
+          {
+            projection: {
+              id: 1,
+              title: 1,
+              store: 1,
+              startTime: 1,
+              endTime: 1,
+              date: 1,
+              city: 1,
+              region: 1,
+              country: 1,
+              attendeeCount: 1,
+              "topCut.name": 1,
+            },
+          }
+        ).sort({ startTime: -1 }).limit(16).toArray(),
+      ])
+
+      const snapshot = comboSnapshot[0] || { leaders: [], totals: [] }
+      const usedParts = new Set()
+      const topCombos = []
+
+      for (const combo of snapshot.leaders || []) {
+        const parts = [combo.blade, combo.ratchet, combo.bit].map(value =>
+          String(value || "").trim().toLowerCase()
+        )
+        if (parts.every(part => part && !usedParts.has(part))) {
+          topCombos.push({
+            blade: combo.blade,
+            assistBlade: combo.assistBlade || "",
+            ratchet: combo.ratchet,
+            bit: combo.bit,
+            appearances: combo.appearances,
+            eventCount: combo.eventCount,
+          })
+          parts.forEach(part => usedParts.add(part))
+          if (topCombos.length === 3) break
+        }
+      }
+
+      const now = Date.now()
+      const recentResults = latestCandidates
+        .filter(event => {
+          const timestamp = new Date(event.endTime || event.startTime || event.date || 0).getTime()
+          return Number.isFinite(timestamp) && timestamp <= now
+        })
+        .sort(
+          (a, b) =>
+            new Date(b.endTime || b.startTime || b.date || 0).getTime() -
+            new Date(a.endTime || a.startTime || a.date || 0).getTime()
+        )
+        .slice(0, 4)
+        .map(event => ({
+          id: event.id,
+          title: event.title,
+          store: event.store || "",
+          startTime: event.startTime || event.date || "",
+          city: event.city || "",
+          region: event.region || "",
+          country: event.country || "",
+          attendeeCount: Number(event.attendeeCount || 0),
+          topCutCount: Array.isArray(event.topCut) ? event.topCut.length : 0,
+          winner: event.topCut?.[0]?.name || "",
+        }))
+
+      res.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300")
+      res.json({
+        stats: {
+          comboCount: snapshot.totals?.[0]?.appearances || 0,
+          eventCount,
+          storeCount,
+        },
+        topCombos,
+        recentResults,
+      })
+    } catch (error) {
+      console.error("GET /api/landing-data error:", error)
+      res.status(500).json({ error: "Landing data unavailable" })
+    }
+  })
+
   // ---------- EVENTS CRUD (both /api and non-/api) ----------
   const listEvents = async (_, res) => {
     const data = await events.find().toArray()
