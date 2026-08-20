@@ -3,16 +3,15 @@ import { useEffect, useState, Suspense, lazy } from "react"
 import { Routes, Route, useLocation, Navigate, useParams } from "react-router-dom"
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
-import BottomBar from "./components/BottomBar"   // 👈 Added
+import BottomBar from "./components/BottomBar"
 import SubmitEvent from "./pages/SubmitEvent"
-
 
 // Eager
 import ForumThread from "./pages/ForumThread"
 import Forum from "./pages/Forum"
 import BuildFromMyParts from "./pages/BuildFromMyParts"
 
-// ✅ Lazy load each route
+// Lazy load each route
 const Home = lazy(() => import("./pages/Home"))
 const Events = lazy(() => import("./pages/Events"))
 const CompletedEvents = lazy(() => import("./pages/CompletedEvents"))
@@ -27,6 +26,7 @@ const Leaderboard = lazy(() => import("./pages/Leaderboard"))
 const MatchupStats = lazy(() => import("./pages/MatchupStats"))
 const Admin = lazy(() => import("./pages/Admin"))
 const Contact = lazy(() => import("./pages/Contact"))
+const Privacy = lazy(() => import("./pages/Privacy"))
 const PlayerLeaderboard = lazy(() => import("./pages/PlayerLeaderboard"))
 const UserAuth = lazy(() => import("./pages/UserAuth"))
 const MemeGallery = lazy(() => import("./pages/Xj29sDrb"))
@@ -45,7 +45,7 @@ const RatchetDetail = lazy(() => import("./pages/RatchetDetail"))
 const BitDetail = lazy(() => import("./pages/BitDetail"))
 const AssistDetail = lazy(() => import("./pages/AssistDetail"))
 
-// ✅ Lazy load UserPublic (public profile)
+// Lazy load UserPublic (public profile)
 const UserPublic = lazy(() => import("./pages/UserPublic"))
 
 // --- Redirect helper for legacy /users/:slug links ---
@@ -100,6 +100,7 @@ export default function App() {
           <Route path="/combo/:slug" element={<ComboDetail />} />
           <Route path="/tournament-lab" element={<TournamentLab />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/privacy" element={<Privacy />} />
           <Route path="/register" element={<Register />} />
           <Route path="/profile/matchup-stats" element={<MatchupStats />} />
           <Route path="/user-login" element={<UserLogin />} />
@@ -117,7 +118,7 @@ export default function App() {
         </Routes>
       </Suspense>
 
-      {/* 👇 Sticky BottomBar (hidden on landing page just like Navbar) */}
+      {/* Sticky BottomBar (hidden on landing page just like Navbar) */}
       {location.pathname !== "/" && <BottomBar />}
     </>
   )
