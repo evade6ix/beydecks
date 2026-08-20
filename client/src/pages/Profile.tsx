@@ -32,7 +32,6 @@ interface Tournament {
 }
 
 type ProfileTab = "overview" | "matchups" | "collection" | "settings"
-const emptyParts: OwnedParts = { blades: [], assistBlades: [], ratchets: [], bits: [] }
 const reveal = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.38 } }
 const winRateOverrides: Record<string, { title: string; suffix: string }> = {
   karl6ix: { title: "Does Tian Pull?", suffix: "No Hoes LOL" },
@@ -46,7 +45,18 @@ export default function Profile() {
   const navigate = useNavigate()
   if (!isAuthenticated || !user) return <Navigate to="/user-auth" />
 
-  type ProfileExtras = { bio?: string; homeStore?: string; avatarDataUrl?: string; slug?: string; ownedParts?: OwnedParts; vip?: boolean }
+  type ProfileExtras = {
+    bio?: string
+    homeStore?: string
+    avatarDataUrl?: string
+    slug?: string
+    ownedParts?: OwnedParts
+    blades?: string[]
+    assistBlades?: string[]
+    ratchets?: string[]
+    bits?: string[]
+    vip?: boolean
+  }
   const authUser = user
   const u = authUser as typeof authUser & ProfileExtras
 
@@ -68,6 +78,20 @@ export default function Profile() {
   const [bio, setBio] = useState(u.bio || "")
   const [homeStore, setHomeStore] = useState(u.homeStore || "")
   const [avatarDataUrl, setAvatarDataUrl] = useState(u.avatarDataUrl || "")
+  const [ownedParts, setOwnedParts] = useState<OwnedParts>(() => {
+    const legacy = u.ownedParts
+    const legacyHasParts = Boolean(
+      legacy &&
+      (legacy.blades.length || (legacy.assistBlades?.length || 0) || legacy.ratchets.length || legacy.bits.length)
+    )
+    if (legacyHasParts) return legacy as OwnedParts
+    return {
+      blades: Array.isArray(u.blades) ? u.blades : [],
+      assistBlades: Array.isArray(u.assistBlades) ? u.assistBlades : [],
+      ratchets: Array.isArray(u.ratchets) ? u.ratchets : [],
+      bits: Array.isArray(u.bits) ? u.bits : [],
+    }
+  })
 
   const wins = useMemo(() => matchups.filter((matchup) => matchup.result === "win").length, [matchups])
   const losses = useMemo(() => matchups.filter((matchup) => matchup.result === "loss").length, [matchups])
@@ -86,7 +110,6 @@ export default function Profile() {
     .map((key) => winRateOverrides[key]).find(Boolean)
   const winRateTitle = winRateOverride?.title ?? "Practice win rate"
   const winRateSuffix = winRateOverride && Number(winRate) === 0 ? winRateOverride.suffix : ""
-  const ownedParts = u.ownedParts || emptyParts
   const collectionCount = ownedParts.blades.length + (ownedParts.assistBlades?.length || 0) + ownedParts.ratchets.length + ownedParts.bits.length
   const profileKey = String(u.slug || u.username || authUser.username || "").trim().toLowerCase()
   const trophies = useMemo(() => TROPHY_AWARDS
@@ -98,6 +121,41 @@ export default function Profile() {
 
   useEffect(() => setPage(1), [matchups.length])
   useEffect(() => setTournamentPage(1), [tournaments.length])
+  useEffect(() => {
+    const token = localStorage.getItem("token")
+    if (!token) return
+
+    const controller = new AbortController()
+    async function loadOwnedParts() {
+      try {
+        const response = await fetch(api("/me/parts"), {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (!response.ok) return
+        const data = await response.json()
+        const hasPartsPayload = [data?.blades, data?.assistBlades, data?.ratchets, data?.bits]
+          .some(Array.isArray)
+        if (!hasPartsPayload) return
+
+        const refreshed: OwnedParts = {
+          blades: Array.isArray(data.blades) ? data.blades : [],
+          assistBlades: Array.isArray(data.assistBlades) ? data.assistBlades : (ownedParts.assistBlades || []),
+          ratchets: Array.isArray(data.ratchets) ? data.ratchets : [],
+          bits: Array.isArray(data.bits) ? data.bits : [],
+        }
+        setOwnedParts(refreshed)
+        u.ownedParts = refreshed
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.warn("parts refresh failed:", error)
+        }
+      }
+    }
+    loadOwnedParts()
+    return () => controller.abort()
+  }, [ownedParts.assistBlades, u])
   useEffect(() => {
     const controller = new AbortController()
     let alive = true
