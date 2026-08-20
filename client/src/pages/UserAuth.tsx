@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { useAuth } from "../context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
@@ -126,27 +126,33 @@ export default function Auth() {
           required
         />
         {isLoginMode && (
-
-  <p className="text-right text-sm">
-    <button
-      type="button"
-      onClick={() => navigate("/forgot-password")}
-      className="text-blue-400 hover:text-blue-600 underline"
-    >
-      Forgot Password?
-    </button>
-  </p>
-)}
+          <p className="text-right text-sm">
+            <button
+              type="button"
+              onClick={() => navigate("/forgot-password")}
+              className="text-blue-400 hover:text-blue-600 underline"
+            >
+              Forgot Password?
+            </button>
+          </p>
+        )}
 
         {error && <p className="text-red-400">{error}</p>}
         {message && <p className="text-green-400">{message}</p>}
 
-        <button
-          type="submit"
-          className="bg-blue-600 text-white py-2 rounded hover:bg-blue-700"
-        >
+        <button type="submit" className="bg-blue-600 text-white py-2 rounded hover:bg-blue-700">
           {isLoginMode ? "Login" : "Register"}
         </button>
+
+        {!isLoginMode && (
+          <p className="text-center text-xs leading-5 text-gray-400">
+            By creating an account, you acknowledge the MetaBeys{" "}
+            <Link to="/privacy" className="font-medium text-blue-400 underline hover:text-blue-300">
+              Privacy Policy
+            </Link>
+            .
+          </p>
+        )}
       </form>
 
       <p className="mt-4 text-center text-sm text-gray-400">
