@@ -1,9 +1,11 @@
 import { useState } from "react"
 import { Link, useNavigate } from "react-router-dom"
+import { Bot } from "lucide-react"
+import { openMetabeysBot } from "../lib/metabeysBotEvents"
 
 interface NavbarProps {
   isAdmin: boolean
-  user: any | null
+  user: { username?: string } | null
   loading: boolean
 }
 
@@ -42,6 +44,9 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
           {dropdownOpen && (
             <ul className="absolute left-0 mt-2 z-50 p-4 bg-base-200 rounded-box w-64 space-y-2 shadow-lg">
               <li className="py-2"><Link to="/home" onClick={closeMenu}>Home</Link></li>
+              <li className="py-2">
+                <button type="button" onClick={() => { closeMenu(); openMetabeysBot(); }}>MetaBeys Bot</button>
+              </li>
               <li className="py-2"><Link to={accountLinkPath} onClick={closeMenu}>{accountLinkText}</Link></li>
               <li className="py-2"><Link to="/Contact" onClick={closeMenu}>Contact</Link></li>
               <li className="py-2"><Link to="/Shop" onClick={closeMenu}>Shop</Link></li>
@@ -91,6 +96,15 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
       </div>
 
       <div className="navbar-end">
+        <button
+          type="button"
+          onClick={openMetabeysBot}
+          className="btn btn-ghost btn-circle"
+          title="Open MetaBeys Bot"
+          aria-label="Open MetaBeys Bot"
+        >
+          <Bot className="h-5 w-5" />
+        </button>
         <label className="swap swap-rotate ml-2">
           <input type="checkbox" onChange={toggleTheme} />
           <svg className="swap-on fill-current w-6 h-6" viewBox="0 0 24 24">

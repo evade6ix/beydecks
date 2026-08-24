@@ -20,6 +20,7 @@ import {
   Users,
   Zap,
 } from "lucide-react"
+import { openMetabeysBot } from "../lib/metabeysBotEvents"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -160,6 +161,15 @@ export default function Landing() {
             </nav>
 
             <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={openMetabeysBot}
+                className="inline-flex h-10 items-center gap-2 rounded-xl border border-black/[0.08] bg-white px-3 text-sm font-bold text-black/65 transition hover:border-black/15 hover:bg-black/[0.035] hover:text-black"
+                aria-label="Open MetaBeys Bot"
+              >
+                <Sparkles className="h-4 w-4" />
+                <span className="hidden xl:inline">MetaBeys Bot</span>
+              </button>
               <Link
                 to="/user-auth"
                 className="hidden rounded-xl px-4 py-2.5 text-sm font-bold text-black/65 transition hover:bg-black/[0.04] hover:text-black sm:inline-flex"

@@ -16,6 +16,7 @@ import dotenv from "dotenv"
 import usersRoutes from "./routes/users.js"
 import jwt from "jsonwebtoken" //
 import usersLeaderboard from "./routes/users.leaderboard.js"
+import metabeysBotRoutes from "./routes/metabeysBot.js"
 import helmet from "helmet"
 import net from "net"   
 import http from "http"
@@ -615,6 +616,9 @@ async function recomputeUserCounters(userDoc) {
   // ---------- Me/Parts (mount on both prefixes) ----------
   app.use("/api/me", userPartsRoutes)
   app.use("/me", userPartsRoutes)
+
+  // ---------- MetaBeys Bot (grounded tournament + owned-parts answers) ----------
+  app.use("/api/metabeys-bot", metabeysBotRoutes({ events, users }))
 
   // ---------- Events router (PUT /:id) on both ----------
   app.use("/api/events", eventsRouter)

@@ -4,6 +4,7 @@ import { Routes, Route, useLocation, Navigate, useParams } from "react-router-do
 import Navbar from "./components/Navbar"
 import { useAuth } from "./context/AuthContext"
 import BottomBar from "./components/BottomBar"
+import MetabeysBot from "./components/MetabeysBot"
 import SubmitEvent from "./pages/SubmitEvent"
 
 // Eager
@@ -120,6 +121,7 @@ export default function App() {
 
       {/* Sticky BottomBar (hidden on landing page just like Navbar) */}
       {location.pathname !== "/" && <BottomBar />}
+      <MetabeysBot />
     </>
   )
 }

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom"
-import { ShieldCheck } from "lucide-react"
+import { Bot, ShieldCheck } from "lucide-react"
 import { FaDiscord, FaCoffee } from "react-icons/fa"
+import { openMetabeysBot } from "../lib/metabeysBotEvents"
 
 export default function BottomBar() {
   return (
@@ -29,6 +30,15 @@ export default function BottomBar() {
         <ShieldCheck className="h-5 w-5" aria-hidden="true" />
         <span>Privacy</span>
       </Link>
+
+      <button
+        type="button"
+        onClick={openMetabeysBot}
+        className="flex items-center gap-2 text-white/75 transition hover:text-cyan-300"
+      >
+        <Bot className="h-5 w-5" aria-hidden="true" />
+        <span>MetaBeys Bot</span>
+      </button>
     </div>
   )
 }
