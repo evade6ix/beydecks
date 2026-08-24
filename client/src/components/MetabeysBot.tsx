@@ -36,6 +36,7 @@ type BotCombo = {
 }
 
 type BotDeck = {
+  title?: string | null
   combos: BotCombo[]
   grade: {
     score: number
@@ -84,10 +85,11 @@ const emptyParts = (): PartContext => ({ blades: [], assistBlades: [], ratchets:
 
 const initialResponse: BotResponse = {
   type: "welcome",
-  text: "Hey — I’m MetaBeys Bot. I can pull the latest Top Cut, find the strongest current decks, or build a legal three-combo deck from the parts you own.",
+  text: "Hey — I’m MetaBeys Bot. I can pull the latest Top Cut, find the strongest current decks, make a completely random deck, or build a legal three-combo deck from the parts you own.",
   suggestions: [
     "Show me the latest Top Cut",
     "What is the best deck right now?",
+    "Make a Random Deck",
     "Build the best deck from my parts",
   ],
 }
@@ -445,7 +447,7 @@ function ResponseDetails({
       )}
       {response.suggestions && response.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {response.suggestions.slice(0, 3).map((suggestion) => (
+          {response.suggestions.slice(0, 4).map((suggestion) => (
             <button
               key={suggestion}
               type="button"
@@ -507,7 +509,7 @@ function DeckCard({ deck }: { deck: BotDeck }) {
           {deck.grade.letter}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-black text-white">Recommended deck</div>
+          <div className="text-xs font-black text-white">{deck.title || "Recommended deck"}</div>
           <div className="mt-0.5 text-[10px] text-white/40">{deck.note || "MetaBeys recommendation"}</div>
         </div>
         <div className="text-right">

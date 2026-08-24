@@ -1,4 +1,5 @@
 import express from "express"
+import { randomInt } from "crypto"
 import jwt from "jsonwebtoken"
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -171,6 +172,22 @@ function addCatalogPart(catalogMap, frequencyMap, value) {
   if (!catalogMap.has(key)) catalogMap.set(key, String(value).trim())
 }
 
+const invalidStoredParts = new Set(["-", "—", "?", "n/a", "na", "none", "unknown", "tbd"])
+
+function isStoredPart(value) {
+  const key = norm(value)
+  return Boolean(key) && !invalidStoredParts.has(key)
+}
+
+function shuffle(values) {
+  const shuffled = [...values]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = randomInt(index + 1)
+    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  }
+  return shuffled
+}
+
 function buildSnapshot(eventDocuments) {
   const catalogs = {
     blades: new Map(),
@@ -185,6 +202,7 @@ function buildSnapshot(eventDocuments) {
     bits: new Map(),
   }
   const comboMap = new Map()
+  const bladeConfigurations = new Map()
   const bladeConfigFrequency = new Map()
   const bladeRatchetFrequency = new Map()
   const bladeBitFrequency = new Map()
@@ -205,6 +223,12 @@ function buildSnapshot(eventDocuments) {
         addCatalogPart(catalogs.bits, frequencies.bits, bit)
 
         const configurationKey = bladeConfigKey(blade, assistBlade)
+        if (!bladeConfigurations.has(configurationKey)) {
+          bladeConfigurations.set(configurationKey, {
+            blade,
+            assistBlade: assistBlade || undefined,
+          })
+        }
         bladeConfigFrequency.set(
           configurationKey,
           (bladeConfigFrequency.get(configurationKey) || 0) + 1
@@ -251,6 +275,8 @@ function buildSnapshot(eventDocuments) {
     completedEvents,
     latestEvent: completedEvents[0] || null,
     combos,
+    comboIndex: comboMap,
+    bladeConfigurations: [...bladeConfigurations.values()],
     appearanceBaseline: combos.map((combo) => combo.appearances),
     catalogs: {
       blades: sortedCatalog("blades"),
@@ -263,6 +289,66 @@ function buildSnapshot(eventDocuments) {
     bladeConfigFrequency,
     bladeRatchetFrequency,
     bladeBitFrequency,
+  }
+}
+
+function makeRandomDeck(snapshot) {
+  const configurations = snapshot.bladeConfigurations.filter(
+    (configuration) =>
+      isStoredPart(configuration.blade) &&
+      (!configuration.assistBlade || isStoredPart(configuration.assistBlade))
+  )
+  const ratchets = snapshot.catalogs.ratchets.filter(isStoredPart)
+  const bits = snapshot.catalogs.bits.filter(isStoredPart)
+
+  if (configurations.length < 3 || ratchets.length < 3 || bits.length < 3) return null
+
+  let selectedConfigurations = []
+  for (let attempt = 0; attempt < 50 && selectedConfigurations.length < 3; attempt += 1) {
+    const candidateSelection = []
+    for (const configuration of shuffle(configurations)) {
+      if (
+        candidateSelection.some(
+          (selected) =>
+            norm(selected.blade) === norm(configuration.blade) ||
+            (configuration.assistBlade &&
+              selected.assistBlade &&
+              norm(selected.assistBlade) === norm(configuration.assistBlade))
+        )
+      ) continue
+      candidateSelection.push(configuration)
+      if (candidateSelection.length === 3) break
+    }
+    if (candidateSelection.length === 3) selectedConfigurations = candidateSelection
+  }
+
+  if (selectedConfigurations.length < 3) return null
+
+  const selectedRatchets = shuffle(ratchets).slice(0, 3)
+  const selectedBits = shuffle(bits).slice(0, 3)
+  const combos = selectedConfigurations.map((configuration, index) => {
+    const randomCombo = {
+      blade: configuration.blade,
+      assistBlade: configuration.assistBlade,
+      ratchet: selectedRatchets[index],
+      bit: selectedBits[index],
+    }
+    return snapshot.comboIndex.get(comboKey(randomCombo)) || {
+      ...randomCombo,
+      appearances: 0,
+      mostRecentAppearance: undefined,
+    }
+  })
+
+  return {
+    combos,
+    grade: gradeDeck(combos, snapshot.appearanceBaseline),
+    catalogCounts: {
+      blades: snapshot.catalogs.blades.filter(isStoredPart).length,
+      assistBlades: snapshot.catalogs.assistBlades.filter(isStoredPart).length,
+      ratchets: ratchets.length,
+      bits: bits.length,
+    },
   }
 }
 
@@ -465,11 +551,12 @@ function serializeCombo(combo) {
   }
 }
 
-function serializeDeck(deck, note) {
+function serializeDeck(deck, note, title) {
   return {
     combos: deck.combos.map(serializeCombo),
     grade: deck.grade,
     note: note || null,
+    title: title || null,
   }
 }
 
@@ -534,6 +621,10 @@ function missingCategories(parts) {
 function requestIntent(message, hasParts) {
   const query = norm(message)
   if (/\b(clear|forget|reset)\b.*\b(parts|collection|inventory)\b/.test(query)) return "reset"
+  if (
+    /\b(random|surprise|shuffle)\b.*\b(deck|decks|combo|combos)\b/.test(query) ||
+    /\b(deck|decks|combo|combos)\b.*\b(random|surprise|shuffle)\b/.test(query)
+  ) return "random"
   if (
     /\b(latest|newest|most recent|recent|last)\b.*\b(result|top cut|event|tournament)\b/.test(query) ||
     /\b(result|top cut)\b.*\b(latest|newest|most recent)\b/.test(query)
@@ -601,6 +692,7 @@ export default function metabeysBotRoutes({ events, users }) {
       const suggestions = [
         "Show me the latest Top Cut",
         "What is the best deck right now?",
+        "Make a Random Deck",
         "Build the best deck from my parts",
       ]
 
@@ -610,6 +702,25 @@ export default function metabeysBotRoutes({ events, users }) {
           text: "Done — I cleared the parts from this chat. Tell me your new inventory whenever you're ready.",
           parts: { blades: [], assistBlades: [], ratchets: [], bits: [] },
           suggestions,
+        })
+      }
+
+      if (intent === "random") {
+        const deck = makeRandomDeck(snapshot)
+        if (!deck) {
+          return res.json({
+            type: "message",
+            text: "There aren't enough valid stored parts to make a legal random three-combo deck yet.",
+            suggestions,
+          })
+        }
+        const counts = deck.catalogCounts
+        return res.json({
+          type: "random_deck",
+          text: "Here’s a completely random legal deck assembled from the full MetaBeys part catalog. It is random, not meta-optimized.",
+          deck: serializeDeck(deck, "Completely random from all stored MetaBeys parts", "Random deck"),
+          source: `${counts.blades} Blades · ${counts.assistBlades} Assist Blades · ${counts.ratchets} Ratchets · ${counts.bits} Bits`,
+          suggestions: ["Make another random deck", "Show the best current deck", "Show me the latest Top Cut"],
         })
       }
 
@@ -703,7 +814,7 @@ export default function metabeysBotRoutes({ events, users }) {
 
       return res.json({
         type: "help",
-        text: "I can show the latest Top Cut, identify the strongest current decks, or build a legal deck from parts you paste here. I only use tournament data stored by MetaBeys.",
+        text: "I can show the latest Top Cut, identify the strongest current decks, make a completely random deck from all stored parts, or build a legal deck from parts you paste here. I only use tournament data stored by MetaBeys.",
         parts: contextParts,
         suggestions,
       })
