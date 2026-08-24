@@ -11,6 +11,7 @@ import {
   Send,
   Sparkles,
   Trophy,
+  UserRound,
   X,
 } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
@@ -61,6 +62,13 @@ type BotEvent = {
   }>
 }
 
+type BotProfile = {
+  username?: string
+  displayName: string
+  slug: string
+  url: string
+}
+
 type BotResponse = {
   type: string
   text: string
@@ -72,6 +80,7 @@ type BotResponse = {
   deck?: BotDeck
   alternatives?: BotDeck[]
   event?: BotEvent
+  profile?: BotProfile
 }
 
 type ChatMessage = {
@@ -91,6 +100,7 @@ const initialResponse: BotResponse = {
     "What is the best deck right now?",
     "Make a Random Deck",
     "Build the best deck from my parts",
+    "Who is the hottest Beyblader?",
   ],
 }
 
@@ -380,7 +390,7 @@ function ChatBubble({
               : "rounded-bl-md border border-white/[0.08] bg-white/[0.055] text-white/80"
           }`}
         >
-          {message.text}
+          <MessageText text={message.text} />
         </div>
         {!isUser && message.response && (
           <ResponseDetails response={message.response} onSuggestion={onSuggestion} />
@@ -402,6 +412,7 @@ function ResponseDetails({
     <div className="mt-2.5 space-y-2.5">
       {response.event && <EventCard event={response.event} />}
       {response.deck && <DeckCard deck={response.deck} />}
+      {response.profile && <ProfileCard profile={response.profile} />}
       {response.alternatives && response.alternatives.length > 0 && (
         <details className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3">
           <summary className="cursor-pointer list-none text-[10px] font-black uppercase tracking-[0.1em] text-white/45">
@@ -447,7 +458,7 @@ function ResponseDetails({
       )}
       {response.suggestions && response.suggestions.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {response.suggestions.slice(0, 4).map((suggestion) => (
+          {response.suggestions.slice(0, 5).map((suggestion) => (
             <button
               key={suggestion}
               type="button"
@@ -460,6 +471,50 @@ function ResponseDetails({
         </div>
       )}
     </div>
+  )
+}
+
+function MessageText({ text }: { text: string }) {
+  const parts = text.split(/(https?:\/\/[^\s.,!?;:]+)/g)
+  return (
+    <span className="whitespace-pre-wrap">
+      {parts.map((part, index) =>
+        /^https?:\/\//.test(part) ? (
+          <a
+            key={`${part}-${index}`}
+            href={part}
+            target="_blank"
+            rel="noreferrer"
+            className="font-bold text-cyan-200 underline decoration-cyan-200/30 underline-offset-2 hover:text-cyan-100"
+          >
+            {part}
+          </a>
+        ) : (
+          part
+        )
+      )}
+    </span>
+  )
+}
+
+function ProfileCard({ profile }: { profile: BotProfile }) {
+  return (
+    <a
+      href={profile.url}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-center gap-3 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-fuchsia-500/[0.1] to-violet-500/[0.05] p-3 transition hover:border-fuchsia-300/25 hover:bg-fuchsia-400/[0.12]"
+    >
+      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-fuchsia-200/15 bg-fuchsia-300/10 text-fuchsia-200">
+        <UserRound className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200/55">Today's pick</div>
+        <div className="truncate text-xs font-black text-white">{profile.displayName}</div>
+        {profile.username && <div className="truncate text-[10px] text-white/35">@{profile.username}</div>}
+      </div>
+      <ExternalLink className="h-3.5 w-3.5 text-white/35" />
+    </a>
   )
 }
 

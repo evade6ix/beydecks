@@ -5,6 +5,8 @@ import jwt from "jsonwebtoken"
 const CACHE_TTL_MS = 5 * 60 * 1000
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
 const RATE_LIMIT_MAX = 40
+const PROFILE_BASE_URL = "https://www.metabeys.com/u"
+const OWNER_HOTTEST_PROFILE = `${PROFILE_BASE_URL}/frankblader`
 
 const norm = (value) =>
   String(value || "")
@@ -610,6 +612,33 @@ async function optionalUser(req, users) {
   }
 }
 
+async function randomPublicProfile(users) {
+  const [user] = await users
+    .aggregate([
+      {
+        $match: {
+          slug: { $type: "string", $regex: /^[a-z0-9][a-z0-9-]*$/ },
+          $or: [
+            { username: { $type: "string", $ne: "" } },
+            { displayName: { $type: "string", $ne: "" } },
+          ],
+        },
+      },
+      { $sample: { size: 1 } },
+      { $project: { _id: 0, username: 1, displayName: 1, slug: 1 } },
+    ])
+    .toArray()
+
+  if (!user?.slug) return null
+  const slug = String(user.slug).trim().toLowerCase()
+  return {
+    username: String(user.username || "").trim(),
+    displayName: String(user.displayName || user.username || slug).trim(),
+    slug,
+    url: `${PROFILE_BASE_URL}/${encodeURIComponent(slug)}`,
+  }
+}
+
 function missingCategories(parts) {
   const missing = []
   if (!parts.blades.length) missing.push("Blades")
@@ -620,6 +649,20 @@ function missingCategories(parts) {
 
 function requestIntent(message, hasParts) {
   const query = norm(message)
+  const normalizedForSafety = query
+    .replace(/[@4]/g, "a")
+    .replace(/[1!3]/g, "i")
+    .replace(/0/g, "o")
+    .replace(/[$5]/g, "s")
+    .replace(/[^a-z]+/g, " ")
+  if (
+    /\b(nigg(?:er|ers|a|as)|chinks?|gooks?|spics?|wetbacks?|kikes?|kykes?|pakis?|coons?|ragheads?|crackers?|honk(?:y|ies))\b/.test(normalizedForSafety) ||
+    /\b(white power|race war|racial superiority)\b/.test(normalizedForSafety)
+  ) return "racist"
+  if (
+    /\b(hottest|cutest|prettiest|handsomest|sexiest|funniest|coolest)\b/.test(query) &&
+    (/\b(beyblader|blader|player|member|user)\b/.test(query) || /\bwho(?:'s| is)\b/.test(query))
+  ) return "playful_profile"
   if (/\b(clear|forget|reset)\b.*\b(parts|collection|inventory)\b/.test(query)) return "reset"
   if (
     /\b(random|surprise|shuffle)\b.*\b(deck|decks|combo|combos)\b/.test(query) ||
@@ -694,7 +737,36 @@ export default function metabeysBotRoutes({ events, users }) {
         "What is the best deck right now?",
         "Make a Random Deck",
         "Build the best deck from my parts",
+        "Who is the hottest Beyblader?",
       ]
+
+      if (intent === "racist") {
+        return res.json({
+          type: "blocked",
+          text: "I can handle jokes and playful questions, but I won't participate in racist requests.",
+          suggestions,
+        })
+      }
+
+      if (intent === "playful_profile") {
+        const profile = await randomPublicProfile(users)
+        if (!profile) {
+          return res.json({
+            type: "message",
+            text: "I couldn't find a public Beyblader profile to nominate right now.",
+            suggestions,
+          })
+        }
+        const ownerLine = randomInt(2) === 0
+          ? `\n\nThe owner thinks ${OWNER_HOTTEST_PROFILE} is the hottest`
+          : ""
+        return res.json({
+          type: "playful_profile",
+          text: `My completely scientific pick is ${profile.displayName}: ${profile.url}${ownerLine}`,
+          profile,
+          suggestions: ["Pick another hottest Beyblader", "Make a Random Deck", "Show the best current deck"],
+        })
+      }
 
       if (intent === "reset") {
         return res.json({
@@ -814,7 +886,7 @@ export default function metabeysBotRoutes({ events, users }) {
 
       return res.json({
         type: "help",
-        text: "I can show the latest Top Cut, identify the strongest current decks, make a completely random deck from all stored parts, or build a legal deck from parts you paste here. I only use tournament data stored by MetaBeys.",
+        text: "I can show the latest Top Cut, identify the strongest current decks, make a completely random deck, build from your parts, or answer playful community questions. Racist requests are the one hard stop.",
         parts: contextParts,
         suggestions,
       })
