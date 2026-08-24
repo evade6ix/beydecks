@@ -5,8 +5,7 @@ import jwt from "jsonwebtoken"
 const CACHE_TTL_MS = 5 * 60 * 1000
 const RATE_LIMIT_WINDOW_MS = 60 * 1000
 const RATE_LIMIT_MAX = 40
-const PROFILE_BASE_URL = "https://www.metabeys.com/u"
-const OWNER_HOTTEST_PROFILE = `${PROFILE_BASE_URL}/frankblader`
+const OWNER_HOTTEST_SLUG = "frankblader"
 
 const norm = (value) =>
   String(value || "")
@@ -635,7 +634,20 @@ async function randomPublicProfile(users) {
     username: String(user.username || "").trim(),
     displayName: String(user.displayName || user.username || slug).trim(),
     slug,
-    url: `${PROFILE_BASE_URL}/${encodeURIComponent(slug)}`,
+  }
+}
+
+async function publicProfileBySlug(users, requestedSlug) {
+  const slug = String(requestedSlug || "").trim().toLowerCase()
+  const user = await users.findOne(
+    { slug },
+    { projection: { _id: 0, username: 1, displayName: 1, slug: 1 } }
+  )
+  if (!user?.slug) return null
+  return {
+    username: String(user.username || "").trim(),
+    displayName: String(user.displayName || user.username || slug).trim(),
+    slug: String(user.slug).trim().toLowerCase(),
   }
 }
 
@@ -757,13 +769,22 @@ export default function metabeysBotRoutes({ events, users }) {
             suggestions,
           })
         }
-        const ownerLine = randomInt(2) === 0
-          ? `\n\nThe owner thinks ${OWNER_HOTTEST_PROFILE} is the hottest`
+        const showOwnerPick = randomInt(2) === 0
+        const ownerProfile = showOwnerPick
+          ? (await publicProfileBySlug(users, OWNER_HOTTEST_SLUG)) || {
+              username: OWNER_HOTTEST_SLUG,
+              displayName: OWNER_HOTTEST_SLUG,
+              slug: OWNER_HOTTEST_SLUG,
+            }
+          : null
+        const ownerLine = ownerProfile
+          ? `\n\nThe owner thinks ${ownerProfile.displayName} is the hottest.`
           : ""
         return res.json({
           type: "playful_profile",
-          text: `My completely scientific pick is ${profile.displayName}: ${profile.url}${ownerLine}`,
+          text: `My completely scientific pick is ${profile.displayName}.${ownerLine}`,
           profile,
+          ownerProfile,
           suggestions: ["Pick another hottest Beyblader", "Make a Random Deck", "Show the best current deck"],
         })
       }

@@ -66,7 +66,6 @@ type BotProfile = {
   username?: string
   displayName: string
   slug: string
-  url: string
 }
 
 type BotResponse = {
@@ -81,6 +80,7 @@ type BotResponse = {
   alternatives?: BotDeck[]
   event?: BotEvent
   profile?: BotProfile
+  ownerProfile?: BotProfile | null
 }
 
 type ChatMessage = {
@@ -390,7 +390,7 @@ function ChatBubble({
               : "rounded-bl-md border border-white/[0.08] bg-white/[0.055] text-white/80"
           }`}
         >
-          <MessageText text={message.text} />
+          <span className="whitespace-pre-wrap">{message.text}</span>
         </div>
         {!isUser && message.response && (
           <ResponseDetails response={message.response} onSuggestion={onSuggestion} />
@@ -412,7 +412,8 @@ function ResponseDetails({
     <div className="mt-2.5 space-y-2.5">
       {response.event && <EventCard event={response.event} />}
       {response.deck && <DeckCard deck={response.deck} />}
-      {response.profile && <ProfileCard profile={response.profile} />}
+      {response.profile && <ProfileCard profile={response.profile} label="Today's pick" />}
+      {response.ownerProfile && <ProfileCard profile={response.ownerProfile} label="Owner's pick" />}
       {response.alternatives && response.alternatives.length > 0 && (
         <details className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-3">
           <summary className="cursor-pointer list-none text-[10px] font-black uppercase tracking-[0.1em] text-white/45">
@@ -474,47 +475,23 @@ function ResponseDetails({
   )
 }
 
-function MessageText({ text }: { text: string }) {
-  const parts = text.split(/(https?:\/\/[^\s.,!?;:]+)/g)
+function ProfileCard({ profile, label }: { profile: BotProfile; label: string }) {
   return (
-    <span className="whitespace-pre-wrap">
-      {parts.map((part, index) =>
-        /^https?:\/\//.test(part) ? (
-          <a
-            key={`${part}-${index}`}
-            href={part}
-            target="_blank"
-            rel="noreferrer"
-            className="font-bold text-cyan-200 underline decoration-cyan-200/30 underline-offset-2 hover:text-cyan-100"
-          >
-            {part}
-          </a>
-        ) : (
-          part
-        )
-      )}
-    </span>
-  )
-}
-
-function ProfileCard({ profile }: { profile: BotProfile }) {
-  return (
-    <a
-      href={profile.url}
+    <Link
+      to={`/u/${encodeURIComponent(profile.slug)}`}
       target="_blank"
-      rel="noreferrer"
       className="flex items-center gap-3 rounded-2xl border border-fuchsia-300/15 bg-gradient-to-br from-fuchsia-500/[0.1] to-violet-500/[0.05] p-3 transition hover:border-fuchsia-300/25 hover:bg-fuchsia-400/[0.12]"
     >
       <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-fuchsia-200/15 bg-fuchsia-300/10 text-fuchsia-200">
         <UserRound className="h-5 w-5" />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200/55">Today's pick</div>
+        <div className="text-[9px] font-black uppercase tracking-[0.12em] text-fuchsia-200/55">{label}</div>
         <div className="truncate text-xs font-black text-white">{profile.displayName}</div>
         {profile.username && <div className="truncate text-[10px] text-white/35">@{profile.username}</div>}
       </div>
       <ExternalLink className="h-3.5 w-3.5 text-white/35" />
-    </a>
+    </Link>
   )
 }
 
