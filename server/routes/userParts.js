@@ -30,10 +30,17 @@ router.get("/parts", requireAuth, async (req, res) => {
     const users = db.collection("users")
     const user = await users.findOne({ id: String(req.user.id) })
     if (!user) return res.status(404).json({ error: "User not found" })
+    const legacy = user.ownedParts || {}
+    const parts = (key) => {
+      const current = user[key]
+      if (Array.isArray(current) && current.length) return current
+      return Array.isArray(legacy[key]) ? legacy[key] : Array.isArray(current) ? current : []
+    }
     res.json({
-      blades: user.blades || [],
-      ratchets: user.ratchets || [],
-      bits: user.bits || [],
+      blades: parts("blades"),
+      assistBlades: parts("assistBlades"),
+      ratchets: parts("ratchets"),
+      bits: parts("bits"),
       updatedAt: user.partsUpdatedAt || null,
     })
   } catch (err) {
@@ -47,7 +54,7 @@ async function saveParts(req, res) {
   try {
     const db = await getDb()
     const users = db.collection("users")
-    const { blades = [], ratchets = [], bits = [] } = req.body || {}
+    const { blades = [], assistBlades, ratchets = [], bits = [] } = req.body || {}
 
     const clean = (xs) =>
       Array.isArray(xs)
@@ -56,22 +63,29 @@ async function saveParts(req, res) {
             .slice(0, 300)
         : []
 
+    const user = await users.findOne({ id: String(req.user.id) })
+    if (!user) return res.status(404).json({ error: "User not found" })
+
+    // Preserve Assist Blades for older clients that do not send the new field yet.
+    const cleanedAssistBlades = Array.isArray(assistBlades)
+      ? clean(assistBlades)
+      : clean(user.assistBlades || user.ownedParts?.assistBlades || [])
+    const cleanedParts = {
+      blades: clean(blades),
+      assistBlades: cleanedAssistBlades,
+      ratchets: clean(ratchets),
+      bits: clean(bits),
+    }
+
     const updateDoc = {
       $set: {
-        blades: clean(blades),
-        ratchets: clean(ratchets),
-        bits: clean(bits),
+        ...cleanedParts,
+        ownedParts: cleanedParts,
         partsUpdatedAt: new Date(),
       },
     }
 
-    // If you want to allow creating the record for an existing user
-    // who doesn't have parts yet, add { upsert: true } as the 3rd arg.
-    const r = await users.updateOne({ id: String(req.user.id) }, updateDoc /*, { upsert: true } */)
-
-    if (r.matchedCount === 0 /* && r.upsertedCount === 0 */) {
-      return res.status(404).json({ error: "User not found" })
-    }
+    await users.updateOne({ id: String(req.user.id) }, updateDoc)
 
     return res.status(204).end()
   } catch (err) {

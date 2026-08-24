@@ -8,12 +8,23 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 /* =========================
    Types
 ========================= */
-type Combo = { blade: string; ratchet: string; bit: string }
+type Combo = { blade: string; assistBlade?: string; ratchet: string; bit: string }
 type ComboStat = Combo & {
   appearances: number
   mostRecentAppearance?: string
 }
-type Catalog = { blades: string[]; ratchets: string[]; bits: string[] }
+type Catalog = { blades: string[]; assistBlades: string[]; ratchets: string[]; bits: string[] }
+type OwnedParts = {
+  blades: Set<string>
+  assistBlades: Set<string>
+  ratchets: Set<string>
+  bits: Set<string>
+}
+type EventRecord = {
+  startTime?: string
+  endTime?: string
+  topCut?: Array<{ combos?: Combo[] }>
+}
 type BuiltDeck = {
   combos: ComboStat[]
   grade: {
@@ -26,7 +37,11 @@ type BuiltDeck = {
 }
 
 const norm = (s: string) => (s || "").trim().toLowerCase().replace(/\s+/g, " ")
-const comboKey = (c: Combo) => `${norm(c.blade)}|${norm(c.ratchet)}|${norm(c.bit)}`
+const bladeConfigKey = (blade: string, assistBlade?: string) =>
+  `${norm(blade)}|${norm(assistBlade || "")}`
+const comboKey = (c: Combo) =>
+  `${bladeConfigKey(c.blade, c.assistBlade)}|${norm(c.ratchet)}|${norm(c.bit)}`
+const comboParts = (c: Combo) => [c.blade, c.assistBlade, c.ratchet, c.bit].filter(Boolean) as string[]
 const daysSince = (iso?: string) => {
   if (!iso) return Infinity
   const t = new Date(iso).getTime()
@@ -41,16 +56,15 @@ const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x)
 ========================= */
 export default function BuildFromMyParts() {
   // auth
-  const { user, session, token } = useAuth() as any
-  // Pull token from context OR localStorage (fallback)
+  const { isAuthenticated } = useAuth()
   const lsToken = typeof window !== "undefined" ? localStorage.getItem("token") : null
-  const authToken: string | undefined =
-    token || session?.access_token || user?.accessToken || user?.token || lsToken || undefined
-  const isLoggedIn = !!authToken
+  const authToken = lsToken || undefined
+  const isLoggedIn = isAuthenticated && !!authToken
 
   // fetched parts + freq (from events)
-  const [catalog, setCatalog] = useState<Catalog>({ blades: [], ratchets: [], bits: [] })
+  const [catalog, setCatalog] = useState<Catalog>({ blades: [], assistBlades: [], ratchets: [], bits: [] })
   const [bladeFreq, setBladeFreq] = useState<Record<string, number>>({})
+  const [assistBladeFreq, setAssistBladeFreq] = useState<Record<string, number>>({})
   const [ratchetFreq, setRatchetFreq] = useState<Record<string, number>>({})
   const [bitFreq, setBitFreq] = useState<Record<string, number>>({})
   const [comboPool, setComboPool] = useState<ComboStat[]>([])
@@ -59,9 +73,11 @@ export default function BuildFromMyParts() {
   // pair co-occurrence (from real events)
   const [bladeRatchetFreq, setBladeRatchetFreq] = useState<Record<string, number>>({})
   const [bladeBitFreq, setBladeBitFreq] = useState<Record<string, number>>({})
+  const [bladeConfigFreq, setBladeConfigFreq] = useState<Record<string, number>>({})
 
   // user selections
   const [ownedBlades, setOwnedBlades] = useState<string[]>([])
+  const [ownedAssistBlades, setOwnedAssistBlades] = useState<string[]>([])
   const [ownedRatchets, setOwnedRatchets] = useState<string[]>([])
   const [ownedBits, setOwnedBits] = useState<string[]>([])
 
@@ -87,32 +103,40 @@ export default function BuildFromMyParts() {
         setError(null)
 
         const res = await fetch(`${API}/events`)
-        const data = await res.json()
+        const data = (await res.json()) as EventRecord[]
 
         // part sets + frequencies
         const bladeSet = new Set<string>()
+        const assistBladeSet = new Set<string>()
         const ratchetSet = new Set<string>()
         const bitSet = new Set<string>()
         const bFreq: Record<string, number> = {}
+        const aFreq: Record<string, number> = {}
         const rFreq: Record<string, number> = {}
         const btFreq: Record<string, number> = {}
 
         // combo frequency and most recent
         const comboFreq: Record<string, number> = {}
         const comboRecent: Record<string, string> = {}
+        const comboNames: Record<string, Combo> = {}
 
         // pair frequencies
-        const brFreq: Record<string, number> = {} // blade|ratchet
-        const bbFreq: Record<string, number> = {} // blade|bit
+        const brFreq: Record<string, number> = {} // blade|assist blade|ratchet
+        const bbFreq: Record<string, number> = {} // blade|assist blade|bit
+        const bcFreq: Record<string, number> = {} // blade|assist blade
 
-        data.forEach((event: any) => {
+        data.forEach((event) => {
           const eventDate = event?.endTime || event?.startTime
-          event.topCut?.forEach((player: any) => {
-            player.combos?.forEach((combo: any) => {
-              const { blade, ratchet, bit } = combo || {}
+          event.topCut?.forEach((player) => {
+            player.combos?.forEach((combo) => {
+              const { blade, assistBlade, ratchet, bit } = combo || {}
               if (blade) {
                 bladeSet.add(blade)
                 bFreq[blade] = (bFreq[blade] || 0) + 1
+              }
+              if (assistBlade) {
+                assistBladeSet.add(assistBlade)
+                aFreq[assistBlade] = (aFreq[assistBlade] || 0) + 1
               }
               if (ratchet) {
                 ratchetSet.add(ratchet)
@@ -122,17 +146,26 @@ export default function BuildFromMyParts() {
                 bitSet.add(bit)
                 btFreq[bit] = (btFreq[bit] || 0) + 1
               }
+              const configKey = bladeConfigKey(blade, assistBlade)
+              if (blade) bcFreq[configKey] = (bcFreq[configKey] || 0) + 1
               if (blade && ratchet) {
-                brFreq[`${norm(blade)}|${norm(ratchet)}`] =
-                  (brFreq[`${norm(blade)}|${norm(ratchet)}`] || 0) + 1
+                const key = `${configKey}|${norm(ratchet)}`
+                brFreq[key] = (brFreq[key] || 0) + 1
               }
               if (blade && bit) {
-                bbFreq[`${norm(blade)}|${norm(bit)}`] =
-                  (bbFreq[`${norm(blade)}|${norm(bit)}`] || 0) + 1
+                const key = `${configKey}|${norm(bit)}`
+                bbFreq[key] = (bbFreq[key] || 0) + 1
               }
               if (blade && ratchet && bit) {
-                const key = comboKey({ blade, ratchet, bit })
+                const exactCombo: Combo = {
+                  blade,
+                  assistBlade: assistBlade || undefined,
+                  ratchet,
+                  bit,
+                }
+                const key = comboKey(exactCombo)
                 comboFreq[key] = (comboFreq[key] || 0) + 1
+                if (!comboNames[key]) comboNames[key] = exactCombo
                 if (eventDate) {
                   const prev = comboRecent[key]
                   if (!prev || new Date(eventDate).getTime() > new Date(prev).getTime()) {
@@ -149,6 +182,7 @@ export default function BuildFromMyParts() {
           [...arr].sort((a, b) => (map[b] || 0) - (map[a] || 0))
 
         const blades = sortByFreq([...bladeSet], bFreq)
+        const assistBlades = sortByFreq([...assistBladeSet], aFreq)
         const ratchets = sortByFreq([...ratchetSet], rFreq)
         const bits = sortByFreq([...bitSet], btFreq)
 
@@ -156,25 +190,24 @@ export default function BuildFromMyParts() {
         const pool: ComboStat[] = Object.entries(comboFreq)
           .sort((a, b) => b[1] - a[1])
           .map(([key, appearances]) => {
-            const [blade, ratchet, bit] = key.split("|")
             return {
-              blade,
-              ratchet,
-              bit,
+              ...comboNames[key],
               appearances,
               mostRecentAppearance: comboRecent[key],
             }
           })
 
         if (!isMounted) return
-        setCatalog({ blades, ratchets, bits })
+        setCatalog({ blades, assistBlades, ratchets, bits })
         setBladeFreq(bFreq)
+        setAssistBladeFreq(aFreq)
         setRatchetFreq(rFreq)
         setBitFreq(btFreq)
         setComboPool(pool)
         setAllComboAppearances(Object.values(comboFreq))
         setBladeRatchetFreq(brFreq)
         setBladeBitFreq(bbFreq)
+        setBladeConfigFreq(bcFreq)
       } catch {
         if (!isMounted) return
         setError("Failed to load parts. Try refresh.")
@@ -201,6 +234,7 @@ export default function BuildFromMyParts() {
         const data = await res.json()
         if (aborted) return
         if (Array.isArray(data?.blades)) setOwnedBlades(data.blades)
+        if (Array.isArray(data?.assistBlades)) setOwnedAssistBlades(data.assistBlades)
         if (Array.isArray(data?.ratchets)) setOwnedRatchets(data.ratchets)
         if (Array.isArray(data?.bits)) setOwnedBits(data.bits)
       } catch {
@@ -212,12 +246,17 @@ export default function BuildFromMyParts() {
 
  // accept an optional payload so we can pass the *next* values
 const saveOwnedParts = async (
-  payload?: { blades: string[]; ratchets: string[]; bits: string[] }
+  payload?: { blades: string[]; assistBlades: string[]; ratchets: string[]; bits: string[] }
 ) => {
   if (!isLoggedIn) return
   try {
     setSaveState("saving")
-    const body = payload ?? { blades: ownedBlades, ratchets: ownedRatchets, bits: ownedBits }
+    const body = payload ?? {
+      blades: ownedBlades,
+      assistBlades: ownedAssistBlades,
+      ratchets: ownedRatchets,
+      bits: ownedBits,
+    }
     const res = await fetch(`${API}/me/parts`, {
       method: "PUT",
       headers: {
@@ -236,10 +275,16 @@ const saveOwnedParts = async (
 }
 
 
-  const queueSave = (next?: Partial<{ blades: string[]; ratchets: string[]; bits: string[] }>) => {
+  const queueSave = (next?: Partial<{
+    blades: string[]
+    assistBlades: string[]
+    ratchets: string[]
+    bits: string[]
+  }>) => {
   if (!isLoggedIn) return
   const payload = {
     blades: next?.blades ?? ownedBlades,
+    assistBlades: next?.assistBlades ?? ownedAssistBlades,
     ratchets: next?.ratchets ?? ownedRatchets,
     bits: next?.bits ?? ownedBits,
   }
@@ -270,13 +315,18 @@ useEffect(() => {
     setTimeout(() => {
       const owned = {
         blades: new Set(ownedBlades.map(norm)),
+        assistBlades: new Set(ownedAssistBlades.map(norm)),
         ratchets: new Set(ownedRatchets.map(norm)),
         bits: new Set(ownedBits.map(norm)),
       }
 
       // 1) exact meta combos you can build
       const feasible = comboPool.filter(
-        (c) => owned.blades.has(norm(c.blade)) && owned.ratchets.has(norm(c.ratchet)) && owned.bits.has(norm(c.bit))
+        (c) =>
+          owned.blades.has(norm(c.blade)) &&
+          (!c.assistBlade || owned.assistBlades.has(norm(c.assistBlade))) &&
+          owned.ratchets.has(norm(c.ratchet)) &&
+          owned.bits.has(norm(c.bit))
       )
 
       // Search the BEST legal deck from feasible (not greedy)
@@ -288,11 +338,13 @@ useEffect(() => {
         const fabricated = fabricateOwnedCandidates({
           owned,
           bladeOrder: orderOwnedByFreq(ownedBlades, bladeFreq),
+          assistBladeOrder: orderOwnedByFreq(ownedAssistBlades, assistBladeFreq),
           ratchetOrder: orderOwnedByFreq(ownedRatchets, ratchetFreq),
           bitOrder: orderOwnedByFreq(ownedBits, bitFreq),
+          bladeConfigFreq,
           brFreq: bladeRatchetFreq,
           bbFreq: bladeBitFreq,
-          partFreq: { bladeFreq, ratchetFreq, bitFreq },
+          partFreq: { bladeFreq, assistBladeFreq, ratchetFreq, bitFreq },
         })
         finalDecks = findBestLegalDeck(fabricated, allComboAppearances)
         if (finalDecks.length > 0) {
@@ -311,7 +363,14 @@ useEffect(() => {
       // 4) If absolutely nothing, show upgrade hints
       if (finalDecks.length === 0) {
         setBuilt({ best: undefined, alts: [] })
-        setUpgradeHints(suggestMissingParts({ owned, bladeFreq, ratchetFreq, bitFreq, catalog }))
+        setUpgradeHints(suggestMissingParts({
+          owned,
+          bladeFreq,
+          assistBladeFreq,
+          ratchetFreq,
+          bitFreq,
+          catalog,
+        }))
         setStatusMsg(
           "No full meta combos can be made from your parts. Add the suggested parts to unlock a competitive deck."
         )
@@ -330,7 +389,14 @@ useEffect(() => {
         setStatusMsg(
           "We couldn’t make a fully legal 3-combo deck from meta combos you can build, so these include overlapping parts. Add the parts below to reach a legal, competitive deck."
         )
-        setUpgradeHints(suggestMissingParts({ owned, bladeFreq, ratchetFreq, bitFreq, catalog }))
+        setUpgradeHints(suggestMissingParts({
+          owned,
+          bladeFreq,
+          assistBladeFreq,
+          ratchetFreq,
+          bitFreq,
+          catalog,
+        }))
       } else {
         setStatusMsg(null)
       }
@@ -345,11 +411,11 @@ useEffect(() => {
         <title>Build From My Parts — Meta Beys</title>
         <meta
           name="description"
-          content="Tell us which parts you own and we'll generate the best legal 3-combo deck from real top-cut data (or fabricate the strongest legal set from your parts if needed)."
+          content="Tell us which parts you own, including CX Assist Blades, and we'll generate the best legal 3-combo deck from real top-cut data."
         />
       </Helmet>
 
-      <div className="p-6 max-w-3xl mx-auto text-white space-y-6">
+      <div className="p-6 max-w-5xl mx-auto text-white space-y-6">
         <div>
           <h1 className="text-2xl font-bold">Build From My Parts</h1>
         </div>
@@ -362,7 +428,7 @@ useEffect(() => {
 
           {!loading && !error && (
             <>
-              <div className="grid sm:grid-cols-3 gap-3">
+              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Blades you own</label>
                   <MultiSelect
@@ -373,6 +439,19 @@ useEffect(() => {
                     onChange={(v) => {
                       setOwnedBlades(v)
                       queueSave({ blades:v})
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Assist Blades you own</label>
+                  <MultiSelect
+                    placeholder="Search assist blades…"
+                    options={catalog.assistBlades}
+                    freq={assistBladeFreq}
+                    value={ownedAssistBlades}
+                    onChange={(v) => {
+                      setOwnedAssistBlades(v)
+                      queueSave({ assistBlades: v })
                     }}
                   />
                 </div>
@@ -590,15 +669,32 @@ function scoreSingleMeta(c: ComboStat, allComboAppearances: number[]) {
 
 /* --- Fabricate strong combos from owned parts when no exact meta combos work --- */
 function fabricateOwnedCandidates(params: {
-  owned: { blades: Set<string>; ratchets: Set<string>; bits: Set<string> }
+  owned: OwnedParts
   bladeOrder: string[]
+  assistBladeOrder: string[]
   ratchetOrder: string[]
   bitOrder: string[]
+  bladeConfigFreq: Record<string, number>
   brFreq: Record<string, number>
   bbFreq: Record<string, number>
-  partFreq: { bladeFreq: Record<string, number>; ratchetFreq: Record<string, number>; bitFreq: Record<string, number> }
+  partFreq: {
+    bladeFreq: Record<string, number>
+    assistBladeFreq: Record<string, number>
+    ratchetFreq: Record<string, number>
+    bitFreq: Record<string, number>
+  }
 }): ComboStat[] {
-  const { owned, bladeOrder, ratchetOrder, bitOrder, brFreq, bbFreq, partFreq } = params
+  const {
+    owned,
+    bladeOrder,
+    assistBladeOrder,
+    ratchetOrder,
+    bitOrder,
+    bladeConfigFreq,
+    brFreq,
+    bbFreq,
+    partFreq,
+  } = params
   const candidates: ComboStat[] = []
   const seen = new Set<string>()
 
@@ -610,37 +706,67 @@ function fabricateOwnedCandidates(params: {
     const b = norm(bName)
     if (!owned.blades.has(b)) continue
 
-    const ratOpts = topRats
-      .filter((r) => owned.ratchets.has(norm(r)))
-      .sort((r1, r2) => (brFreq[`${b}|${norm(r2)}`] || 0) - (brFreq[`${b}|${norm(r1)}`] || 0))
-      .slice(0, 6)
+    const configurations: Array<{ assistBlade?: string; frequency: number }> = []
+    const regularFrequency = bladeConfigFreq[bladeConfigKey(bName)] || 0
+    if (regularFrequency > 0) configurations.push({ frequency: regularFrequency })
 
-    const bitOpts = topBits
-      .filter((t) => owned.bits.has(norm(t)))
-      .sort((t1, t2) => (bbFreq[`${b}|${norm(t2)}`] || 0) - (bbFreq[`${b}|${norm(t1)}`] || 0))
-      .slice(0, 6)
+    for (const assistBlade of assistBladeOrder) {
+      if (!owned.assistBlades.has(norm(assistBlade))) continue
+      const frequency = bladeConfigFreq[bladeConfigKey(bName, assistBlade)] || 0
+      if (frequency > 0) configurations.push({ assistBlade, frequency })
+    }
 
-    for (const rName of ratOpts) {
-      for (const tName of bitOpts) {
-        const key = comboKey({ blade: bName, ratchet: rName, bit: tName })
-        if (seen.has(key)) continue
-        seen.add(key)
+    for (const configuration of configurations.sort((a, b) => b.frequency - a.frequency).slice(0, 6)) {
+      const configKey = bladeConfigKey(bName, configuration.assistBlade)
+      const ratOpts = topRats
+        .filter((r) => owned.ratchets.has(norm(r)))
+        .sort(
+          (r1, r2) =>
+            (brFreq[`${configKey}|${norm(r2)}`] || 0) -
+            (brFreq[`${configKey}|${norm(r1)}`] || 0)
+        )
+        .slice(0, 6)
 
-        const pairScore = (brFreq[`${b}|${norm(rName)}`] || 0) + (bbFreq[`${b}|${norm(tName)}`] || 0)
-        const popScore =
-          (partFreq.bladeFreq[bName] || 0) +
-          (partFreq.ratchetFreq[rName] || 0) +
-          (partFreq.bitFreq[tName] || 0)
+      const bitOpts = topBits
+        .filter((t) => owned.bits.has(norm(t)))
+        .sort(
+          (t1, t2) =>
+            (bbFreq[`${configKey}|${norm(t2)}`] || 0) -
+            (bbFreq[`${configKey}|${norm(t1)}`] || 0)
+        )
+        .slice(0, 6)
 
-        const pseudoAppearances = Math.round(0.6 * pairScore + 0.4 * (popScore / 10))
+      for (const rName of ratOpts) {
+        for (const tName of bitOpts) {
+          const combo: Combo = {
+            blade: bName,
+            assistBlade: configuration.assistBlade,
+            ratchet: rName,
+            bit: tName,
+          }
+          const key = comboKey(combo)
+          if (seen.has(key)) continue
+          seen.add(key)
 
-        candidates.push({
-          blade: bName,
-          ratchet: rName,
-          bit: tName,
-          appearances: pseudoAppearances,
-          mostRecentAppearance: undefined,
-        })
+          const pairScore =
+            (brFreq[`${configKey}|${norm(rName)}`] || 0) +
+            (bbFreq[`${configKey}|${norm(tName)}`] || 0)
+          const popScore =
+            (partFreq.bladeFreq[bName] || 0) +
+            (configuration.assistBlade
+              ? partFreq.assistBladeFreq[configuration.assistBlade] || 0
+              : 0) +
+            (partFreq.ratchetFreq[rName] || 0) +
+            (partFreq.bitFreq[tName] || 0)
+
+          const pseudoAppearances = Math.round(0.6 * pairScore + 0.4 * (popScore / 10))
+
+          candidates.push({
+            ...combo,
+            appearances: pseudoAppearances,
+            mostRecentAppearance: undefined,
+          })
+        }
       }
     }
   }
@@ -697,40 +823,47 @@ function pickBestByOverlapMulti(anchors: ComboStat[], candidates: ComboStat[]) {
 }
 
 function noOverlap(existing: Combo[], next: Combo) {
-  const used = new Set<string>()
-  existing.forEach((c) => {
-    used.add(norm(c.blade))
-    used.add(norm(c.ratchet))
-    used.add(norm(c.bit))
-  })
-  return !used.has(norm(next.blade)) && !used.has(norm(next.ratchet)) && !used.has(norm(next.bit))
+  return overlapCount(existing, next) === 0
 }
 
 function overlapCount(existing: Combo[], next: Combo) {
-  let count = 0
-  const used = new Set<string>()
+  const used = {
+    blade: new Set<string>(),
+    assistBlade: new Set<string>(),
+    ratchet: new Set<string>(),
+    bit: new Set<string>(),
+  }
   existing.forEach((c) => {
-    used.add(norm(c.blade))
-    used.add(norm(c.ratchet))
-    used.add(norm(c.bit))
+    used.blade.add(norm(c.blade))
+    if (c.assistBlade) used.assistBlade.add(norm(c.assistBlade))
+    used.ratchet.add(norm(c.ratchet))
+    used.bit.add(norm(c.bit))
   })
-  if (used.has(norm(next.blade))) count++
-  if (used.has(norm(next.ratchet))) count++
-  if (used.has(norm(next.bit))) count++
-  return count
+  return [
+    used.blade.has(norm(next.blade)),
+    Boolean(next.assistBlade && used.assistBlade.has(norm(next.assistBlade))),
+    used.ratchet.has(norm(next.ratchet)),
+    used.bit.has(norm(next.bit)),
+  ].filter(Boolean).length
 }
 
 function findOverlaps(deck: Combo[]) {
   const seen = new Set<string>()
   const overlaps: string[] = []
   deck.forEach((c) => {
-    ;[c.blade, c.ratchet, c.bit].forEach((p) => {
-      const k = norm(p)
+    ;([
+      ["blade", c.blade],
+      ["assist blade", c.assistBlade],
+      ["ratchet", c.ratchet],
+      ["bit", c.bit],
+    ] as const).forEach(([category, part]) => {
+      if (!part) return
+      const k = `${category}:${norm(part)}`
       if (seen.has(k)) overlaps.push(k)
       else seen.add(k)
     })
   })
-  return [...new Set(overlaps)]
+  return [...new Set(overlaps)].map((part) => part.slice(part.indexOf(":") + 1))
 }
 
 function percentile(arr: number[], p: number) {
@@ -775,8 +908,8 @@ function gradeDeck(deck: ComboStat[], allComboAppearances: number[]): BuiltDeck[
   // stale combo drags hard
   const deckRecency = harmonicMean(recencies)
 
-  // diversity from unique parts across 9 slots
-  const parts = deck.flatMap((c) => [c.blade, c.ratchet, c.bit]).map(norm)
+  // Diversity across every occupied slot, including CX Assist Blades.
+  const parts = deck.flatMap(comboParts).map(norm)
   const diversity = Math.round((new Set(parts).size / parts.length) * 100)
 
   // base score
@@ -821,10 +954,7 @@ function dedupeDecks(decks: BuiltDeck[]) {
 }
 
 function deckSignature(cs: Combo[]) {
-  const parts = cs
-    .flatMap((c) => [norm(c.blade), norm(c.ratchet), norm(c.bit)])
-    .sort()
-  return parts.join("·")
+  return cs.map(comboKey).sort().join("·")
 }
 
 /* =========================
@@ -833,12 +963,14 @@ function deckSignature(cs: Combo[]) {
 function suggestMissingParts({
   owned,
   bladeFreq,
+  assistBladeFreq,
   ratchetFreq,
   bitFreq,
   catalog,
 }: {
-  owned: { blades: Set<string>; ratchets: Set<string>; bits: Set<string> }
+  owned: OwnedParts
   bladeFreq: Record<string, number>
+  assistBladeFreq: Record<string, number>
   ratchetFreq: Record<string, number>
   bitFreq: Record<string, number>
   catalog: Catalog
@@ -850,10 +982,16 @@ function suggestMissingParts({
       .slice(0, n)
 
   const blades = topN(catalog.blades, bladeFreq, owned.blades, 3)
+  const assistBlades = topN(catalog.assistBlades, assistBladeFreq, owned.assistBlades, 2)
   const ratchets = topN(catalog.ratchets, ratchetFreq, owned.ratchets, 3)
   const bits = topN(catalog.bits, bitFreq, owned.bits, 3)
 
-  return [...bits.slice(0, 2), ...ratchets.slice(0, 2), ...blades.slice(0, 1)]
+  return [
+    ...bits.slice(0, 2),
+    ...ratchets.slice(0, 1),
+    ...assistBlades.slice(0, 1),
+    ...blades.slice(0, 1),
+  ]
 }
 
 /* =========================
@@ -880,6 +1018,11 @@ function DeckCard({ deck, title, highlight = false }: { deck: BuiltDeck; title: 
           <div key={i} className="bg-gray-800 border border-gray-700 rounded p-3 text-sm">
             <div className="text-xs text-gray-400 mb-1">Combo {i + 1}</div>
             <div className="font-semibold">{c.blade}</div>
+            {c.assistBlade && (
+              <div className="text-sky-300">
+                {c.assistBlade} <span className="text-xs text-gray-400">(Assist Blade)</span>
+              </div>
+            )}
             <div className="opacity-90">{c.ratchet}</div>
             <div className="opacity-90">{c.bit}</div>
             <div className="mt-2 text-xs text-gray-400">
