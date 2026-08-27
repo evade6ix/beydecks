@@ -1,36 +1,34 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Link, useSearchParams } from "react-router-dom"
-import { motion, AnimatePresence } from "framer-motion"
-import Select from "react-select"
+import { Helmet } from "react-helmet-async"
+import { AnimatePresence, motion } from "framer-motion"
 import {
-  MapPin,
+  ArrowRight,
+  ArrowUpRight,
+  Building2,
+  CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Search as SearchIcon,
-  Lock,
-  Grid as GridIcon,
-  List as ListIcon,
-  Download,
   ExternalLink,
-  Building2,
+  Filter,
   Globe2,
+  Grid3X3,
+  List,
+  MapPin,
+  Search,
   Sparkles,
-  ArrowUpRight,
-  Youtube,
+  X,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
-
-// Hard-coded sponsored store (Mongo `id` value)
 const SPONSORED_STORE_ID = 1754921172194
+const PAGE_SIZE = 12
 
-/* --------------------------------
-   Types
----------------------------------*/
 type Store = {
   id: number | string
   name: string
-  address: string
+  address?: string
   logo?: string
   country?: string
   region?: string
@@ -40,705 +38,702 @@ type Store = {
   mapEmbedUrl?: string
 }
 
-type RSOption = { label: string; value: string }
 type SortBy = "Name (A → Z)" | "Name (Z → A)"
 type ViewMode = "grid" | "list"
+type PageItem = number | "ellipsis-start" | "ellipsis-end"
 
-/* --------------------------------
-   Utils
----------------------------------*/
-const toOptions = <T extends string>(arr: readonly T[]): RSOption[] =>
-  arr.map((x) => ({ label: x, value: x }))
-
-const normalize = (s?: string) =>
-  (s || "")
+const normalize = (value?: string) =>
+  (value || "")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
 
-const fmtCount = (n: number) => n.toLocaleString()
+const locationLabel = (store: Store) =>
+  [store.city, store.region, store.country].filter(Boolean).join(", ")
 
-/* --------------------------------
-   react-select theme/styles (dark)
----------------------------------*/
-const selectTheme = (theme: any) => ({
-  ...theme,
-  colors: {
-    ...theme.colors,
-    neutral0: "#111827",
-    neutral80: "#e5e7eb",
-    primary25: "#1f2937",
-    primary50: "#374151",
-    primary: "#6366f1",
-  },
-})
-const selectStyles = {
-  control: (base: any, state: any) => ({
-    ...base,
-    backgroundColor: "#111827",
-    borderColor: state.isFocused ? "#374151" : "#1f2937",
-    minHeight: 38,
-    boxShadow: "none",
-  }),
-  singleValue: (base: any) => ({ ...base, color: "#e5e7eb" }),
-  input: (base: any) => ({ ...base, color: "#e5e7eb" }),
-  menu: (base: any) => ({ ...base, backgroundColor: "#111827", zIndex: 30 }),
-  option: (base: any, state: any) => ({
-    ...base,
-    backgroundColor: state.isFocused ? "#1f2937" : "#111827",
-    color: "#e5e7eb",
-    cursor: "pointer",
-  }),
+const isOnlineOnly = (store: Store) => normalize(store.address).includes("online only")
+
+const directionsUrl = (store: Store) => {
+  if (!store.address || isOnlineOnly(store)) return null
+  const destination = [store.address, store.city, store.region, store.country].filter(Boolean).join(", ")
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`
 }
 
-/* --------------------------------
-   Page
----------------------------------*/
+const pageItems = (total: number, current: number): PageItem[] => {
+  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1)
+  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis-end", total]
+  if (current >= total - 3) return [1, "ellipsis-start", total - 4, total - 3, total - 2, total - 1, total]
+  return [1, "ellipsis-start", current - 1, current, current + 1, "ellipsis-end", total]
+}
+
 export default function StoreFinder() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const initialView = searchParams.get("view") === "list" ? "list" : "grid"
+  const initialSort = searchParams.get("sort") === "Name (Z → A)" ? "Name (Z → A)" : "Name (A → Z)"
 
-  const [loading, setLoading] = useState(true)
   const [stores, setStores] = useState<Store[]>([])
-
-  const [country, setCountry] = useState<string>(searchParams.get("country") || "All")
-  const [region, setRegion] = useState<string>(searchParams.get("region") || "All")
-  const [city, setCity] = useState<string>(searchParams.get("city") || "All")
-  const [sortBy, setSortBy] = useState<SortBy>((searchParams.get("sort") as SortBy) || "Name (A → Z)")
-  const [query, setQuery] = useState<string>(searchParams.get("q") || "")
-  const [view, setView] = useState<ViewMode>((searchParams.get("view") as ViewMode) || "grid")
-  const [page, setPage] = useState<number>(Number(searchParams.get("page")) || 1)
-  const [pageSize, setPageSize] = useState<number>(Number(searchParams.get("ps")) || 12)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [loadAttempt, setLoadAttempt] = useState(0)
+  const [country, setCountry] = useState(searchParams.get("country") || "All")
+  const [region, setRegion] = useState(searchParams.get("region") || "All")
+  const [city, setCity] = useState(searchParams.get("city") || "All")
+  const [sortBy, setSortBy] = useState<SortBy>(initialSort)
+  const [query, setQuery] = useState(searchParams.get("q") || "")
+  const [view, setView] = useState<ViewMode>(initialView)
+  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1))
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
   const searchRef = useRef<HTMLInputElement>(null)
+  const resultsRef = useRef<HTMLDivElement>(null)
 
-  // "/" focuses search like your events pages
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !/input|textarea|select/i.test((e.target as any)?.tagName)) {
-        e.preventDefault()
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "/" && !/input|textarea|select/i.test((event.target as HTMLElement)?.tagName)) {
+        event.preventDefault()
         searchRef.current?.focus()
       }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
   }, [])
 
-  // load
   useEffect(() => {
-    const load = async () => {
+    const controller = new AbortController()
+
+    async function loadStores() {
       setLoading(true)
+      setError(null)
       try {
-        const res = await fetch(`${API}/stores`)
-        const data: Store[] = await res.json()
+        const response = await fetch(`${API}/stores`, { signal: controller.signal })
+        if (!response.ok) throw new Error("The store directory could not be loaded.")
+        const data = await response.json()
         setStores(Array.isArray(data) ? data : [])
+      } catch (requestError) {
+        if ((requestError as Error)?.name !== "AbortError") {
+          setError("The store directory could not be loaded. Please try again.")
+        }
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     }
-    load()
-  }, [])
 
-  // Sponsored store derived from loaded stores
+    loadStores()
+    return () => controller.abort()
+  }, [loadAttempt])
+
   const sponsoredStore = useMemo(
-    () => stores.find((s) => String(s.id) === String(SPONSORED_STORE_ID)),
+    () => stores.find((store) => String(store.id) === String(SPONSORED_STORE_ID)),
     [stores]
   )
 
-  // options (cascading)
   const countries = useMemo(
-    () => ["All", ...Array.from(new Set(stores.map((s) => s.country).filter(Boolean) as string[])).sort()],
+    () => ["All", ...Array.from(new Set(stores.map((store) => store.country).filter(Boolean) as string[])).sort()],
     [stores]
   )
+
   const regions = useMemo(() => {
-    const base = country === "All" ? stores : stores.filter((s) => s.country === country)
-    return ["All", ...Array.from(new Set(base.map((s) => s.region).filter(Boolean) as string[])).sort()]
-  }, [stores, country])
+    const available = country === "All" ? stores : stores.filter((store) => store.country === country)
+    return ["All", ...Array.from(new Set(available.map((store) => store.region).filter(Boolean) as string[])).sort()]
+  }, [country, stores])
+
   const cities = useMemo(() => {
-    const base = stores.filter(
-      (s) => (country === "All" || s.country === country) && (region === "All" || s.region === region)
+    const available = stores.filter(
+      (store) =>
+        (country === "All" || store.country === country) &&
+        (region === "All" || store.region === region)
     )
-    return ["All", ...Array.from(new Set(base.map((s) => s.city).filter(Boolean) as string[])).sort()]
-  }, [stores, country, region])
+    return ["All", ...Array.from(new Set(available.map((store) => store.city).filter(Boolean) as string[])).sort()]
+  }, [country, region, stores])
 
-  // filtered + searched + sorted
   const filtered = useMemo(() => {
-    const q = normalize(query)
-    let list = stores.filter(
-      (s) =>
-        (country === "All" || s.country === country) &&
-        (region === "All" || s.region === region) &&
-        (city === "All" || s.city === city)
-    )
+    const normalizedQuery = normalize(query)
+    const matches = stores.filter((store) => {
+      const matchesLocation =
+        (country === "All" || store.country === country) &&
+        (region === "All" || store.region === region) &&
+        (city === "All" || store.city === city)
 
-    if (q) {
-      list = list.filter((s) =>
-        [s.name, s.address, s.city, s.region, s.country]
-          .filter(Boolean)
-          .some((v) => normalize(v as string).includes(q))
-      )
-    }
+      if (!matchesLocation) return false
+      if (!normalizedQuery) return true
 
-    if (sortBy === "Name (A → Z)") list.sort((a, b) => a.name.localeCompare(b.name))
-    if (sortBy === "Name (Z → A)") list.sort((a, b) => b.name.localeCompare(a.name))
-
-    return list
-  }, [stores, country, region, city, sortBy, query])
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const pageSafe = Math.min(page, totalPages)
-  const current = filtered.slice((pageSafe - 1) * pageSize, (pageSafe - 1) * pageSize + pageSize)
-
-  // keep URL in sync
-  useEffect(() => {
-    setSearchParams((prev) => {
-      const p = new URLSearchParams(prev)
-      const setParam = (k: string, v: string | number) => {
-        const str = String(v)
-        if (!str || str === "All" || str === "1" || (k === "ps" && Number(str) === 12) || (k === "view" && str === "grid"))
-          p.delete(k)
-        else p.set(k, str)
-      }
-      setParam("country", country)
-      setParam("region", region)
-      setParam("city", city)
-      setParam("sort", sortBy)
-      setParam("q", query)
-      setParam("view", view)
-      setParam("page", pageSafe)
-      setParam("ps", pageSize)
-      return p
+      return [store.name, store.address, store.city, store.region, store.country]
+        .filter(Boolean)
+        .some((value) => normalize(value).includes(normalizedQuery))
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, region, city, sortBy, query, view, pageSafe, pageSize])
 
-  // dependent resets
+    return matches.sort((first, second) =>
+      sortBy === "Name (A → Z)"
+        ? first.name.localeCompare(second.name)
+        : second.name.localeCompare(first.name)
+    )
+  }, [city, country, query, region, sortBy, stores])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const currentStores = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const firstResult = filtered.length ? (currentPage - 1) * PAGE_SIZE + 1 : 0
+  const lastResult = Math.min(currentPage * PAGE_SIZE, filtered.length)
+  const countryCount = useMemo(
+    () => new Set(stores.map((store) => store.country).filter(Boolean)).size,
+    [stores]
+  )
+  const activeFilterCount = [query, country !== "All", region !== "All", city !== "All"].filter(Boolean).length
+
   useEffect(() => {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      const sync = (key: string, value: string | number, defaultValue?: string | number) => {
+        if (!value || value === defaultValue) next.delete(key)
+        else next.set(key, String(value))
+      }
+
+      sync("country", country, "All")
+      sync("region", region, "All")
+      sync("city", city, "All")
+      sync("sort", sortBy, "Name (A → Z)")
+      sync("q", query, "")
+      sync("view", view, "grid")
+      sync("page", currentPage, 1)
+      next.delete("ps")
+      return next
+    }, { replace: true })
+  }, [city, country, currentPage, query, region, setSearchParams, sortBy, view])
+
+  const changeCountry = (value: string) => {
+    setCountry(value)
     setRegion("All")
     setCity("All")
     setPage(1)
-  }, [country])
-  useEffect(() => {
-    setCity("All")
-    setPage(1)
-  }, [region])
-
-  // CSV export
-  const exportCSV = () => {
-    const headers = ["id", "name", "address", "city", "region", "country", "logo"]
-    const rows = filtered.map((s) =>
-      [s.id, s.name, s.address, s.city || "", s.region || "", s.country || "", s.logo || ""]
-        .map((x) => `"${String(x).replace(/"/g, '""')}"`)
-        .join(",")
-    )
-    const blob = new Blob([headers.join(",") + "\n" + rows.join("\n")], { type: "text/csv;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = "stores.csv"
-    a.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
-  /* -------------------- UI -------------------- */
+  const changeRegion = (value: string) => {
+    setRegion(value)
+    setCity("All")
+    setPage(1)
+  }
+
+  const clearFilters = () => {
+    setQuery("")
+    setCountry("All")
+    setRegion("All")
+    setCity("All")
+    setPage(1)
+    searchRef.current?.focus()
+  }
+
+  const changePage = (nextPage: number) => {
+    setPage(Math.max(1, Math.min(totalPages, nextPage)))
+    window.requestAnimationFrame(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    })
+  }
+
   return (
-    <motion.div className="mx-auto max-w-7xl p-4 md:p-6" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-      {/* Title + quick stats */}
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold">
-            Store{" "}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">
-              Finder
-            </span>
+    <main className="relative min-h-screen overflow-hidden bg-[#070a12] text-white">
+      <Helmet>
+        <title>Store Finder | MetaBeys</title>
+        <meta
+          name="description"
+          content="Find Beyblade stores, local events, and competitive communities by country, region, and city."
+        />
+        <link rel="canonical" href="https://www.metabeys.com/stores" />
+      </Helmet>
+
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(circle_at_15%_0%,rgba(99,102,241,0.17),transparent_38%),radial-gradient(circle_at_85%_8%,rgba(14,165,233,0.10),transparent_34%)]"
+      />
+
+      <div className="relative mx-auto w-full max-w-[1440px] px-4 pb-20 pt-9 sm:px-6 sm:pt-12 lg:px-8 lg:pb-24">
+        <motion.header
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="mx-auto max-w-4xl text-center"
+        >
+          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-300/15 bg-indigo-400/[0.08] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-200">
+            <MapPin className="h-3.5 w-3.5" /> Store directory
+          </div>
+          <h1 className="mt-5 text-balance text-4xl font-black tracking-[-0.05em] sm:text-5xl lg:text-6xl">
+            Find your local Beyblade scene.
           </h1>
-          <p className="text-sm text-white/60 mt-1">Search, filter, sort — and get there fast.</p>
-        </div>
+          <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-white/55 sm:text-base sm:leading-7">
+            Search for Beyblade stores, discover local events, and find the communities closest to you.
+          </p>
+          {!loading && !error ? (
+            <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-white/35">
+              {stores.length.toLocaleString()} stores listed <span className="mx-2 text-white/15">•</span> {countryCount.toLocaleString()} {countryCount === 1 ? "country" : "countries"}
+            </p>
+          ) : null}
+        </motion.header>
 
-        <div className="grid grid-cols-3 gap-2 w-full md:w-auto">
-          <Stat label="Stores" value={fmtCount(stores.length)} />
-          <Stat label="Matching" value={fmtCount(filtered.length)} />
-          <Stat label="Per page" value={String(pageSize)} />
-        </div>
-      </div>
+        {sponsoredStore ? <FeaturedStore store={sponsoredStore} /> : null}
 
-      {/* 🔥 Sponsored Store Hero */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-        className="mb-7 relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-indigo-950 p-[1px] shadow-[0_24px_80px_rgba(15,23,42,0.95)]"
-      >
-        {/* Outer glow / frame */}
-        <div className="pointer-events-none absolute inset-0 opacity-60">
-          <div className="absolute -left-20 top-[-40px] h-52 w-52 rounded-full bg-fuchsia-500/20 blur-3xl" />
-          <div className="absolute right-[-40px] bottom-[-40px] h-64 w-64 rounded-full bg-indigo-500/30 blur-3xl" />
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.08),_transparent_65%)]" />
-        </div>
-
-        <div className="relative rounded-[26px] bg-[#020617]/90 px-5 py-5 md:px-8 md:py-6 lg:px-10 lg:py-7">
-          <div className="flex flex-col gap-5 md:flex-row md:items-center">
-            {/* Left: logo + badge */}
-            <div className="flex items-start gap-4 md:w-72 lg:w-80">
-              <div className="flex flex-col gap-2">
-                <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/80 bg-amber-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100 shadow-[0_0_30px_rgba(251,191,36,0.65)]">
-                  <Sparkles className="h-3.5 w-3.5 text-amber-200" />
-                  Sponsored Store
-                </span>
-                <div className="mt-3 relative h-14 w-14 md:h-16 md:w-16 overflow-hidden rounded-2xl border border-white/15 bg-black/60 grid place-items-center">
-                  {sponsoredStore?.logo ? (
-                    <img
-                      src={sponsoredStore.logo}
-                      alt={sponsoredStore.name}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <Building2 className="h-7 w-7 text-white/50" />
-                  )}
-                  <div className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/15" />
-                  <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-br from-white/5 via-transparent to-fuchsia-500/10 mix-blend-screen" />
-                </div>
-              </div>
-            </div>
-
-            {/* Middle: content */}
-            <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-xl md:text-2xl font-semibold leading-tight">
-                  {sponsoredStore?.name || "Featured Beyblade Store"}
-                </h2>
-                {sponsoredStore?.country && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/80">
-                    <Globe2 className="h-3.5 w-3.5" />
-                    {sponsoredStore.country}
-                    {sponsoredStore.region ? ` • ${sponsoredStore.region}` : ""}
-                  </span>
-                )}
-              </div>
-
-              <p className="mt-2 text-sm text-white/80 max-w-xl">
-                {sponsoredStore?.notes ||
-                  "Showcase your Beyblade store in front of players actively searching for locals, events, and product drops. This premium slot is built for brands that want to stand out."}
-              </p>
-
-              {/* Small meta row */}
-              <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/60">
-                {sponsoredStore?.city && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
-                    <MapPin className="h-3 w-3" />
-                    {sponsoredStore.city}
-                    {sponsoredStore.region ? `, ${sponsoredStore.region}` : ""}
-                  </span>
-                )}
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
-                  <Sparkles className="h-3 w-3" />
-                  Powered by MetaBeys Store Finder
-                </span>
-              </div>
-            </div>
-
-            {/* Right: CTAs */}
-            <div className="flex flex-col gap-3 md:w-64 lg:w-72">
-              <div className="flex flex-col gap-2">
-                {sponsoredStore ? (
-                  <>
-                    {sponsoredStore.website && (
-                      <a
-                        href={sponsoredStore.website}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
-                      >
-                        Visit Website
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                      </a>
-                    )}
-
-                    <Link
-                      to={`/stores/${sponsoredStore.id}`}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[11px] md:text-xs text-white/80 hover:bg-white/10"
-                    >
-                      Store profile
-                    </Link>
-
-                    <a
-                      href="https://www.youtube.com/zankye"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-500/60 bg-red-600/20 px-3 py-2 text-[11px] md:text-xs font-medium text-red-100 hover:bg-red-600/30"
-                    >
-                      <Youtube className="h-3.5 w-3.5" />
-                      Watch Zankye on YouTube
-                    </a>
-                  </>
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.06 }}
+          className="mt-8 overflow-visible rounded-[28px] border border-white/10 bg-[#0c1120]/95 shadow-[0_28px_90px_rgba(0,0,0,0.32)] backdrop-blur-xl sm:mt-10"
+        >
+          <div className="p-4 sm:p-5 lg:p-6">
+            <div className="flex items-stretch gap-2 sm:gap-3">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white/35" />
+                <input
+                  ref={searchRef}
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setPage(1)
+                  }}
+                  placeholder="Search by store, city, or address"
+                  aria-label="Search stores"
+                  className="h-14 w-full rounded-2xl border border-white/10 bg-white/[0.045] pl-12 pr-12 text-sm text-white outline-none transition placeholder:text-white/30 hover:border-white/15 focus:border-indigo-400/50 focus:bg-white/[0.06] focus:ring-4 focus:ring-indigo-500/10 sm:text-base"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery("")
+                      setPage(1)
+                      searchRef.current?.focus()
+                    }}
+                    aria-label="Clear search"
+                    className="absolute right-3 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg text-white/40 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-indigo-500 via-sky-500 to-fuchsia-500 px-3 py-2.5 text-xs md:text-sm font-medium text-white shadow-lg shadow-indigo-500/40 hover:brightness-110"
-                    >
-                      Your Store Here
-                      <ArrowUpRight className="h-3.5 w-3.5" />
-                    </button>
-                    <span className="text-[11px] text-white/55">
-                      Highlight your Beyblade store to players searching for locals and events.
-                    </span>
-                  </>
+                  <kbd className="pointer-events-none absolute right-4 top-1/2 hidden -translate-y-1/2 rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 text-[10px] font-semibold text-white/35 sm:block">/</kbd>
                 )}
               </div>
+
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((open) => !open)}
+                aria-expanded={filtersOpen}
+                className="relative inline-flex h-14 shrink-0 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-4 text-sm font-semibold text-white transition hover:bg-white/[0.09] md:hidden"
+              >
+                <Filter className="h-4 w-4" />
+                <span className="hidden sm:inline">Filters</span>
+                {activeFilterCount > 0 ? (
+                  <span className="grid h-5 min-w-5 place-items-center rounded-full bg-indigo-500 px-1.5 text-[10px] font-black text-white">{activeFilterCount}</span>
+                ) : null}
+              </button>
+            </div>
+
+            <div className={`${filtersOpen ? "grid" : "hidden"} mt-4 gap-3 md:grid md:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]`}>
+              <FilterSelect
+                label="Country"
+                value={country}
+                options={countries}
+                allLabel="All countries"
+                onChange={changeCountry}
+              />
+              <FilterSelect
+                label="State / province"
+                value={region}
+                options={regions}
+                allLabel="All regions"
+                disabled={country === "All"}
+                disabledLabel="Choose a country first"
+                onChange={changeRegion}
+              />
+              <FilterSelect
+                label="City"
+                value={city}
+                options={cities}
+                allLabel="All cities"
+                disabled={country === "All"}
+                disabledLabel="Choose a country first"
+                onChange={(value) => {
+                  setCity(value)
+                  setPage(1)
+                }}
+              />
+              <FilterSelect
+                label="Sort"
+                value={sortBy}
+                options={["Name (A → Z)", "Name (Z → A)"]}
+                onChange={(value) => {
+                  setSortBy(value as SortBy)
+                  setPage(1)
+                }}
+              />
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  disabled={activeFilterCount === 0}
+                  className="h-[46px] w-full rounded-xl border border-white/10 px-4 text-sm font-semibold text-white/55 transition hover:border-white/15 hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30 lg:w-auto"
+                >
+                  Clear all
+                </button>
+              </div>
+            </div>
+
+            {(country !== "All" || region !== "All" || city !== "All") ? (
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-4">
+                <span className="mr-1 text-xs font-medium text-white/35">Filtering by</span>
+                {country !== "All" ? <FilterPill label={country} onRemove={() => changeCountry("All")} /> : null}
+                {region !== "All" ? <FilterPill label={region} onRemove={() => changeRegion("All")} /> : null}
+                {city !== "All" ? <FilterPill label={city} onRemove={() => { setCity("All"); setPage(1) }} /> : null}
+              </div>
+            ) : null}
+          </div>
+        </motion.section>
+
+        <section ref={resultsRef} className="scroll-mt-6 pt-8 sm:pt-10">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-300">Directory</p>
+              <h2 className="mt-1 text-2xl font-black tracking-[-0.035em] sm:text-3xl">
+                {loading ? "Loading stores" : error ? "Store directory" : `${filtered.length.toLocaleString()} ${filtered.length === 1 ? "store" : "stores"}`}
+              </h2>
+              {!loading && !error && filtered.length > 0 ? (
+                <p className="mt-1 text-sm text-white/40">Showing {firstResult}–{lastResult} of {filtered.length.toLocaleString()}</p>
+              ) : null}
+            </div>
+
+            <div className="flex items-center rounded-xl border border-white/10 bg-white/[0.035] p-1">
+              <ViewButton active={view === "grid"} label="Grid view" onClick={() => setView("grid")}>
+                <Grid3X3 className="h-4 w-4" />
+              </ViewButton>
+              <ViewButton active={view === "list"} label="List view" onClick={() => setView("list")}>
+                <List className="h-4 w-4" />
+              </ViewButton>
             </div>
           </div>
 
-          {/* Subtle animated underline */}
-          <div className="mt-4 h-px w-full bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-60" />
-        </div>
-      </motion.div>
+          {loading ? (
+            <StoreSkeletons view={view} />
+          ) : error ? (
+            <ErrorState message={error} onRetry={() => setLoadAttempt((attempt) => attempt + 1)} />
+          ) : filtered.length === 0 ? (
+            <EmptyState onClear={clearFilters} />
+          ) : (
+            <motion.div
+              layout
+              className={view === "grid" ? "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" : "grid grid-cols-1 gap-3"}
+            >
+              <AnimatePresence mode="popLayout">
+                {currentStores.map((store) => (
+                  <StoreCard key={store.id} store={store} view={view} />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
 
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative">
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              setPage(1)
-            }}
-            placeholder="Search store, city, state/province, country, address…  (press /)"
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 pr-9 outline-none focus:border-indigo-500/50"
-          />
-          <SearchIcon className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/50" />
-        </div>
+          {!loading && !error && filtered.length > PAGE_SIZE ? (
+            <Pagination current={currentPage} total={totalPages} onChange={changePage} />
+          ) : null}
+        </section>
       </div>
-
-      {/* Controls */}
-      <div className="mb-5 grid grid-cols-1 items-end gap-3 md:grid-cols-[1fr_1fr_1fr_1fr_auto_auto]">
-        <Field label="Country">
-          <Select<RSOption, false>
-            options={toOptions(countries)}
-            value={{ label: country, value: country }}
-            onChange={(opt) => {
-              setCountry(opt?.value || "All")
-              setPage(1)
-            }}
-            theme={selectTheme}
-            styles={selectStyles as any}
-          />
-        </Field>
-
-        <LockedField label="State / Province" locked={country === "All"} note="Select country first">
-          <Select<RSOption, false>
-            options={toOptions(regions)}
-            value={{ label: region, value: region }}
-            onChange={(opt) => {
-              setRegion(opt?.value || "All")
-              setPage(1)
-            }}
-            isDisabled={country === "All"}
-            theme={selectTheme}
-            styles={selectStyles as any}
-          />
-        </LockedField>
-
-        <LockedField label="City" locked={country === "All"} note="Select country first">
-          <Select<RSOption, false>
-            options={toOptions(cities)}
-            value={{ label: city, value: city }}
-            onChange={(opt) => {
-              setCity(opt?.value || "All")
-              setPage(1)
-            }}
-            isDisabled={country === "All"}
-            theme={selectTheme}
-            styles={selectStyles as any}
-          />
-        </LockedField>
-
-        <Field label="Sort by">
-          <Select<RSOption, false>
-            options={toOptions(["Name (A → Z)", "Name (Z → A)"] as const)}
-            value={{ label: sortBy, value: sortBy }}
-            onChange={(opt) => setSortBy((opt?.value as SortBy) || "Name (A → Z)")}
-            theme={selectTheme}
-            styles={selectStyles as any}
-          />
-        </Field>
-
-        <Field label="Per page">
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value))
-              setPage(1)
-            }}
-            className="h-[38px] w-[120px] rounded-xl border border-white/10 bg-white/5 px-3 text-sm outline-none focus:border-indigo-500/50"
-          >
-            {[12, 24, 48].map((n) => (
-              <option key={n} value={n}>
-                {n} / page
-              </option>
-            ))}
-          </select>
-        </Field>
-
-        <div className="flex h-[38px] items-center gap-2">
-          <button
-            onClick={() => setView("grid")}
-            className={`inline-flex h-full items-center gap-1 rounded-xl border px-3 text-sm transition ${
-              view === "grid"
-                ? "border-indigo-500/60 bg-indigo-600/20"
-                : "border-white/10 bg-white/5 hover:bg-white/10"
-            }`}
-            title="Grid view"
-          >
-            <GridIcon className="h-4 w-4" /> Grid
-          </button>
-          <button
-            onClick={() => setView("list")}
-            className={`inline-flex h-full items-center gap-1 rounded-xl border px-3 text-sm transition ${
-              view === "list"
-                ? "border-indigo-500/60 bg-indigo-600/20"
-                : "border-white/10 bg-white/5 hover:bg-white/10"
-            }`}
-            title="List view"
-          >
-            <ListIcon className="h-4 w-4" /> List
-          </button>
-          <button
-            onClick={exportCSV}
-            className="inline-flex h-full items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 text-sm hover:bg-white/10"
-            title="Export CSV"
-          >
-            <Download className="h-4 w-4" /> Export
-          </button>
-        </div>
-      </div>
-
-      {/* Results */}
-      {loading ? (
-        <div className={`grid gap-4 ${view === "grid" ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid-cols-1"}`}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-44 rounded-2xl border border-white/10 bg-white/5 animate-pulse" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <div className={`grid gap-4 ${view === "grid" ? "grid-cols-1 md:grid-cols-2 xl:grid-cols-3" : "grid-cols-1"}`}>
-          <AnimatePresence mode="popLayout">
-            {current.map((s) => (
-              <StoreCard key={s.id} s={s} view={view} />
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
-
-      {/* Pagination */}
-      {filtered.length > 0 && (
-        <div className="mt-8 flex items-center justify-center gap-2">
-          <button
-            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
-            disabled={pageSafe === 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Prev
-          </button>
-
-          <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-            Page {pageSafe} / {totalPages}
-          </span>
-
-          <button
-            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-sm hover:bg-white/10 disabled:opacity-40"
-            disabled={pageSafe >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Next
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-    </motion.div>
+    </main>
   )
 }
 
-/* -------------------- Pieces -------------------- */
-
-function Stat({ label, value }: { label: string; value: string }) {
+function FeaturedStore({ store }: { store: Store }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-center">
-      <div className="text-[11px] uppercase tracking-wide text-white/60">{label}</div>
-      <div className="mt-0.5 text-xl font-semibold">{value}</div>
-    </div>
+    <motion.aside
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: 0.03 }}
+      className="relative mt-8 overflow-hidden rounded-[24px] border border-amber-300/15 bg-[#0d1220] shadow-2xl shadow-black/20 sm:mt-10"
+    >
+      <div aria-hidden className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-300 via-amber-400 to-orange-400" />
+      <div aria-hidden className="absolute -right-16 -top-20 h-56 w-56 rounded-full bg-amber-300/[0.07] blur-3xl" />
+      <div className="relative flex flex-col gap-5 p-5 sm:p-6 lg:flex-row lg:items-center lg:gap-7">
+        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.05] sm:h-20 sm:w-20">
+          {store.logo ? (
+            <img src={store.logo} alt={`${store.name} logo`} className="h-full w-full object-contain" />
+          ) : (
+            <Building2 className="h-7 w-7 text-white/35" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">
+              <Sparkles className="h-3.5 w-3.5" /> Featured store
+            </span>
+            {locationLabel(store) ? <span className="text-xs text-white/30">{locationLabel(store)}</span> : null}
+          </div>
+          <h2 className="mt-1.5 text-xl font-black tracking-[-0.025em] sm:text-2xl">{store.name}</h2>
+          {store.notes ? (
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/50 line-clamp-2">{store.notes}</p>
+          ) : null}
+        </div>
+
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+          <Link
+            to={`/stores/${store.id}`}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-4 text-sm font-semibold text-white transition hover:bg-white/[0.1]"
+          >
+            View profile <ArrowRight className="h-4 w-4" />
+          </Link>
+          {store.website ? (
+            <a
+              href={store.website}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 text-sm font-bold text-[#151006] transition hover:bg-amber-200"
+            >
+              Visit store <ArrowUpRight className="h-4 w-4" />
+            </a>
+          ) : null}
+        </div>
+      </div>
+    </motion.aside>
   )
 }
 
-function Field({ label, children }: { label: React.ReactNode; children: React.ReactNode }) {
+function FilterSelect({
+  label,
+  value,
+  options,
+  onChange,
+  allLabel,
+  disabled = false,
+  disabledLabel,
+}: {
+  label: string
+  value: string
+  options: string[]
+  onChange: (value: string) => void
+  allLabel?: string
+  disabled?: boolean
+  disabledLabel?: string
+}) {
   return (
-    <label className="block">
-      <div className="mb-1 text-xs text-white/60">{label}</div>
-      {children}
+    <label className={disabled ? "opacity-45" : ""}>
+      <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.12em] text-white/40">{label}</span>
+      <span className="relative block">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          className="h-[46px] w-full appearance-none rounded-xl border border-white/10 bg-[#101625] px-3.5 pr-9 text-sm text-white outline-none transition hover:border-white/20 focus:border-indigo-400/50 focus:ring-4 focus:ring-indigo-500/10 disabled:cursor-not-allowed"
+          aria-label={label}
+        >
+          {disabled && disabledLabel ? <option value="All">{disabledLabel}</option> : null}
+          {!disabled
+            ? options.map((option) => (
+                <option key={option} value={option}>
+                  {option === "All" ? allLabel || option : option}
+                </option>
+              ))
+            : null}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+      </span>
     </label>
   )
 }
 
-function LockedField({
-  label,
-  note,
-  locked,
-  children,
-}: {
-  label: React.ReactNode
-  note?: string
-  locked: boolean
-  children: React.ReactNode
-}) {
+function FilterPill({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <div className="relative">
-      <div className="mb-1 flex items-center gap-1 text-xs text-white/60">
-        <span>{label}</span>
-        {locked && (
-          <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] text-white/60">
-            <Lock className="h-3 w-3" /> Locked
-          </span>
-        )}
-      </div>
-      <div className="relative">
-        {children}
-        {locked && (
-          <div
-            className="pointer-events-none absolute inset-0 rounded-xl border border-white/10 bg-[#0b1220]/50 backdrop-blur-[1px] grid place-items-center"
-            title={note}
-          >
-            <div className="flex items-center gap-2 text-xs text-white/70">
-              <Lock className="h-4 w-4" />
-              {note || "Locked"}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    <button
+      type="button"
+      onClick={onRemove}
+      className="inline-flex items-center gap-1.5 rounded-full border border-indigo-300/15 bg-indigo-400/[0.08] py-1.5 pl-3 pr-2 text-xs font-semibold text-indigo-100 transition hover:bg-indigo-400/[0.14]"
+    >
+      {label} <X className="h-3.5 w-3.5 text-indigo-200/60" />
+    </button>
   )
 }
 
-function StoreCard({ s, view }: { s: Store; view: "grid" | "list" }) {
-  // Google Maps intent URL
-  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-    [s.address, s.city, s.region, s.country].filter(Boolean).join(", ")
-  )}`
+function ViewButton({ active, label, onClick, children }: { active: boolean; label: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      className={`grid h-9 w-9 place-items-center rounded-lg transition ${active ? "bg-white/[0.11] text-white shadow-sm" : "text-white/35 hover:text-white/70"}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function StoreCard({ store, view }: { store: Store; view: ViewMode }) {
+  const directions = directionsUrl(store)
+  const location = locationLabel(store)
 
   return (
-    <motion.div
+    <motion.article
+      layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
+      exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.2 }}
-      className={`group isolate overflow-hidden rounded-2xl border border-white/10 bg-white/5 ${
-        view === "list" ? "flex" : ""
-      }`}
+      className={`group relative overflow-hidden rounded-[22px] border border-white/[0.09] bg-[#0c1120] shadow-lg shadow-black/10 transition duration-300 hover:-translate-y-0.5 hover:border-white/15 hover:shadow-2xl hover:shadow-black/20 ${view === "grid" ? "flex h-full flex-col p-5" : "p-4 sm:p-5"}`}
     >
-      {/* Accent rail */}
-      <div className="hidden md:block w-1.5 bg-gradient-to-b from-indigo-500/60 via-sky-500/60 to-fuchsia-500/60" />
+      <div aria-hidden className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent opacity-0 transition group-hover:opacity-100" />
 
-      {/* Body */}
-      <div className="flex-1 p-4">
-        <div className="flex items-start gap-3">
-          {/* Logo tile */}
-          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5 grid place-items-center">
-            {s.logo ? (
-              <img src={s.logo} alt={s.name} className="h-full w-full object-contain" />
+      <div className={view === "list" ? "flex flex-col gap-4 sm:flex-row sm:items-center" : "flex flex-1 flex-col"}>
+        <div className={view === "list" ? "flex min-w-0 flex-1 items-start gap-4" : "flex items-start gap-4"}>
+          <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl border border-white/10 bg-white/[0.045] sm:h-16 sm:w-16">
+            {store.logo ? (
+              <img src={store.logo} alt={`${store.name} logo`} loading="lazy" className="h-full w-full object-contain" />
             ) : (
-              <Building2 className="h-6 w-6 text-white/40" />
-            )}
-            <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-white/10 group-hover:ring-indigo-400/30 transition" />
-          </div>
-
-          {/* Title + location */}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="truncate text-lg font-semibold leading-tight">{s.name}</h3>
-              {s.country && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px]">
-                  <Globe2 className="h-3.5 w-3.5" />
-                  {s.country}
-                </span>
-              )}
-            </div>
-            {(s.city || s.region || s.country) && (
-              <div className="mt-1 text-sm text-white/70">
-                <MapPin className="mr-1 inline h-4 w-4 translate-y-[1px]" />
-                {[s.city, s.region, s.country].filter(Boolean).join(", ")}
-              </div>
+              <Building2 className="h-6 w-6 text-white/30" />
             )}
           </div>
 
-          {/* Primary action */}
-          <div className="ml-auto hidden md:block">
-            <Link
-              to={`/stores/${s.id}`}
-              className="rounded-xl bg-indigo-600/90 px-3 py-1.5 text-sm hover:bg-indigo-500"
-            >
-              View
+          <div className="min-w-0 flex-1">
+            <Link to={`/stores/${store.id}`} className="inline-flex max-w-full items-start gap-2">
+              <h3 className="truncate text-lg font-bold tracking-[-0.02em] text-white transition group-hover:text-indigo-200">{store.name}</h3>
+              <ArrowUpRight className="mt-1 h-4 w-4 shrink-0 text-white/25 transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-indigo-300" />
             </Link>
+            {location ? (
+              <p className="mt-1.5 flex items-start gap-1.5 text-sm text-white/45">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300/70" />
+                <span className="line-clamp-1">{location}</span>
+              </p>
+            ) : isOnlineOnly(store) ? (
+              <p className="mt-1.5 flex items-center gap-1.5 text-sm text-white/45"><Globe2 className="h-3.5 w-3.5 text-sky-300/70" /> Online store</p>
+            ) : null}
           </div>
         </div>
 
-        {/* Address */}
-        <div className="mt-3 text-sm text-white/70 line-clamp-2">
-          {s.address}
-          {s.city ? `, ${s.city}` : ""}
-          {s.region ? `, ${s.region}` : ""}
-          {s.country ? `, ${s.country}` : ""}
+        <div className={view === "list" ? "min-w-0 flex-1 sm:max-w-xl" : "mt-5 flex-1"}>
+          {store.address ? (
+            <p className="text-sm leading-6 text-white/60 line-clamp-2">{store.address}</p>
+          ) : null}
+          {store.notes ? (
+            <p className={`${store.address ? "mt-2" : ""} text-sm leading-6 text-white/38 ${view === "list" ? "line-clamp-2" : "line-clamp-3"}`}>{store.notes}</p>
+          ) : null}
         </div>
 
-        {/* Chips */}
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          {s.city && <Chip>{s.city}</Chip>}
-          {s.region && <Chip>{s.region}</Chip>}
-          {s.country && <Chip>{s.country}</Chip>}
-        </div>
-
-        {/* Actions */}
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10"
-          >
-            Open in Maps <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+        <div className={`${view === "list" ? "sm:ml-auto sm:shrink-0" : "mt-5 border-t border-white/[0.07] pt-4"} flex flex-wrap items-center gap-2`}>
           <Link
-            to={`/stores/${s.id}/upcoming`}
-            className="inline-flex items-center gap-1 rounded-xl bg-indigo-600/90 px-3 py-2 text-xs hover:bg-indigo-500"
+            to={`/stores/${store.id}`}
+            className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-500 px-3.5 text-xs font-bold text-white transition hover:bg-indigo-400 sm:flex-none"
           >
-            Events
+            Store profile <ArrowRight className="h-3.5 w-3.5" />
           </Link>
           <Link
-            to={`/stores/${s.id}`}
-            className="inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs hover:bg-white/10 md:hidden"
+            to={`/stores/${store.id}/upcoming`}
+            className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] hover:text-white"
+            title={`Upcoming events at ${store.name}`}
           >
-            View
+            <CalendarDays className="h-3.5 w-3.5" /> Events
           </Link>
+          {directions ? (
+            <a
+              href={directions}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Get directions to ${store.name}`}
+              title="Get directions"
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/55 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              <MapPin className="h-4 w-4" />
+            </a>
+          ) : null}
+          {store.website ? (
+            <a
+              href={store.website}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Visit ${store.name} website`}
+              title="Visit website"
+              className="grid h-10 w-10 place-items-center rounded-xl border border-white/10 bg-white/[0.04] text-white/55 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          ) : null}
         </div>
       </div>
-    </motion.div>
+    </motion.article>
   )
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1">{children}</span>
+function StoreSkeletons({ view }: { view: ViewMode }) {
+  return (
+    <div className={view === "grid" ? "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3" : "grid grid-cols-1 gap-3"}>
+      {Array.from({ length: 6 }, (_, index) => (
+        <div key={index} className={`animate-pulse rounded-[22px] border border-white/[0.07] bg-[#0c1120] p-5 ${view === "grid" ? "h-[280px]" : "h-[150px]"}`}>
+          <div className="flex gap-4">
+            <div className="h-16 w-16 rounded-2xl bg-white/[0.06]" />
+            <div className="flex-1 pt-1">
+              <div className="h-4 w-2/3 rounded bg-white/[0.07]" />
+              <div className="mt-3 h-3 w-1/2 rounded bg-white/[0.05]" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
-function EmptyState() {
+function EmptyState({ onClear }: { onClear: () => void }) {
   return (
-    <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-10 text-center">
-      <div className="mx-auto mb-3 h-12 w-12 rounded-2xl border border-white/10 bg-white/5 grid place-items-center">
-        <MapPin className="h-6 w-6 text-white/50" />
+    <div className="rounded-[24px] border border-dashed border-white/12 bg-white/[0.025] px-6 py-16 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]">
+        <Search className="h-5 w-5 text-white/35" />
       </div>
-      <div className="text-lg font-semibold">No stores match your filters</div>
-      <div className="mt-1 text-sm text-white/60">Try clearing filters or searching something else.</div>
+      <h3 className="mt-4 text-lg font-bold">No stores found</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">Try a broader location or a different store name.</p>
+      <button type="button" onClick={onClear} className="mt-5 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#080b12] transition hover:bg-white/90">Clear filters</button>
     </div>
+  )
+}
+
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-[24px] border border-rose-300/10 bg-rose-400/[0.035] px-6 py-14 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/[0.05]">
+        <Building2 className="h-5 w-5 text-white/35" />
+      </div>
+      <h3 className="mt-4 text-lg font-bold">We couldn’t load the stores</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/45">{message}</p>
+      <button type="button" onClick={onRetry} className="mt-5 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-[#080b12] transition hover:bg-white/90">Try again</button>
+    </div>
+  )
+}
+
+function Pagination({ current, total, onChange }: { current: number; total: number; onChange: (page: number) => void }) {
+  return (
+    <nav aria-label="Store directory pages" className="mt-9 flex flex-wrap items-center justify-center gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(current - 1)}
+        disabled={current === 1}
+        className="inline-flex h-10 items-center gap-1 rounded-xl border border-white/10 bg-white/[0.035] px-3 text-xs font-semibold text-white/65 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Previous</span>
+      </button>
+
+      {pageItems(total, current).map((item) =>
+        typeof item === "number" ? (
+          <button
+            key={item}
+            type="button"
+            onClick={() => onChange(item)}
+            aria-current={item === current ? "page" : undefined}
+            className={`grid h-10 w-10 place-items-center rounded-xl border text-xs font-bold transition ${item === current ? "border-indigo-400/60 bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "border-white/10 bg-white/[0.035] text-white/55 hover:bg-white/[0.07] hover:text-white"}`}
+          >
+            {item}
+          </button>
+        ) : (
+          <span key={item} className="grid h-10 w-7 place-items-center text-sm text-white/25">…</span>
+        )
+      )}
+
+      <button
+        type="button"
+        onClick={() => onChange(current + 1)}
+        disabled={current === total}
+        className="inline-flex h-10 items-center gap-1 rounded-xl border border-white/10 bg-white/[0.035] px-3 text-xs font-semibold text-white/65 transition hover:bg-white/[0.07] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <span className="hidden sm:inline">Next</span> <ChevronRight className="h-4 w-4" />
+      </button>
+    </nav>
   )
 }
