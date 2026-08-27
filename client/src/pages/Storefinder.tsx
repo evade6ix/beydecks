@@ -54,6 +54,13 @@ const locationLabel = (store: Store) =>
 
 const isOnlineOnly = (store: Store) => normalize(store.address).includes("online only")
 
+const externalWebsiteUrl = (website?: string) => {
+  const trimmed = website?.trim()
+  if (!trimmed) return null
+  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  return `https://${trimmed.replace(/^\/+/, "")}`
+}
+
 const directionsUrl = (store: Store) => {
   if (!store.address || isOnlineOnly(store)) return null
   const destination = [store.address, store.city, store.region, store.country].filter(Boolean).join(", ")
@@ -436,6 +443,8 @@ export default function StoreFinder() {
 }
 
 function FeaturedStore({ store }: { store: Store }) {
+  const website = externalWebsiteUrl(store.website)
+
   return (
     <motion.aside
       initial={{ opacity: 0, y: 10 }}
@@ -474,9 +483,9 @@ function FeaturedStore({ store }: { store: Store }) {
           >
             View profile <ArrowRight className="h-4 w-4" />
           </Link>
-          {store.website ? (
+          {website ? (
             <a
-              href={store.website}
+              href={website}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 text-sm font-bold text-[#151006] transition hover:bg-amber-200"
@@ -563,6 +572,7 @@ function ViewButton({ active, label, onClick, children }: { active: boolean; lab
 function StoreCard({ store, view }: { store: Store; view: ViewMode }) {
   const directions = directionsUrl(store)
   const location = locationLabel(store)
+  const website = externalWebsiteUrl(store.website)
 
   return (
     <motion.article
@@ -636,9 +646,9 @@ function StoreCard({ store, view }: { store: Store; view: ViewMode }) {
               <MapPin className="h-4 w-4" />
             </a>
           ) : null}
-          {store.website ? (
+          {website ? (
             <a
-              href={store.website}
+              href={website}
               target="_blank"
               rel="noreferrer"
               aria-label={`Visit ${store.name} website`}
