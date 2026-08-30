@@ -49,7 +49,6 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
               </li>
               <li className="py-2"><Link to={accountLinkPath} onClick={closeMenu}>{accountLinkText}</Link></li>
               <li className="py-2"><Link to="/Contact" onClick={closeMenu}>Contact</Link></li>
-              <li className="py-2"><Link to="/Shop" onClick={closeMenu}>Shop</Link></li>
               <li className="py-2"><Link to="/submit" onClick={closeMenu}>Submit Event</Link></li>
               <li className="py-2"><Link to="/events/completed" onClick={closeMenu}>Completed Events</Link></li>
               <li className="py-2"><Link to="/stores" onClick={closeMenu}>Store Finder</Link></li>
@@ -64,7 +63,6 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
           )}
         </div>
 
-        {/* ✅ LOGO ONLY (Discord icon removed) */}
         <div className="flex items-center space-x-3 overflow-hidden shrink-0 z-10 relative">
           <Link to="/home">
             <img
@@ -81,7 +79,6 @@ export default function Navbar({ isAdmin, user, loading }: NavbarProps) {
           <li><Link to="/home">Home</Link></li>
           <li><Link to={accountLinkPath}>{accountLinkText}</Link></li>
           <li><Link to="/Contact">Contact</Link></li>
-          <li><Link to="/Shop">Shop</Link></li>
           <li><Link to="/submit">Submit Event</Link></li>
           <li><Link to="/events/completed">Completed Events</Link></li>
           <li><Link to="/stores">Store Finder</Link></li>
