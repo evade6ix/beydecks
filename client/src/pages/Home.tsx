@@ -469,7 +469,9 @@ function ChatWidget({ username }: { username: string }) {
     activeSocket.on("messageHistory", (history: any[]) => setMessages(history))
     activeSocket.on("message", (message: any) => setMessages(current => [...current, message]))
     activeSocket.on("onlineUsers", (users: string[]) => setOnline(users))
-    return () => activeSocket.disconnect()
+    return () => {
+      activeSocket.disconnect()
+    }
   }, [username])
 
   const send = () => {
