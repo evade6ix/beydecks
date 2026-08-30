@@ -8,6 +8,25 @@
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/favicon.png" />
 
+    <!-- Landing page cleanup -->
+    <style>
+      #root > div[class*="selection:bg-[#b9ccff]"] > div[class*="z-50"][class*="bg-[#121316]"]:first-child {
+        display: none !important;
+      }
+
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="rounded-full"][class*="text-xs"][class*="font-black"][class*="uppercase"][class*="tracking-[0.14em]"],
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="inline-flex"][class*="text-xs"][class*="font-black"][class*="uppercase"][class*="tracking-[0.17em]"],
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="text-[#91f2cc]"][class*="uppercase"] {
+        display: none !important;
+      }
+
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="rounded-full"][class*="tracking-[0.14em]"] + h1,
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="tracking-[0.17em]"] + h2,
+      #root > div[class*="selection:bg-[#b9ccff]"] main div[class*="text-[#91f2cc]"][class*="uppercase"] + h2 {
+        margin-top: 0 !important;
+      }
+    </style>
+
     <!-- Umami Analytics -->
     <script
       async
