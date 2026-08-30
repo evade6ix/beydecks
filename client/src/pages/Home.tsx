@@ -7,7 +7,6 @@ import {
   BarChart3,
   CalendarCheck,
   ChevronRight,
-  Clock,
   FlaskConical,
   List,
   MapPin,
@@ -27,7 +26,6 @@ type Player = {
 type EventItem = {
   id: number | string
   title: string
-  startTime: string
   endTime: string
   store: string
   topCut?: Player[]
@@ -53,31 +51,13 @@ function cutoffFor(range: TimeRange) {
   return null
 }
 
-function useCountdown(date?: string | null) {
-  const [now, setNow] = useState(Date.now())
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(timer)
-  }, [])
-
-  if (!date) return { d: 0, h: 0, m: 0 }
-  const diff = Math.max(0, new Date(date).getTime() - now)
-  return {
-    d: Math.floor(diff / 86_400_000),
-    h: Math.floor((diff / 3_600_000) % 24),
-    m: Math.floor((diff / 60_000) % 60),
-  }
-}
-
 export default function Home() {
-  const [upcoming, setUpcoming] = useState<EventItem | null>(null)
   const [recent, setRecent] = useState<EventItem[]>([])
   const [completed, setCompleted] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showAnnouncement, setShowAnnouncement] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
-  const [stats, setStats] = useState({ totalUpcoming: 0, totalCompleted: 0, monthEvents: 0 })
+  const [stats, setStats] = useState({ totalCompleted: 0, monthEvents: 0 })
   const [topBlade, setTopBlade] = useState("—")
 
   const [tlBlade, setTlBlade] = useState("")
@@ -98,21 +78,15 @@ export default function Home() {
         const now = new Date()
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-        const future = events
-          .filter(event => new Date(event.startTime) > now)
-          .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-
         const finished = events
           .filter(event => new Date(event.endTime) < now)
           .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
 
-        setUpcoming(future[0] || null)
-        setRecent(finished.slice(0, 5))
+        setRecent(finished.slice(0, 6))
         setCompleted(finished)
         setStats({
-          totalUpcoming: future.length,
           totalCompleted: finished.length,
-          monthEvents: events.filter(event => new Date(event.startTime) >= startOfMonth).length,
+          monthEvents: finished.filter(event => new Date(event.endTime) >= startOfMonth).length,
         })
 
         const bladeCount = new Map<string, number>()
@@ -138,8 +112,6 @@ export default function Home() {
     () => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }),
     []
   )
-
-  const countdown = useCountdown(upcoming?.startTime || null)
 
   const filteredEvents = useMemo(() => {
     const cutoff = cutoffFor(timeRange)
@@ -240,7 +212,7 @@ export default function Home() {
     <>
       <Helmet>
         <title>MetaBeys — Competitive Beyblade X Dashboard</title>
-        <meta name="description" content="Competitive Beyblade X results, meta trends, upcoming events, tournament analysis, and community tools." />
+        <meta name="description" content="Competitive Beyblade X results, meta trends, tournament analysis, and community tools." />
         <meta name="robots" content="index, follow" />
         <meta property="og:title" content="MetaBeys — Competitive Beyblade X Dashboard" />
         <meta property="og:url" content="https://www.metabeys.com/home" />
@@ -271,60 +243,60 @@ export default function Home() {
           </header>
 
           {showAnnouncement && (
-            <div className="mt-5 flex items-start justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#111419] px-4 py-3 text-sm">
-              <p className="leading-6 text-white/60"><span className="font-semibold text-white/85">Mystery bounty:</span> Win a WBO with Gear Rush. Video proof must be submitted on Discord.</p>
-              <button type="button" onClick={() => setShowAnnouncement(false)} className="mt-0.5 shrink-0 text-white/30 transition hover:text-white" aria-label="Dismiss announcement">
+            <div className="relative mt-5 rounded-xl border border-white/[0.08] bg-[#111419] px-12 py-3 text-sm">
+              <p className="text-center leading-6 text-white/60">
+                <span className="font-semibold text-white/85">Mystery bounty:</span> Win a WBO with Gear Rush. Video proof must be submitted on Discord.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowAnnouncement(false)}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 transition hover:text-white"
+                aria-label="Dismiss announcement"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
           )}
 
           <section className="mt-6 grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111419] lg:grid-cols-4">
-            <Metric label="Upcoming" value={stats.totalUpcoming} />
-            <Metric label="Completed" value={stats.totalCompleted} />
+            <Metric label="Completed events" value={stats.totalCompleted} />
             <Metric label="This month" value={stats.monthEvents} />
             <Metric label="Top blade" value={topBlade} />
+            <Metric label="Top-cut combos" value={meta.total} />
           </section>
 
-          <section className="mt-6 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+          <section className="mt-6">
             <Panel className="p-0">
-              <PanelHeader icon={<Clock className="h-4 w-4" />} title="Next event" />
-              <div className="p-5 sm:p-6">
-                {loading ? <Skeleton className="h-40" /> : upcoming ? (
-                  <div className="flex min-h-[180px] flex-col justify-between gap-8 sm:flex-row sm:items-end">
-                    <div className="max-w-2xl">
-                      <div className="text-xs font-medium uppercase tracking-[0.14em] text-white/30">{fmt.format(new Date(upcoming.startTime))}</div>
-                      <h2 className="mt-3 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">{upcoming.title}</h2>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-white/45"><MapPin className="h-4 w-4" /> {upcoming.store}</div>
-                      <Link to={`/events/${upcoming.id}`} className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-white/70 transition hover:text-white">
-                        Event details <ChevronRight className="h-4 w-4" />
-                      </Link>
-                    </div>
-                    <Countdown d={countdown.d} h={countdown.h} m={countdown.m} />
+              <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4 sm:px-6">
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold text-white/75">
+                    <Trophy className="h-4 w-4 text-white/35" /> Latest tournament results
                   </div>
-                ) : <div className="py-12 text-sm text-white/40">No upcoming events found.</div>}
+                  <p className="mt-1.5 text-sm text-white/40">The newest completed events in the MetaBeys database.</p>
+                </div>
+                <Link to="/events/completed" className="shrink-0 text-xs font-medium text-white/35 transition hover:text-white">View all</Link>
               </div>
-            </Panel>
 
-            <Panel className="p-0">
-              <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
-                <div className="flex items-center gap-2 text-sm font-semibold text-white/75"><Trophy className="h-4 w-4 text-white/35" /> Recent results</div>
-                <Link to="/events/completed" className="text-xs font-medium text-white/35 transition hover:text-white">View all</Link>
-              </div>
-              <div className="divide-y divide-white/[0.07]">
-                {loading ? <div className="space-y-2 p-5"><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /></div> : recent.length ? recent.map(event => (
-                  <Link key={event.id} to={`/events/${event.id}`} className="group flex items-start justify-between gap-4 px-5 py-4 transition hover:bg-white/[0.025]">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-white/75 group-hover:text-white">{event.title}</div>
-                      <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-white/30">
-                        <span>{fmt.format(new Date(event.endTime))}</span><span>·</span><span>{event.store}</span>
-                        {attendeeCount(event) ? <><span>·</span><span>{attendeeCount(event)} players</span></> : null}
-                      </div>
-                      {event.topCut?.[0]?.name ? <div className="mt-2 text-xs text-white/40">Winner: <span className="text-white/60">{event.topCut[0].name}</span></div> : null}
-                    </div>
-                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-white/15 transition group-hover:text-white/55" />
-                  </Link>
-                )) : <div className="p-5 text-sm text-white/40">No completed events yet.</div>}
+              <div className="grid divide-y divide-white/[0.07] lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                <div className="divide-y divide-white/[0.07]">
+                  {loading ? (
+                    <div className="space-y-2 p-5"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
+                  ) : recent.slice(0, 3).length ? recent.slice(0, 3).map(event => (
+                    <ResultRow key={event.id} event={event} fmt={fmt} attendeeCount={attendeeCount} />
+                  )) : (
+                    <div className="p-5 text-sm text-white/40">No completed events yet.</div>
+                  )}
+                </div>
+
+                <div className="divide-y divide-white/[0.07]">
+                  {loading ? (
+                    <div className="space-y-2 p-5"><Skeleton className="h-20" /><Skeleton className="h-20" /><Skeleton className="h-20" /></div>
+                  ) : recent.slice(3, 6).length ? recent.slice(3, 6).map(event => (
+                    <ResultRow key={event.id} event={event} fmt={fmt} attendeeCount={attendeeCount} />
+                  )) : (
+                    <div className="p-5 text-sm text-white/30">More results will appear here as they are added.</div>
+                  )}
+                </div>
               </div>
             </Panel>
           </section>
@@ -397,7 +369,7 @@ export default function Home() {
           <nav className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Quick links">
             <QuickLink to="/leaderboard" icon={<BarChart3 className="h-4 w-4" />} title="Beyblade Meta" copy="Full rankings and usage data" />
             <QuickLink to="/events/completed" icon={<List className="h-4 w-4" />} title="Completed Events" copy="Browse tournament history" />
-            <QuickLink to="/stores" icon={<MapPin className="h-4 w-4" />} title="Store Finder" copy="Find events and stores" />
+            <QuickLink to="/stores" icon={<MapPin className="h-4 w-4" />} title="Store Finder" copy="Find stores in the community" />
           </nav>
 
           <div className="mt-10 border-t border-white/[0.07] pt-6 text-center text-xs leading-5 text-white/20">
@@ -409,24 +381,37 @@ export default function Home() {
   )
 }
 
+function ResultRow({
+  event,
+  fmt,
+  attendeeCount,
+}: {
+  event: EventItem
+  fmt: Intl.DateTimeFormat
+  attendeeCount: (event: EventItem) => number | undefined
+}) {
+  const attendees = attendeeCount(event)
+  return (
+    <Link to={`/events/${event.id}`} className="group flex min-h-[112px] items-start justify-between gap-4 px-5 py-5 transition hover:bg-white/[0.025] sm:px-6">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-white/75 group-hover:text-white">{event.title}</div>
+        <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-white/30">
+          <span>{fmt.format(new Date(event.endTime))}</span><span>·</span><span>{event.store}</span>
+          {attendees ? <><span>·</span><span>{attendees} players</span></> : null}
+        </div>
+        {event.topCut?.[0]?.name ? <div className="mt-3 text-xs text-white/40">Winner: <span className="text-white/65">{event.topCut[0].name}</span></div> : null}
+      </div>
+      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-white/15 transition group-hover:text-white/55" />
+    </Link>
+  )
+}
+
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={`rounded-2xl border border-white/[0.08] bg-[#111419] p-5 sm:p-6 ${className}`}>{children}</div>
 }
 
-function PanelHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
-  return <div className="border-b border-white/[0.08] px-5 py-4 sm:px-6"><div className="flex items-center gap-2 text-sm font-semibold text-white/75"><span className="text-white/35">{icon}</span>{title}</div></div>
-}
-
 function Metric({ label, value }: { label: string; value: number | string }) {
   return <div className="border-b border-r border-white/[0.07] px-4 py-5 lg:border-b-0 sm:px-5"><div className="text-xs font-medium text-white/30">{label}</div><div className="mt-1.5 truncate text-xl font-semibold tracking-[-0.025em] sm:text-2xl" title={String(value)}>{String(value)}</div></div>
-}
-
-function Countdown({ d, h, m }: { d: number; h: number; m: number }) {
-  return <div className="flex shrink-0 gap-2"><CountdownItem value={d} label="days" /><CountdownItem value={h} label="hrs" /><CountdownItem value={m} label="min" /></div>
-}
-
-function CountdownItem({ value, label }: { value: number; label: string }) {
-  return <div className="min-w-16 rounded-xl border border-white/[0.08] bg-[#0d1014] px-3 py-2.5 text-center"><div className="text-lg font-semibold tabular-nums">{value.toString().padStart(2, "0")}</div><div className="mt-0.5 text-[10px] uppercase tracking-[0.1em] text-white/25">{label}</div></div>
 }
 
 function RangeTabs({ value, onChange }: { value: TimeRange; onChange: (value: TimeRange) => void }) {
