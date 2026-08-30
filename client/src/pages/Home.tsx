@@ -1,34 +1,25 @@
-// File: src/pages/Home.tsx
-import { useEffect, useMemo, useState, useRef } from "react"
-import { Link, useNavigate } from "react-router-dom"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import { Helmet } from "react-helmet-async"
-import { motion, AnimatePresence } from "framer-motion"
 import { io } from "socket.io-client"
 import {
-  Trophy,
-  MapPin,
-  CalendarCheck,
-  List,
+  ArrowRight,
   BarChart3,
-  Flame,
-  ShoppingBag,
-  Clock,
-  Star,
+  CalendarCheck,
   ChevronRight,
-  Filter,
+  Clock,
   FlaskConical,
+  List,
+  MapPin,
+  MessageSquare,
+  Trophy,
   Users,
+  X,
 } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
-import HeroSlider from "../components/HeroSlider"
-import { Banner } from "../components/Banner"
-import { HOME_BANNERS } from "../data/homeBanners"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
-/* --------------------------------
-   Types
----------------------------------*/
 type Player = {
   name: string
   combos?: { blade: string; assistBlade?: string; ratchet: string; bit: string }[]
@@ -52,83 +43,51 @@ type EventItem = {
   participantList?: string
 }
 
-type ProductItem = { id: number | string; title: string; imageUrl?: string }
-type TimeRange = "all" | "24h" | "7d" | "30d" | "month" | "90d" | "year" | "lastYear"
-
-/* --------------------------------
-   Small utils
----------------------------------*/
-const cn = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ")
-
-const useCountdown = (date?: string | null) => {
-  const [now, setNow] = useState(() => new Date().getTime())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
-  if (!date) return { d: 0, h: 0, m: 0, s: 0, done: true }
-  const diff = Math.max(0, new Date(date).getTime() - now)
-  const d = Math.floor(diff / (1000 * 60 * 60 * 24))
-  const h = Math.floor((diff / (1000 * 60 * 60)) % 24)
-  const m = Math.floor((diff / (1000 * 60)) % 60)
-  const s = Math.floor((diff / 1000) % 60)
-  return { d, h, m, s, done: diff === 0 }
-}
-
+type TimeRange = "all" | "30d" | "90d" | "year"
 type PopularityRow = { name: string; count: number; pct: number }
+
+const cn = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(" ")
 
 function cutoffFor(range: TimeRange) {
   const now = new Date()
-  switch (range) {
-    case "24h":
-      return new Date(now.getTime() - 24 * 60 * 60 * 1000)
-    case "7d":
-      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-    case "30d":
-      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-    case "month":
-      return new Date(now.getFullYear(), now.getMonth(), 1)
-    case "90d":
-      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-    case "year":
-      return new Date(now.getFullYear(), 0, 1)
-    case "lastYear":
-      return new Date(now.getFullYear() - 1, 0, 1)
-    default:
-      return null
+  if (range === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  if (range === "90d") return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+  if (range === "year") return new Date(now.getFullYear(), 0, 1)
+  return null
+}
+
+function useCountdown(date?: string | null) {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  if (!date) return { d: 0, h: 0, m: 0 }
+  const diff = Math.max(0, new Date(date).getTime() - now)
+  return {
+    d: Math.floor(diff / 86_400_000),
+    h: Math.floor((diff / 3_600_000) % 24),
+    m: Math.floor((diff / 60_000) % 60),
   }
 }
 
-/* --------------------------------
-   Page
----------------------------------*/
 export default function Home() {
   const [upcoming, setUpcoming] = useState<EventItem | null>(null)
   const [recent, setRecent] = useState<EventItem[]>([])
   const [completed, setCompleted] = useState<EventItem[]>([])
-  const [products, setProducts] = useState<ProductItem[]>([])
   const [stats, setStats] = useState({ totalUpcoming: 0, totalCompleted: 0, monthEvents: 0 })
+  const [topBladeName, setTopBladeName] = useState("—")
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
   const [showAnnouncement, setShowAnnouncement] = useState(true)
 
-  const navigate = useNavigate()
+  const [tlBlade, setTlBlade] = useState("")
+  const [tlAssist, setTlAssist] = useState("")
+  const [tlRatchet, setTlRatchet] = useState("")
+  const [tlBit, setTlBit] = useState("")
 
-  // auth → username for greeting
-  const { user } = (useAuth?.() as any) || {}
-  const username =
-    ((user?.username as string) || (user?.email ? String(user.email).split("@")[0] : "")).toString().trim()
-
-  // KPI “Top Blade”
-  const [topBladeName, setTopBladeName] = useState<string>("—")
-
-  // Tournament Lab local state
-  const [tlBlade, setTlBlade] = useState<string>("")
-  const [tlAssist, setTlAssist] = useState<string>("")
-  const [tlRatchet, setTlRatchet] = useState<string>("")
-  const [tlBit, setTlBit] = useState<string>("")
-
-  // Part popularity (now includes assistBlades with separate denominator)
   const [popularity, setPopularity] = useState<{
     totalCombos: number
     totalAssistCombos: number
@@ -138,24 +97,25 @@ export default function Home() {
     bits: PopularityRow[]
   }>({ totalCombos: 0, totalAssistCombos: 0, blades: [], assistBlades: [], ratchets: [], bits: [] })
 
-  // load once
+  const { user } = (useAuth?.() as any) || {}
+  const username = ((user?.username as string) || (user?.email ? String(user.email).split("@")[0] : "")).trim()
+
   useEffect(() => {
     const load = async () => {
       try {
         setLoading(true)
-        const [eventsRes, productsRes] = await Promise.all([fetch(`${API}/events`), fetch(`${API}/products`)])
-        const [eventsData, productsData] = await Promise.all([eventsRes.json(), productsRes.json()])
-
+        const response = await fetch(`${API}/events`)
+        const eventsData = await response.json()
+        const events: EventItem[] = Array.isArray(eventsData) ? eventsData : []
         const now = new Date()
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
 
-        const events: EventItem[] = eventsData || []
         const futureEvents = events
-          .filter(e => new Date(e.startTime) > now)
+          .filter(event => new Date(event.startTime) > now)
           .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
 
         const completedEvents = events
-          .filter(e => new Date(e.endTime) < now)
+          .filter(event => new Date(event.endTime) < now)
           .sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime())
 
         setUpcoming(futureEvents[0] || null)
@@ -164,62 +124,42 @@ export default function Home() {
         setStats({
           totalUpcoming: futureEvents.length,
           totalCompleted: completedEvents.length,
-          monthEvents: events.filter(e => new Date(e.startTime) >= startOfMonth).length,
+          monthEvents: events.filter(event => new Date(event.startTime) >= startOfMonth).length,
         })
 
-        // KPI: compute top blade name quickly
         const bladeMap: Record<string, number> = {}
         for (const event of completedEvents) {
           for (const player of event.topCut ?? []) {
             for (const combo of player.combos ?? []) {
-              const b = (combo.blade || "").trim()
-              if (!b) continue
-              bladeMap[b] = (bladeMap[b] || 0) + 1
+              const blade = (combo.blade || "").trim()
+              if (blade) bladeMap[blade] = (bladeMap[blade] || 0) + 1
             }
           }
         }
-        const top = Object.entries(bladeMap).sort((a, b) => b[1] - a[1])[0]
-        setTopBladeName(top?.[0] ?? "—")
 
-        setProducts((productsData as ProductItem[]).slice(0, 8))
-      } catch (e: any) {
-        console.warn("Home load failed", e)
+        setTopBladeName(Object.entries(bladeMap).sort((a, b) => b[1] - a[1])[0]?.[0] || "—")
+      } catch (error) {
+        console.warn("Home load failed", error)
       } finally {
         setLoading(false)
       }
     }
+
     load()
   }, [])
 
   const fmt = useMemo(
-    () =>
-      new Intl.DateTimeFormat(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
+    () => new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }),
     []
   )
 
   const countdown = useCountdown(upcoming?.startTime || null)
 
-  // filter events by selected timeRange
   const filteredEvents = useMemo(() => {
-    if (!completed.length) return []
     const start = cutoffFor(timeRange)
-    return start
-      ? completed.filter(e => {
-          const end = new Date(e.endTime)
-          if (timeRange === "lastYear") {
-            const ny = new Date(new Date().getFullYear(), 0, 1)
-            return end >= start && end < ny
-          }
-          return end >= start
-        })
-      : completed
+    return start ? completed.filter(event => new Date(event.endTime) >= start) : completed
   }, [completed, timeRange])
 
-  // compute popularity lists (Assist uses its own denominator)
   useEffect(() => {
     const maps = {
       blade: new Map<string, number>(),
@@ -230,109 +170,113 @@ export default function Home() {
     let total = 0
     let assistTotal = 0
 
-    for (const e of filteredEvents) {
-      for (const p of e.topCut ?? []) {
-        for (const c of p.combos ?? []) {
+    for (const event of filteredEvents) {
+      for (const player of event.topCut ?? []) {
+        for (const combo of player.combos ?? []) {
           total++
-          if (c.blade) maps.blade.set(c.blade, (maps.blade.get(c.blade) || 0) + 1)
-          if (c.assistBlade) {
+          if (combo.blade) maps.blade.set(combo.blade, (maps.blade.get(combo.blade) || 0) + 1)
+          if (combo.assistBlade) {
             assistTotal++
-            maps.assistBlade.set(c.assistBlade, (maps.assistBlade.get(c.assistBlade) || 0) + 1)
+            maps.assistBlade.set(combo.assistBlade, (maps.assistBlade.get(combo.assistBlade) || 0) + 1)
           }
-          if (c.ratchet) maps.ratchet.set(c.ratchet, (maps.ratchet.get(c.ratchet) || 0) + 1)
-          if (c.bit) maps.bit.set(c.bit, (maps.bit.get(c.bit) || 0) + 1)
+          if (combo.ratchet) maps.ratchet.set(combo.ratchet, (maps.ratchet.get(combo.ratchet) || 0) + 1)
+          if (combo.bit) maps.bit.set(combo.bit, (maps.bit.get(combo.bit) || 0) + 1)
         }
       }
     }
 
-    const toArray = (m: Map<string, number>, denom: number): PopularityRow[] =>
-      Array.from(m.entries())
-        .map(([name, count]) => ({ name, count, pct: denom ? Math.round((count / denom) * 1000) / 10 : 0 }))
+    const toRows = (map: Map<string, number>, denominator: number) =>
+      Array.from(map.entries())
+        .map(([name, count]) => ({ name, count, pct: denominator ? Math.round((count / denominator) * 1000) / 10 : 0 }))
         .sort((a, b) => b.count - a.count)
-        .slice(0, 6)
+        .slice(0, 5)
 
     setPopularity({
       totalCombos: total,
       totalAssistCombos: assistTotal,
-      blades: toArray(maps.blade, total),
-      assistBlades: toArray(maps.assistBlade, assistTotal),
-      ratchets: toArray(maps.ratchet, total),
-      bits: toArray(maps.bit, total),
+      blades: toRows(maps.blade, total),
+      assistBlades: toRows(maps.assistBlade, assistTotal),
+      ratchets: toRows(maps.ratchet, total),
+      bits: toRows(maps.bit, total),
     })
   }, [filteredEvents])
 
-  // TL options & stats (include assist blades)
   const parts = useMemo(() => {
-    const b = new Set<string>(),
-      ab = new Set<string>(),
-      r = new Set<string>(),
-      bt = new Set<string>()
-    for (const e of filteredEvents) {
-      for (const p of e.topCut ?? []) {
-        for (const c of p.combos ?? []) {
-          if (c.blade) b.add(c.blade)
-          if (c.assistBlade) ab.add(c.assistBlade)
-          if (c.ratchet) r.add(c.ratchet)
-          if (c.bit) bt.add(c.bit)
+    const blades = new Set<string>()
+    const assists = new Set<string>()
+    const ratchets = new Set<string>()
+    const bits = new Set<string>()
+
+    for (const event of filteredEvents) {
+      for (const player of event.topCut ?? []) {
+        for (const combo of player.combos ?? []) {
+          if (combo.blade) blades.add(combo.blade)
+          if (combo.assistBlade) assists.add(combo.assistBlade)
+          if (combo.ratchet) ratchets.add(combo.ratchet)
+          if (combo.bit) bits.add(combo.bit)
         }
       }
     }
+
     return {
-      blades: Array.from(b).sort(),
-      assistBlades: Array.from(ab).sort(),
-      ratchets: Array.from(r).sort(),
-      bits: Array.from(bt).sort(),
+      blades: Array.from(blades).sort(),
+      assistBlades: Array.from(assists).sort(),
+      ratchets: Array.from(ratchets).sort(),
+      bits: Array.from(bits).sort(),
     }
-  }, [filteredEvents, timeRange])
+  }, [filteredEvents])
 
   const tlStats = useMemo(() => {
     let total = 0
     let matches = 0
     const eventsMatched: { id: EventItem["id"]; title: string; date: string }[] = []
 
-    for (const e of filteredEvents) {
+    for (const event of filteredEvents) {
       let eventMatched = false
-      for (const p of e.topCut ?? []) {
-        for (const c of p.combos ?? []) {
+      for (const player of event.topCut ?? []) {
+        for (const combo of player.combos ?? []) {
           total++
-          const okBlade = !tlBlade || c.blade === tlBlade
-          const okAssist = !tlAssist || c.assistBlade === tlAssist
-          const okRatchet = !tlRatchet || c.ratchet === tlRatchet
-          const okBit = !tlBit || c.bit === tlBit
-          if (okBlade && okAssist && okRatchet && okBit) {
+          const matchesSelection =
+            (!tlBlade || combo.blade === tlBlade) &&
+            (!tlAssist || combo.assistBlade === tlAssist) &&
+            (!tlRatchet || combo.ratchet === tlRatchet) &&
+            (!tlBit || combo.bit === tlBit)
+
+          if (matchesSelection) {
             matches++
             eventMatched = true
           }
         }
       }
-      if (eventMatched) {
-        eventsMatched.push({ id: e.id, title: e.title, date: fmt.format(new Date(e.endTime)) })
-      }
+
+      if (eventMatched) eventsMatched.push({ id: event.id, title: event.title, date: fmt.format(new Date(event.endTime)) })
     }
 
-    const pct = total ? Math.round((matches / total) * 1000) / 10 : 0
-    return { pct, matches, total, eventsMatched }
+    return {
+      pct: total ? Math.round((matches / total) * 1000) / 10 : 0,
+      matches,
+      total,
+      eventsMatched,
+    }
   }, [filteredEvents, tlBlade, tlAssist, tlRatchet, tlBit, fmt])
 
-  // attendee count detection (prioritize attendeeCount)
-  const getAttendeeCount = (e: EventItem): number | undefined => {
-    const firstNum = (...vals: any[]) => vals.find(v => typeof v === "number" && v > 0) as number | undefined
-    const numberCandidate = firstNum(
-      (e as any).attendeeCount,
-      e.participants as any,
-      e.playerCount,
-      e.attendees as any,
-      e.attendance,
-      typeof e.players === "number" ? e.players : undefined
+  const getAttendeeCount = (event: EventItem): number | undefined => {
+    const firstNumber = (...values: any[]) => values.find(value => typeof value === "number" && value > 0) as number | undefined
+    const numeric = firstNumber(
+      event.attendeeCount,
+      event.participants,
+      event.playerCount,
+      event.attendees,
+      event.attendance,
+      typeof event.players === "number" ? event.players : undefined
     )
-    if (numberCandidate) return numberCandidate
-    if (Array.isArray(e.players)) return e.players.length
-    if (Array.isArray(e.participants)) return e.participants.length
-    if (Array.isArray(e.attendeeIds)) return e.attendeeIds.length
-    if (Array.isArray(e.participantIds)) return e.participantIds.length
-    if (typeof e.participantList === "string") {
-      const count = e.participantList.split(",").map(s => s.trim()).filter(Boolean).length
-      return count || undefined
+    if (numeric) return numeric
+    if (Array.isArray(event.players)) return event.players.length
+    if (Array.isArray(event.participants)) return event.participants.length
+    if (Array.isArray(event.attendeeIds)) return event.attendeeIds.length
+    if (Array.isArray(event.participantIds)) return event.participantIds.length
+    if (typeof event.participantList === "string") {
+      return event.participantList.split(",").map(value => value.trim()).filter(Boolean).length || undefined
     }
     return undefined
   }
@@ -343,482 +287,330 @@ export default function Home() {
         <title>MetaBeys — Competitive Beyblade X Dashboard</title>
         <meta
           name="description"
-          content="Live insights, upcoming & recent events, and shop spotlight — all in one polished dashboard for Beyblade X."
+          content="Competitive Beyblade X results, meta trends, upcoming events, tournament analysis, and community tools."
         />
         <meta name="robots" content="index, follow" />
         <meta property="og:title" content="MetaBeys — Competitive Beyblade X Dashboard" />
-        <meta property="og:url" content="https://www.metabeys.com/" />
+        <meta property="og:url" content="https://www.metabeys.com/home" />
         <meta property="og:image" content="https://www.metabeys.com/mlogo.png" />
       </Helmet>
 
-      {/* Canvas background */}
-      <div className="relative min-h-[100dvh] overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 [background:radial-gradient(1200px_600px_at_20%_-10%,theme(colors.indigo.600/.25),transparent_60%),radial-gradient(800px_400px_at_100%_0%,theme(colors.fuchsia.600/.25),transparent_60%),radial-gradient(1000px_500px_at_50%_120%,theme(colors.sky.600/.25),transparent_60%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(to_bottom,transparent,rgba(0,0,0,0.07))]" />
-
-        <motion.div
-          className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 md:py-10"
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6 mb-6">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-                {username ? (
-                  <>
-                    Welcome back{" "}
-                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">
-                      {username}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    Welcome to{" "}
-                    <span className="bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 via-sky-400 to-fuchsia-400">
-                      MetaBeys
-                    </span>
-                  </>
-                )}
+      <main className="min-h-[100dvh] bg-[#0b0d10] pb-24 text-white">
+        <div className="mx-auto max-w-[1380px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
+          <header className="flex flex-col gap-6 border-b border-white/[0.08] pb-8 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="text-sm font-medium text-white/45">MetaBeys</div>
+              <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] sm:text-4xl lg:text-[44px]">
+                {username ? `Welcome back, ${username}.` : "Competitive Beyblade X, in one place."}
               </h1>
-              <p className="mt-2 text-sm md:text-base text-white/60">
-                Your home dashboard for events, meta trends, and player leaderboards.
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/55 sm:text-base">
+                Follow the tournament scene, see what is performing, and research your next build from real results.
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-3">
+
+            <div className="flex flex-wrap gap-2.5">
               <Link
                 to="/submit"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-[#111419] px-4 text-sm font-medium text-white/80 transition hover:border-white/20 hover:text-white"
               >
-                <CalendarCheck className="h-4 w-4" /> Submit Event
+                <CalendarCheck className="h-4 w-4" /> Submit event
               </Link>
               <Link
                 to="/tournament-lab"
-                className="inline-flex items-center gap-2 rounded-2xl bg-indigo-600/90 px-4 py-2 text-sm font-medium shadow-lg shadow-indigo-600/25 transition hover:bg-indigo-500"
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-white px-4 text-sm font-semibold text-black transition hover:bg-white/90"
               >
-                <BarChart3 className="h-4 w-4" /> Tournament Lab
-              </Link>
-              <Link
-                to="/shop"
-                className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:bg-white/10"
-              >
-                <ShoppingBag className="h-4 w-4" /> Shop
+                Tournament Lab <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
-          </div>
+          </header>
 
-          {/* Announcement Bar */}
-<div className="mb-4">
-  <Banner
-    show={showAnnouncement}
-    onHide={() => setShowAnnouncement(false)}
-    title={
-      <>
-        <span className="font-semibold">Announcement:</span> MYSTERY BOUNT: Win a WBO with Gear Rush. Video proof must be submitted on Discord
-      </>
-    }
-  />
-</div>
+          {showAnnouncement && (
+            <div className="mt-5 flex items-start justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#111419] px-4 py-3 text-sm">
+              <p className="leading-6 text-white/65">
+                <span className="font-semibold text-white/90">Mystery bounty:</span> Win a WBO with Gear Rush. Video proof must be submitted on Discord.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowAnnouncement(false)}
+                className="mt-0.5 shrink-0 text-white/35 transition hover:text-white"
+                aria-label="Dismiss announcement"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
 
-{/* Hero Slider */}
-<div className="mb-6">
-  <HeroSlider banners={HOME_BANNERS} intervalMs={6500} />
-</div>
+          <section className="mt-6 grid grid-cols-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111419] lg:grid-cols-4">
+            <Metric label="Upcoming" value={stats.totalUpcoming} />
+            <Metric label="Completed" value={stats.totalCompleted} />
+            <Metric label="This month" value={stats.monthEvents} />
+            <Metric label="Top blade" value={topBladeName} />
+          </section>
 
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <KPI label="Upcoming Events" value={stats.totalUpcoming} icon={<CalendarCheck className="h-4 w-4" />} hint="Across all stores" />
-            <KPI label="Completed" value={stats.totalCompleted} icon={<List className="h-4 w-4" />} hint="Lifetime" />
-            <KPI label="This Month" value={stats.monthEvents} icon={<Flame className="h-4 w-4" />} hint="Events Tracked This Month" />
-            <KPI label="Top Blade" value={topBladeName} icon={<Trophy className="h-4 w-4" />} hint="By top cut" />
-          </div>
+          <section className="mt-6 grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+            <Panel className="p-0">
+              <div className="border-b border-white/[0.08] px-5 py-4 sm:px-6">
+                <SectionHeading icon={<Clock className="h-4 w-4" />} title="Next event" />
+              </div>
 
-          {/* Main grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: Next + Part Popularity + Tournament Lab */}
-            <div className="space-y-6 lg:col-span-2">
-              <Section title="Next Up" icon={<Clock className="h-5 w-5" />}>
+              <div className="p-5 sm:p-6">
                 {loading ? (
-                  <Skeleton height="h-28" />
+                  <Skeleton className="h-40" />
                 ) : upcoming ? (
-                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                    <div>
-                      <h3 className="text-lg md:text-xl font-semibold leading-tight">{upcoming.title}</h3>
-                      <p className="text-white/60 mt-1">
-                        {fmt.format(new Date(upcoming.startTime))} ·{" "}
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="h-4 w-4" />
-                          {upcoming.store}
-                        </span>
-                      </p>
-                    </div>
-                    <CountdownPill d={countdown.d} h={countdown.h} m={countdown.m} s={countdown.s} />
-                  </div>
-                ) : (
-                  <p className="text-white/60">No upcoming events found.</p>
-                )}
-                <div className="mt-4">
-                  <Link
-                    to={upcoming ? `/events/${upcoming.id}` : "/events"}
-                    className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200"
-                  >
-                    View details <ChevronRight className="h-4 w-4" />
-                  </Link>
-                </div>
-              </Section>
-
-              <ChatWidget username={username} />
-
-              {/* Part Popularity */}
-              <Section title="Part Popularity" icon={<Flame className="h-5 w-5" />}>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="inline-flex items-center gap-2 text-xs text-white/60">
-                    <Filter className="h-4 w-4" /> Time range
-                  </div>
-                  <Segmented
-                    value={timeRange}
-                    onChange={setTimeRange}
-                    options={[
-                      { label: "All", value: "all" },
-                      { label: "7d", value: "7d" },
-                      { label: "30d", value: "30d" },
-                      { label: "This Month", value: "month" },
-                      { label: "90d", value: "90d" },
-                      { label: "This Year", value: "year" },
-                    ]}
-                  />
-                </div>
-
-                <div className="min-h-64 grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-3 [grid-auto-rows:1fr]">
-                    <PopularityList title="Blades" items={popularity.blades} className="h-full" />
-                    <PopularityList title="Assist Blades" items={popularity.assistBlades} className="h-full" />
-                  </div>
-                  <div className="grid gap-3 [grid-auto-rows:1fr]">
-                    <PopularityList title="Ratchets" items={popularity.ratchets} className="h-full" />
-                    <PopularityList title="Bits" items={popularity.bits} className="h-full" />
-                  </div>
-                </div>
-
-                <div className="mt-4 text-sm text-white/60 space-y-1">
-                  <div>Based on {popularity.totalCombos || 0} top-cut combos in the selected range.</div>
-                  <div className="text-white/50">Assist Blade % based on {popularity.totalAssistCombos || 0} combos that used an assist.</div>
-                </div>
-              </Section>
-
-              {/* Tournament Lab */}
-              <Section title="Tournament Lab" icon={<FlaskConical className="h-5 w-5" />}>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <ComboBox label="Blade" value={tlBlade} onChange={setTlBlade} options={parts.blades} placeholder="Any blade" />
-                  <ComboBox label="Assist Blade" value={tlAssist} onChange={setTlAssist} options={parts.assistBlades} placeholder="Any assist" />
-                  <ComboBox label="Ratchet" value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets} placeholder="Any ratchet" />
-                  <ComboBox label="Bit" value={tlBit} onChange={setTlBit} options={parts.bits} placeholder="Any bit" />
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  <div className="lg:col-span-1 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-wide text-white/60">Appearance Rate</div>
-                    <div className="mt-2 text-3xl font-semibold">{tlStats.pct}%</div>
-                    <div className="mt-1 text-xs text-white/60 tabular-nums">
-                      {tlStats.matches} matches / {tlStats.total} top-cut combos
-                    </div>
-                    <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(100, tlStats.pct)}%`,
-                          background: "linear-gradient(180deg,#a78bfa,#22d3ee)",
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-4 flex items-center gap-2">
-                      <Link to="/tournament-lab" className="btn btn-sm rounded-xl bg-indigo-600/90 hover:bg-indigo-500 border-0 px-4">
-                        Tournament Lab
-                      </Link>
-                      <button
-                        onClick={() => {
-                          setTlBlade("")
-                          setTlAssist("")
-                          setTlRatchet("")
-                          setTlBit("")
-                        }}
-                        className="btn btn-sm rounded-xl border-white/10 bg-white/5 hover:bg-white/10 px-4"
+                  <div className="flex min-h-[180px] flex-col justify-between gap-8 sm:flex-row sm:items-end">
+                    <div className="max-w-2xl">
+                      <div className="text-xs font-medium uppercase tracking-[0.14em] text-white/35">
+                        {fmt.format(new Date(upcoming.startTime))}
+                      </div>
+                      <h2 className="mt-3 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">{upcoming.title}</h2>
+                      <div className="mt-3 flex items-center gap-2 text-sm text-white/50">
+                        <MapPin className="h-4 w-4" /> {upcoming.store}
+                      </div>
+                      <Link
+                        to={`/events/${upcoming.id}`}
+                        className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-white/80 transition hover:text-white"
                       >
-                        Reset
-                      </button>
+                        Event details <ChevronRight className="h-4 w-4" />
+                      </Link>
                     </div>
+                    <Countdown d={countdown.d} h={countdown.h} m={countdown.m} />
                   </div>
+                ) : (
+                  <div className="py-12 text-sm text-white/50">No upcoming events found.</div>
+                )}
+              </div>
+            </Panel>
 
-                  <div className="lg:col-span-2 rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="mb-2 text-xs uppercase tracking-wide text-white/60">Matching events</div>
-                    {tlStats.eventsMatched.length ? (
-                      <ul className="max-h-56 overflow-auto space-y-2 pr-1 isolate">
-                        {tlStats.eventsMatched.map(ev => (
-                          <li
-                            key={ev.id}
-                            className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2"
-                          >
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium">{ev.title}</div>
-                              <div className="text-xs text-white/60">{ev.date}</div>
-                            </div>
-                            <Link to={`/events/${ev.id}`} className="inline-flex items-center gap-1 text-xs text-indigo-300 hover:text-indigo-200">
-                              View <ChevronRight className="h-3.5 w-3.5" />
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="text-sm text-white/60">No events matched that combo in this time range.</div>
-                    )}
-                  </div>
-                </div>
-              </Section>
-            </div>
+            <Panel className="p-0">
+              <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
+                <SectionHeading icon={<Trophy className="h-4 w-4" />} title="Recent results" />
+                <Link to="/events/completed" className="text-xs font-medium text-white/45 transition hover:text-white">View all</Link>
+              </div>
 
-            {/* Right: Recent, Shop */}
-            <div className="space-y-6">
-              <Section title="Recent Events" icon={<Trophy className="h-5 w-5" />}>
+              <div className="divide-y divide-white/[0.07]">
                 {loading ? (
-                  <div className="space-y-3">
-                    <Skeleton height="h-16" />
-                    <Skeleton height="h-16" />
-                    <Skeleton height="h-16" />
-                  </div>
+                  <div className="space-y-2 p-5"><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
                 ) : recent.length ? (
-                  <ul className="space-y-3">
-                    <AnimatePresence mode="popLayout">
-                      {recent.map(e => {
-                        const attendees = getAttendeeCount(e)
-                        return (
-                          <motion.li
-                            key={e.id}
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -8 }}
-                            transition={{ duration: 0.2 }}
-                            className="group isolate overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3 transition hover:bg-white/10"
-                          >
-                            <Link to={`/events/${e.id}`} className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="font-medium leading-tight group-hover:text-white/95">{e.title}</div>
-                                <div className="mt-1 flex items-center gap-2 text-xs text-white/60">
-                                  <span className="inline-flex items-center gap-1">
-                                    {fmt.format(new Date(e.endTime))} · <MapPin className="h-3.5 w-3.5" /> {e.store}
-                                  </span>
-                                </div>
-                                <TopCutRow players={e.topCut?.slice(0, 3)} />
-                              </div>
-
-                              <div className="flex items-center gap-2 pl-2">
-                                {typeof attendees === "number" && (
-                                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/80">
-                                    <Users className="h-3.5 w-3.5" /> {attendees}
-                                  </span>
-                                )}
-                                <ChevronRight className="h-4 w-4 mt-1 opacity-0 group-hover:opacity-100 transition" />
-                              </div>
-                            </Link>
-                          </motion.li>
-                        )
-                      })}
-                    </AnimatePresence>
-                  </ul>
+                  recent.map(event => (
+                    <RecentEvent key={event.id} event={event} attendees={getAttendeeCount(event)} fmt={fmt} />
+                  ))
                 ) : (
-                  <p className="text-white/60">No completed events yet.</p>
+                  <div className="p-5 text-sm text-white/50">No completed events yet.</div>
                 )}
-                <div className="mt-4">
-                  <Link to="/events/completed" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
-                    View all completed <ChevronRight className="h-4 w-4" />
+              </div>
+            </Panel>
+          </section>
+
+          <section className="mt-6">
+            <Panel className="p-0">
+              <div className="flex flex-col gap-4 border-b border-white/[0.08] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                <div>
+                  <SectionHeading icon={<BarChart3 className="h-4 w-4" />} title="Meta snapshot" />
+                  <p className="mt-1.5 text-sm text-white/45">Top-cut usage across the selected period.</p>
+                </div>
+                <Segmented value={timeRange} onChange={setTimeRange} />
+              </div>
+
+              <div className="grid divide-y divide-white/[0.07] md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-4">
+                <PopularityList title="Blades" items={popularity.blades} />
+                <PopularityList title="Assist blades" items={popularity.assistBlades} />
+                <PopularityList title="Ratchets" items={popularity.ratchets} />
+                <PopularityList title="Bits" items={popularity.bits} />
+              </div>
+
+              <div className="border-t border-white/[0.08] px-5 py-3 text-xs text-white/35 sm:px-6">
+                {popularity.totalCombos.toLocaleString()} top-cut combos analyzed
+                {popularity.totalAssistCombos ? ` · ${popularity.totalAssistCombos.toLocaleString()} with assist blades` : ""}
+              </div>
+            </Panel>
+          </section>
+
+          <section className="mt-6 grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+            <Panel>
+              <div className="flex flex-col gap-2 border-b border-white/[0.08] pb-5">
+                <SectionHeading icon={<FlaskConical className="h-4 w-4" />} title="Tournament Lab" />
+                <p className="text-sm text-white/45">Check how often a part or full combination appeared in top cut.</p>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <ComboBox label="Blade" value={tlBlade} onChange={setTlBlade} options={parts.blades} placeholder="Any blade" />
+                <ComboBox label="Assist blade" value={tlAssist} onChange={setTlAssist} options={parts.assistBlades} placeholder="Any assist" />
+                <ComboBox label="Ratchet" value={tlRatchet} onChange={setTlRatchet} options={parts.ratchets} placeholder="Any ratchet" />
+                <ComboBox label="Bit" value={tlBit} onChange={setTlBit} options={parts.bits} placeholder="Any bit" />
+              </div>
+
+              <div className="mt-5 flex flex-col gap-4 rounded-xl border border-white/[0.08] bg-[#0d1014] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-xs font-medium uppercase tracking-[0.12em] text-white/35">Appearance rate</div>
+                  <div className="mt-1 text-3xl font-semibold tracking-[-0.03em]">{tlStats.pct}%</div>
+                  <div className="mt-1 text-xs text-white/40">{tlStats.matches} of {tlStats.total} top-cut combos</div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setTlBlade(""); setTlAssist(""); setTlRatchet(""); setTlBit("") }}
+                    className="h-9 rounded-lg border border-white/10 px-3 text-sm text-white/60 transition hover:text-white"
+                  >
+                    Reset
+                  </button>
+                  <Link to="/tournament-lab" className="inline-flex h-9 items-center rounded-lg bg-white px-3 text-sm font-semibold text-black">
+                    Open Lab
                   </Link>
                 </div>
-              </Section>
+              </div>
 
-              {/* Shop Spotlight */}
-              <Section title="Shop Spotlight" icon={<ShoppingBag className="h-5 w-5" />}>
-                {loading ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <Skeleton height="h-36" />
-                    <Skeleton height="h-36" />
-                  </div>
-                ) : products.length ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <AnimatePresence mode="popLayout">
-                      {products.slice(0, 4).map(p => (
-                        <motion.button
-                          key={p.id}
-                          initial={{ opacity: 0, y: 8 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -8 }}
-                          transition={{ duration: 0.2 }}
-                          onClick={() => navigate(`/product/${p.id}`)}
-                          className="group isolate overflow-hidden relative rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-white/[0.03] p-3 text-left transition hover:from-white/15"
-                        >
-                          <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-black/20">
-                            <img
-                              src={p.imageUrl || "/placeholder.svg"}
-                              alt={p.title}
-                              loading="lazy"
-                              className="h-full w-full object-contain transition duration-300 group-hover:scale-[1.03]"
-                            />
-                          </div>
-                          <div className="mt-2 line-clamp-2 text-sm font-medium leading-snug">{p.title}</div>
-                        </motion.button>
-                      ))}
-                    </AnimatePresence>
+              <div className="mt-5">
+                <div className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-white/35">Matching events</div>
+                {tlStats.eventsMatched.length ? (
+                  <div className="max-h-64 divide-y divide-white/[0.07] overflow-auto rounded-xl border border-white/[0.08]">
+                    {tlStats.eventsMatched.slice(0, 12).map(event => (
+                      <Link
+                        key={event.id}
+                        to={`/events/${event.id}`}
+                        className="flex items-center justify-between gap-4 px-4 py-3 transition hover:bg-white/[0.03]"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-white/80">{event.title}</div>
+                          <div className="mt-0.5 text-xs text-white/35">{event.date}</div>
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-white/25" />
+                      </Link>
+                    ))}
                   </div>
                 ) : (
-                  <p className="text-white/60">No products available.</p>
+                  <div className="rounded-xl border border-white/[0.08] px-4 py-6 text-sm text-white/40">No matching events in this range.</div>
                 )}
-                <div className="mt-4 flex items-center justify-between">
-                  <Link to="/shop" className="inline-flex items-center gap-1 text-sm text-indigo-300 hover:text-indigo-200">
-                    Browse all products <ChevronRight className="h-4 w-4" />
-                  </Link>
-                  <div className="inline-flex items-center gap-1 text-xs text-white/50">
-                    <Star className="h-3.5 w-3.5" /> Community picks
-                  </div>
-                </div>
-              </Section>
-            </div>
-          </div>
+              </div>
+            </Panel>
 
-          {/* Quick nav tiles (bottom) */}
-          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <NavTile to="/events" icon={<CalendarCheck className="h-5 w-5" />} label="Upcoming" />
-            <NavTile to="/events/completed" icon={<List className="h-5 w-5" />} label="Completed" />
-            <NavTile to="/stores" icon={<MapPin className="h-5 w-5" />} label="Store Finder" />
-            {/* ✅ removed leaderboard nav tile */}
-          </div>
+            <ChatWidget username={username} />
+          </section>
 
-          <div className="mt-10 text-center text-xs text-white/40">
-            Metabeys is owned by Karl6ix, FlamingoPapi, SwiftMFB | Logo(s) done by AustieFrosty | Honorable Mention to Aysus
+          <nav className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="Quick links">
+            <QuickLink to="/leaderboard" icon={<BarChart3 className="h-4 w-4" />} title="Beyblade Meta" copy="Full rankings and usage data" />
+            <QuickLink to="/events/completed" icon={<List className="h-4 w-4" />} title="Completed Events" copy="Browse tournament history" />
+            <QuickLink to="/stores" icon={<MapPin className="h-4 w-4" />} title="Store Finder" copy="Find events and stores" />
+          </nav>
+
+          <div className="mt-10 border-t border-white/[0.07] pt-6 text-center text-xs leading-5 text-white/25">
+            MetaBeys is owned by Karl6ix, FlamingoPapi, SwiftMFB · Logo(s) by AustieFrosty · Honorable mention to Aysus
           </div>
-        </motion.div>
-      </div>
+        </div>
+      </main>
     </>
   )
 }
 
-/* --------------------------------
-   Reusable pieces
----------------------------------*/
-function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section className="isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 md:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-      <div className="mb-3 flex items-center gap-2">
-        {icon}
-        <h2 className="text-sm font-semibold tracking-wide text-white/80">{title}</h2>
-      </div>
-      {children}
-    </section>
-  )
+function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={cn("rounded-2xl border border-white/[0.08] bg-[#111419] p-5 sm:p-6", className)}>{children}</div>
 }
 
-function KPI({ label, value, icon, hint }: { label: string; value: number | string; icon: React.ReactNode; hint?: string }) {
+function SectionHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
-    <div className="isolate overflow-hidden relative rounded-3xl border border-white/10 ring-1 ring-white/10 bg-gradient-to-b from-white/10 to-white/[0.03] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-      <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/[0.03]" />
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-wide text-white/60">{label}</div>
-          <div className="mt-1 text-2xl font-semibold">{String(value)}</div>
-          {hint ? <div className="mt-1 text-[11px] text-white/45">{hint}</div> : null}
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-white/80">{icon}</div>
-      </div>
+    <div className="flex items-center gap-2 text-sm font-semibold text-white/80">
+      <span className="text-white/40">{icon}</span>
+      <span>{title}</span>
     </div>
   )
 }
 
-function PopularityList({
-  title,
-  items,
-  className = "",
-}: { title: string; items: PopularityRow[]; className?: string }) {
+function Metric({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className={cn("rounded-2xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-3", className)}>
-      <div className="mb-2 text-xs uppercase tracking-wide text-white/60">{title}</div>
-      {items.length ? (
-        <ul className="space-y-1.5">
-          {items.map((it, i) => (
-            <li key={it.name + i} className="flex items-center justify-between gap-2 rounded-xl bg-white/5 px-2.5 py-2">
-              <div className="min-w-0 flex items-center gap-2">
-                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">{i + 1}</span>
-                <span className="text-sm leading-tight line-clamp-2 whitespace-normal" title={it.name}>
-                  {it.name}
-                </span>
-              </div>
-              <div className="text-xs tabular-nums text-white/70">{it.pct}%</div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="text-sm text-white/60">No data in range.</div>
-      )}
+    <div className="border-b border-r border-white/[0.07] px-4 py-5 last:border-r-0 lg:border-b-0 sm:px-5">
+      <div className="text-xs font-medium text-white/35">{label}</div>
+      <div className="mt-1.5 truncate text-xl font-semibold tracking-[-0.025em] sm:text-2xl" title={String(value)}>{String(value)}</div>
     </div>
   )
 }
 
-function TopCutRow({ players }: { players?: Player[] }) {
-  if (!players?.length) return <div className="mt-2 text-xs text-white/50">Top cut not posted.</div>
+function Countdown({ d, h, m }: { d: number; h: number; m: number }) {
   return (
-    <div className="mt-2 flex items-center gap-2">
-      {players.map((p, i) => (
-        <div key={p.name + i} className="inline-flex items-center gap-2 rounded-full bg-white/5 px-2.5 py-1">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/10 text-[11px]">
-            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "•"}
-          </span>
-          <span className="text-xs whitespace-nowrap">{p.name}</span>
+    <div className="flex shrink-0 items-center gap-2" aria-label={`${d} days ${h} hours ${m} minutes until event`}>
+      <CountdownItem value={d} label="days" />
+      <CountdownItem value={h} label="hrs" />
+      <CountdownItem value={m} label="min" />
+    </div>
+  )
+}
+
+function CountdownItem({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="min-w-16 rounded-xl border border-white/[0.08] bg-[#0d1014] px-3 py-2.5 text-center">
+      <div className="text-lg font-semibold tabular-nums">{value.toString().padStart(2, "0")}</div>
+      <div className="mt-0.5 text-[10px] uppercase tracking-[0.1em] text-white/30">{label}</div>
+    </div>
+  )
+}
+
+function RecentEvent({ event, attendees, fmt }: { event: EventItem; attendees?: number; fmt: Intl.DateTimeFormat }) {
+  return (
+    <Link to={`/events/${event.id}`} className="group flex items-start justify-between gap-4 px-5 py-4 transition hover:bg-white/[0.025]">
+      <div className="min-w-0">
+        <div className="truncate text-sm font-medium text-white/80 transition group-hover:text-white">{event.title}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/35">
+          <span>{fmt.format(new Date(event.endTime))}</span>
+          <span>·</span>
+          <span>{event.store}</span>
+          {typeof attendees === "number" && <><span>·</span><span>{attendees} players</span></>}
         </div>
+        {event.topCut?.[0]?.name && <div className="mt-2 text-xs text-white/45">Winner: <span className="text-white/65">{event.topCut[0].name}</span></div>}
+      </div>
+      <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-white/20 transition group-hover:text-white/60" />
+    </Link>
+  )
+}
+
+function Segmented({ value, onChange }: { value: TimeRange; onChange: (value: TimeRange) => void }) {
+  const options: { label: string; value: TimeRange }[] = [
+    { label: "All", value: "all" },
+    { label: "30d", value: "30d" },
+    { label: "90d", value: "90d" },
+    { label: "This year", value: "year" },
+  ]
+
+  return (
+    <div className="inline-flex w-fit rounded-lg border border-white/[0.08] bg-[#0d1014] p-1 text-xs">
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          onClick={() => onChange(option.value)}
+          className={cn(
+            "rounded-md px-2.5 py-1.5 transition",
+            option.value === value ? "bg-white text-black" : "text-white/45 hover:text-white"
+          )}
+        >
+          {option.label}
+        </button>
       ))}
     </div>
   )
 }
 
-function CountdownPill({ d, h, m, s }: { d: number; h: number; m: number; s: number }) {
-  const Item = ({ v, u }: { v: number; u: string }) => (
-    <div className="rounded-xl border border-white/10 bg-white/5 px-2 py-1 text-center">
-      <div className="text-sm font-semibold leading-none tabular-nums">{v.toString().padStart(2, "0")}</div>
-      <div className="mt-0.5 text-[10px] text-white/60">{u}</div>
-    </div>
-  )
+function PopularityList({ title, items }: { title: string; items: PopularityRow[] }) {
   return (
-    <div className="flex items-center gap-2">
-      <Item v={d} u="D" />
-      <Item v={h} u="H" />
-      <Item v={m} u="M" />
-      <Item v={s} u="S" />
-    </div>
-  )
-}
-
-function Segmented<T extends string>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T
-  onChange: (v: T) => void
-  options: { label: string; value: T }[]
-}) {
-  return (
-    <div className="inline-flex rounded-xl border border-white/10 bg-white/5 p-1 text-xs overflow-auto">
-      {options.map(o => {
-        const active = o.value === value
-        return (
-          <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            className={cn(
-              "px-2.5 py-1 rounded-lg transition whitespace-nowrap",
-              active ? "bg-indigo-600/90 text-white" : "text-white/70 hover:bg-white/10"
-            )}
-          >
-            {o.label}
-          </button>
-        )
-      })}
+    <div className="p-5 sm:p-6">
+      <div className="text-xs font-medium uppercase tracking-[0.11em] text-white/30">{title}</div>
+      {items.length ? (
+        <ol className="mt-4 space-y-3">
+          {items.map((item, index) => (
+            <li key={item.name} className="flex items-center gap-3">
+              <span className="w-4 shrink-0 text-xs tabular-nums text-white/25">{index + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="truncate text-white/75" title={item.name}>{item.name}</span>
+                  <span className="shrink-0 tabular-nums text-white/40">{item.pct}%</span>
+                </div>
+                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="h-full rounded-full bg-white/45" style={{ width: `${Math.min(100, item.pct)}%` }} />
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <div className="mt-4 text-sm text-white/35">No data in range.</div>
+      )}
     </div>
   )
 }
@@ -832,22 +624,19 @@ function ComboBox({
 }: {
   label: string
   value: string
-  onChange: (v: string) => void
+  onChange: (value: string) => void
   options: string[]
-  placeholder?: string
+  placeholder: string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState(value)
 
   useEffect(() => setQuery(value), [value])
 
-  const norm = (s: string) => s.toLowerCase().trim()
   const filtered = useMemo(() => {
-    const q = norm(query)
-    if (!q) return options.slice(0, 12)
-    const starts = options.filter(o => norm(o).startsWith(q))
-    const includes = options.filter(o => !norm(o).startsWith(q) && norm(o).includes(q))
-    return [...starts, ...includes].slice(0, 12)
+    const normalized = query.toLowerCase().trim()
+    if (!normalized) return options.slice(0, 12)
+    return options.filter(option => option.toLowerCase().includes(normalized)).slice(0, 12)
   }, [options, query])
 
   const commit = (next: string) => {
@@ -857,85 +646,57 @@ function ComboBox({
   }
 
   return (
-    <label className="block relative">
-      <div className="mb-1 flex items-center justify-between text-xs text-white/60">
+    <label className="relative block">
+      <div className="mb-1.5 flex items-center justify-between text-xs text-white/35">
         <span>{label}</span>
-        {value && (
-          <button
-            type="button"
-            onMouseDown={() => commit("")}
-            onTouchStart={() => commit("")}
-            className="text-[11px] rounded-md px-1.5 py-0.5 border border-white/10 bg-white/5 hover:bg-white/10"
-          >
-            Clear
-          </button>
-        )}
+        {value && <button type="button" onMouseDown={() => commit("")} className="text-white/35 hover:text-white">Clear</button>}
       </div>
-
       <input
         value={query}
-        onChange={e => {
-          setQuery(e.target.value)
-          setOpen(true)
-        }}
+        onChange={event => { setQuery(event.target.value); setOpen(true); if (!event.target.value) onChange("") }}
         onFocus={() => setOpen(true)}
-        placeholder={placeholder || `Any ${label.toLowerCase()}`}
-        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none transition focus:border-indigo-500/50"
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-lg border border-white/[0.09] bg-[#0d1014] px-3 text-sm text-white/80 outline-none placeholder:text-white/25 focus:border-white/20"
       />
-
       {open && (
-        <div
-          className="absolute z-10 mt-1 w-full max-h-56 overflow-auto rounded-xl border border-white/10 bg-[#0b1220]/95 backdrop-blur-sm p-1 shadow-lg"
-          onMouseDown={e => e.preventDefault()}
-        >
-          {filtered.length ? (
-            filtered.map(o => (
-              <button
-                key={o}
-                type="button"
-                onMouseDown={() => commit(o)}
-                onTouchStart={() => commit(o)}
-                className={cn("w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-white/10", o === value && "bg-white/10")}
-              >
-                {o}
-              </button>
-            ))
-          ) : (
-            <div className="px-3 py-2 text-xs text-white/60">No matches.</div>
-          )}
-
-          {!query && (
+        <div className="absolute z-30 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-white/[0.1] bg-[#15181d] p-1 shadow-2xl">
+          <button type="button" onMouseDown={() => commit("")} className="w-full rounded-md px-3 py-2 text-left text-xs text-white/45 hover:bg-white/[0.05]">
+            {placeholder}
+          </button>
+          {filtered.map(option => (
             <button
+              key={option}
               type="button"
-              onMouseDown={() => commit("")}
-              onTouchStart={() => commit("")}
-              className="mt-1 w-full text-left px-3 py-2 rounded-lg text-xs text-white/70 hover:bg-white/10"
+              onMouseDown={() => commit(option)}
+              className="w-full rounded-md px-3 py-2 text-left text-sm text-white/75 hover:bg-white/[0.05] hover:text-white"
             >
-              Any {label.toLowerCase()}
+              {option}
             </button>
-          )}
+          ))}
         </div>
       )}
     </label>
   )
 }
 
-function NavTile({ to, icon, label }: { to: string; icon: React.ReactNode; label: React.ReactNode }) {
+function QuickLink({ to, icon, title, copy }: { to: string; icon: React.ReactNode; title: string; copy: string }) {
   return (
-    <Link to={to} className="group isolate overflow-hidden rounded-3xl border border-white/10 ring-1 ring-white/10 bg-white/5 p-4 transition hover:bg-white/10">
-      <div className="flex items-center gap-3">
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-2 text-white/80">{icon}</div>
-        <div className="font-medium">{label}</div>
+    <Link to={to} className="group flex items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#111419] p-4 transition hover:border-white/[0.15]">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="text-white/35">{icon}</span>
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-white/80">{title}</div>
+          <div className="mt-0.5 truncate text-xs text-white/35">{copy}</div>
+        </div>
       </div>
-      <div className="mt-2 flex items-center gap-1 text-xs text-white/60 group-hover:text-white/75">
-        Open <ChevronRight className="h-3.5 w-3.5" />
-      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-white/20 transition group-hover:text-white/60" />
     </Link>
   )
 }
 
-function Skeleton({ height = "h-10" }: { height?: string }) {
-  return <div className={cn("w-full animate-pulse rounded-2xl bg-white/5", height)} />
+function Skeleton({ className = "" }: { className?: string }) {
+  return <div className={cn("animate-pulse rounded-xl bg-white/[0.04]", className)} />
 }
 
 function ChatWidget({ username }: { username: string }) {
@@ -943,254 +704,92 @@ function ChatWidget({ username }: { username: string }) {
   const [messages, setMessages] = useState<{ user: string; text: string; ts: number }[]>([])
   const [online, setOnline] = useState<string[]>([])
   const [text, setText] = useState("")
-  const messagesEndRef = useRef<HTMLDivElement | null>(null)
+  const messagesRef = useRef<HTMLDivElement | null>(null)
 
-  // auto-scroll when messages change
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollTop = messagesEndRef.current.scrollHeight
-    }
+    if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight
   }, [messages])
 
   useEffect(() => {
     if (!username) return
-
     const baseUrl = API.replace(/\/api$/, "")
-    const s = io(baseUrl, { transports: ["websocket"] })
-    setSocket(s)
-
-    s.emit("join", username)
-
-    // ✅ load past messages from server
-    s.on("messageHistory", (msgs: any[]) => {
-      setMessages(msgs) // replace with history
-    })
-
-    // ✅ listen for new messages
-    s.on("message", (msg: any) => {
-      setMessages(m => [...m, msg])
-    })
-
-    s.on("onlineUsers", (users: string[]) => setOnline(users))
-
-    return () => {
-      s.disconnect()
-    }
+    const activeSocket = io(baseUrl, { transports: ["websocket"] })
+    setSocket(activeSocket)
+    activeSocket.emit("join", username)
+    activeSocket.on("messageHistory", (history: any[]) => setMessages(history))
+    activeSocket.on("message", (message: any) => setMessages(current => [...current, message]))
+    activeSocket.on("onlineUsers", (users: string[]) => setOnline(users))
+    return () => activeSocket.disconnect()
   }, [username])
 
-  // swear filter
   const bannedWords = [
-    "fuck",
-    "fucking",
-    "fucker",
-    "fucked",
-    "motherfucker",
-    "mofucka",
-    "fuk",
-    "fukk",
-    "fux",
-    "f*ck",
-    "fuq",
-    "fuhk",
-    "phuck",
-    "phuk",
-    "shit",
-    "shitty",
-    "shite",
-    "shyt",
-    "sh1t",
-    "s**t",
-    "$hit",
-    "sh!t",
-    "ass",
-    "asses",
-    "asshole",
-    "arse",
-    "arsehole",
-    "azz",
-    "jackass",
-    "dumbass",
-    "dumbasses",
-    "bitch",
-    "bitches",
-    "bitchy",
-    "biatch",
-    "b!tch",
-    "b1tch",
-    "bi7ch",
-    "b!+ch",
-    "slut",
-    "sluts",
-    "slutty",
-    "slutz",
-    "bastard",
-    "basterd",
-    "cunt",
-    "cunts",
-    "c*nt",
-    "cnt",
-    "dick",
-    "dicks",
-    "dickhead",
-    "d1ck",
-    "d!ck",
-    "d!k",
-    "cock",
-    "cocks",
-    "c0ck",
-    "c*ck",
-    "cawk",
-    "coq",
-    "pussy",
-    "pussies",
-    "pusy",
-    "p*ssy",
-    "twat",
-    "twats",
-    "prick",
-    "pr1ck",
-    "wank",
-    "wanker",
-    "wankers",
-    "bollocks",
-    "bollox",
-    "crap",
-    "crappy",
-    "dammit",
-    "goddamn",
-    "hell",
-    "bloody",
-    "jerk",
-    "moron",
-    "idiot",
-    "retard",
-    "r*tard",
-    "sex",
-    "sexual",
-    "sexy",
-    "whore",
-    "whores",
-    "wh0re",
-    "hore",
-    "hoe",
-    "hoes",
-    "hoez",
-    "skank",
-    "slag",
-    "cum",
-    "cumming",
-    "cums",
-    "jizz",
-    "spooge",
-    "porn",
-    "porno",
-    "pornography",
-    "tits",
-    "titties",
-    "boob",
-    "boobs",
-    "boobies",
-    "nipple",
-    "nipples",
-    "fag",
-    "fags",
-    "faggy",
-    "dyke",
-    "gay",
-    "piss",
-    "pisses",
-    "pee",
-    "peeing",
-    "poop",
-    "poo",
-    "turd",
-    "turds",
-    "anus",
-    "rectum",
-    "fart",
-    "farting",
-    "nigger",
-    "nigga",
-    "n1gga",
-    "n1gger",
-    "nigg@",
-    "chink",
-    "gook",
-    "spic",
-    "wetback",
-    "kike",
-    "kyke",
-    "paki",
-    "cracker",
-    "honky",
-    "f.u.c.k",
-    "f u c k",
-    "f* u *c *k",
+    "fuck", "fucking", "fucker", "fucked", "motherfucker", "shit", "shitty", "asshole", "bitch", "bitches",
+    "slut", "cunt", "dick", "cock", "pussy", "twat", "prick", "wanker", "retard", "r*tard", "whore",
+    "nigger", "nigga", "n1gga", "n1gger", "chink", "gook", "spic", "wetback", "kike", "paki",
   ]
 
   const escapeRegex = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-
-  const filterBadWords = (txt: string) => {
-    let out = txt
-    for (const w of bannedWords) {
-      const regex = new RegExp(`\\b${escapeRegex(w)}\\b`, "gi")
-      out = out.replace(regex, "****")
-    }
-    return out
+  const filterBadWords = (input: string) => {
+    let output = input
+    for (const word of bannedWords) output = output.replace(new RegExp(`\\b${escapeRegex(word)}\\b`, "gi"), "****")
+    return output
   }
 
   const send = () => {
-    if (!text.trim() || !username) return
-    const msg = { user: username, text: filterBadWords(text), ts: Date.now() }
-    socket.emit("message", msg)
+    if (!text.trim() || !username || !socket) return
+    socket.emit("message", { user: username, text: filterBadWords(text), ts: Date.now() })
     setText("")
   }
 
   return (
-    <Section title="Live Chat" icon={<Users className="h-5 w-5" />}>
-      <div className="flex">
-        {/* Messages */}
-        <div className="flex-1 h-64 overflow-y-auto pr-3 space-y-2" ref={messagesEndRef}>
-          {messages.map((m, i) => (
-            <div key={i} className="rounded-xl bg-white/5 p-2">
-              <div className="text-xs text-white/60">
-                {m.user} · {new Date(m.ts).toLocaleTimeString()}
-              </div>
-              <div>{m.text}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Online Users */}
-        <div className="w-32 border-l border-white/10 pl-3">
-          <div className="text-xs text-white/60 mb-1">Online</div>
-          <ul className="space-y-1 text-sm">
-            {online.map((u, i) => (
-              <li key={i} className="flex items-center gap-1">
-                <span className="h-2 w-2 bg-green-400 rounded-full" /> {u}
-              </li>
-            ))}
-          </ul>
+    <Panel className="flex min-h-[520px] flex-col p-0">
+      <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
+        <SectionHeading icon={<MessageSquare className="h-4 w-4" />} title="Community chat" />
+        <div className="flex items-center gap-1.5 text-xs text-white/35">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {online.length} online
         </div>
       </div>
 
-      {/* Input */}
-      {username ? (
-        <div className="mt-3 flex gap-2">
-          <input
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && send()}
-            placeholder="Type a message…"
-            className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
-          />
-          <button onClick={send} className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm">
-            Send
-          </button>
+      <div className="flex min-h-0 flex-1">
+        <div ref={messagesRef} className="h-[360px] flex-1 space-y-3 overflow-y-auto p-5">
+          {messages.length ? messages.map((message, index) => (
+            <div key={`${message.ts}-${index}`}>
+              <div className="text-[11px] text-white/30">{message.user} · {new Date(message.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+              <div className="mt-1 text-sm leading-6 text-white/70">{message.text}</div>
+            </div>
+          )) : (
+            <div className="text-sm text-white/35">No messages yet.</div>
+          )}
         </div>
-      ) : (
-        <div className="mt-3 text-sm text-white/50 italic">Log in to participate in chat.</div>
-      )}
-    </Section>
+
+        <div className="hidden w-32 border-l border-white/[0.07] p-4 sm:block">
+          <div className="text-[11px] font-medium uppercase tracking-[0.1em] text-white/25">Online</div>
+          <div className="mt-3 space-y-2">
+            {online.slice(0, 12).map(userName => (
+              <div key={userName} className="truncate text-xs text-white/45" title={userName}>{userName}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="border-t border-white/[0.08] p-4">
+        {username ? (
+          <div className="flex gap-2">
+            <input
+              value={text}
+              onChange={event => setText(event.target.value)}
+              onKeyDown={event => event.key === "Enter" && send()}
+              placeholder="Write a message"
+              className="h-10 min-w-0 flex-1 rounded-lg border border-white/[0.09] bg-[#0d1014] px-3 text-sm text-white/80 outline-none placeholder:text-white/25 focus:border-white/20"
+            />
+            <button type="button" onClick={send} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black">Send</button>
+          </div>
+        ) : (
+          <Link to="/user-auth" className="inline-flex items-center gap-2 text-sm font-medium text-white/65 hover:text-white">
+            Sign in to join chat <ArrowRight className="h-4 w-4" />
+          </Link>
+        )}
+      </div>
+    </Panel>
   )
 }
