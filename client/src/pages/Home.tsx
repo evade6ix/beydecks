@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react"
 import { useAuth } from "../context/AuthContext"
+import HeroSlider from "../components/HeroSlider"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000"
 
@@ -40,6 +41,13 @@ type EventItem = {
   participantList?: string
 }
 
+type HomeBannerSettings = {
+  enabled: boolean
+  image: string
+  buyNowUrl: string
+  buttonLabel: string
+}
+
 type TimeRange = "all" | "30d" | "90d" | "year"
 type PopularityRow = { name: string; count: number; pct: number }
 
@@ -56,6 +64,7 @@ export default function Home() {
   const [completed, setCompleted] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [showAnnouncement, setShowAnnouncement] = useState(true)
+  const [homeBanner, setHomeBanner] = useState<HomeBannerSettings | null>(null)
   const [timeRange, setTimeRange] = useState<TimeRange>("all")
   const [stats, setStats] = useState({ totalCompleted: 0, monthEvents: 0 })
   const [topBlade, setTopBlade] = useState("—")
@@ -106,6 +115,23 @@ export default function Home() {
     }
 
     load()
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    fetch(`${API}/site-settings/home-banner`)
+      .then(res => (res.ok ? res.json() : null))
+      .then((data: HomeBannerSettings | null) => {
+        if (active && data) setHomeBanner(data)
+      })
+      .catch(() => {
+        // Marketing banner is optional; the rest of the dashboard should still load.
+      })
+
+    return () => {
+      active = false
+    }
   }, [])
 
   const fmt = useMemo(
@@ -241,6 +267,29 @@ export default function Home() {
               </Link>
             </div>
           </header>
+
+          {homeBanner?.enabled && homeBanner.image ? (
+            <section className="mt-5">
+              <HeroSlider
+                banners={[
+                  {
+                    id: "admin-home-banner",
+                    image: homeBanner.image,
+                    title: "MetaBeys featured release",
+                    buttons: homeBanner.buyNowUrl
+                      ? [
+                          {
+                            label: homeBanner.buttonLabel || "Buy Now",
+                            link: homeBanner.buyNowUrl,
+                            external: /^https?:\/\//i.test(homeBanner.buyNowUrl),
+                          },
+                        ]
+                      : [],
+                  },
+                ]}
+              />
+            </section>
+          ) : null}
 
           {showAnnouncement && (
             <div className="relative mt-5 rounded-xl border border-white/[0.08] bg-[#111419] px-12 py-3 text-sm">
