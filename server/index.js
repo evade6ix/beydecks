@@ -86,7 +86,7 @@ app.use(
   app.use("/api", usersLeaderboard)
 
   // ✅ Connect to DB first
-  const { users, products, events, stores, prepDecks, eventSubmissions } = await connectDB()
+  const { users, products, events, stores, prepDecks, eventSubmissions, siteSettings } = await connectDB()
   
   // ✅ Approve a pending submission -> create a real event
 app.post("/api/event-submissions/:id/approve", async (req, res) => {
@@ -180,6 +180,75 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
 
   app.use("/api/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
   app.use("/event-submissions", eventSubmissionsRoutes({ eventSubmissions }))
+
+  // ---------- Home marketing banner ----------
+  const HOME_BANNER_DEFAULT = {
+    enabled: false,
+    image: "",
+    buyNowUrl: "",
+    buttonLabel: "Buy Now",
+  }
+
+  const getHomeBannerSetting = async (_, res) => {
+    try {
+      const doc = await siteSettings.findOne({ key: "home-banner" })
+      res.set("Cache-Control", "no-store")
+      res.json({ ...HOME_BANNER_DEFAULT, ...(doc?.value || {}) })
+    } catch (error) {
+      console.error("GET home banner setting failed:", error)
+      res.status(500).json({ error: "Unable to load home banner" })
+    }
+  }
+
+  const saveHomeBannerSetting = async (req, res) => {
+    try {
+      const image = String(req.body?.image || "").trim()
+      const buyNowUrl = String(req.body?.buyNowUrl || "").trim()
+      const buttonLabel = String(req.body?.buttonLabel || "Buy Now").trim().slice(0, 40) || "Buy Now"
+      const enabled = req.body?.enabled !== false
+
+      const validImage =
+        !image ||
+        image.startsWith("data:image/") ||
+        image.startsWith("/") ||
+        /^https?:\/\//i.test(image)
+
+      const validBuyNowUrl =
+        !buyNowUrl ||
+        buyNowUrl.startsWith("/") ||
+        /^https?:\/\//i.test(buyNowUrl)
+
+      if (!validImage) {
+        return res.status(400).json({ error: "Banner image must be an uploaded image, site path, or http(s) URL" })
+      }
+
+      if (!validBuyNowUrl) {
+        return res.status(400).json({ error: "Buy Now URL must be a site path or http(s) URL" })
+      }
+
+      if (image.length > 8_000_000) {
+        return res.status(413).json({ error: "Banner image is too large" })
+      }
+
+      const value = { enabled, image, buyNowUrl, buttonLabel }
+
+      await siteSettings.updateOne(
+        { key: "home-banner" },
+        { $set: { key: "home-banner", value, updatedAt: new Date() } },
+        { upsert: true }
+      )
+
+      res.json(value)
+    } catch (error) {
+      console.error("PUT home banner setting failed:", error)
+      res.status(500).json({ error: "Unable to save home banner" })
+    }
+  }
+
+  app.get("/api/site-settings/home-banner", getHomeBannerSetting)
+  app.put("/api/site-settings/home-banner", saveHomeBannerSetting)
+  app.get("/site-settings/home-banner", getHomeBannerSetting)
+  app.put("/site-settings/home-banner", saveHomeBannerSetting)
   
 
 
