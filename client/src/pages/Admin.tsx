@@ -117,11 +117,25 @@ interface EventSubmission {
   }
 }
 
+type HomeBannerSettings = {
+  enabled: boolean
+  image: string
+  buyNowUrl: string
+  buttonLabel: string
+}
+
 export default function Admin() {
   const [events, setEvents] = useState<Event[]>([])
   const [stores, setStores] = useState<Store[]>([])
   const [submissions, setSubmissions] = useState<EventSubmission[]>([])
   const [submissionsLoaded, setSubmissionsLoaded] = useState(false)
+  const [homeBanner, setHomeBanner] = useState<HomeBannerSettings>({
+    enabled: false,
+    image: "",
+    buyNowUrl: "",
+    buttonLabel: "Buy Now",
+  })
+  const [homeBannerSaving, setHomeBannerSaving] = useState(false)
 
   const [title, setTitle] = useState("")
   const [buyLink, setBuyLink] = useState("")
@@ -154,6 +168,24 @@ export default function Admin() {
   const [nameSuggestions, setNameSuggestions] = useState<UserHit[][]>([])
   const timersRef = useRef<number[]>([])
 
+  const loadHomeBanner = async () => {
+    try {
+      const res = await fetch(`${API}/site-settings/home-banner`)
+      if (!res.ok) return
+      const data = await res.json()
+      setHomeBanner({
+        enabled: data?.enabled === true,
+        image: typeof data?.image === "string" ? data.image : "",
+        buyNowUrl: typeof data?.buyNowUrl === "string" ? data.buyNowUrl : "",
+        buttonLabel: typeof data?.buttonLabel === "string" && data.buttonLabel.trim()
+          ? data.buttonLabel
+          : "Buy Now",
+      })
+    } catch {
+      // Keep the defaults if the optional marketing setting cannot load.
+    }
+  }
+
   const loadSubmissions = async () => {
     try {
       setSubmissionsLoaded(false)
@@ -184,7 +216,67 @@ export default function Admin() {
     fetch(`${API}/stores`).then((res) => res.json()).then(setStores)
 
     loadSubmissions()
+    loadHomeBanner()
   }, [])
+
+  const handleHomeBannerImage = (file?: File) => {
+    if (!file) return
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file")
+      return
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Banner image must be 5 MB or smaller")
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      if (typeof reader.result !== "string") return
+      setHomeBanner((current) => ({ ...current, image: reader.result as string }))
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const saveHomeBanner = async () => {
+    if (homeBanner.enabled && !homeBanner.image) {
+      toast.error("Choose a banner image before enabling it")
+      return
+    }
+
+    if (homeBanner.enabled && !homeBanner.buyNowUrl.trim()) {
+      toast.error("Add a destination for the Buy Now button")
+      return
+    }
+
+    try {
+      setHomeBannerSaving(true)
+      const res = await fetch(`${API}/site-settings/home-banner`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...homeBanner,
+          buyNowUrl: homeBanner.buyNowUrl.trim(),
+          buttonLabel: homeBanner.buttonLabel.trim() || "Buy Now",
+        }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast.error(data?.error || "Unable to save home banner")
+        return
+      }
+
+      setHomeBanner(data)
+      toast.success("Home banner saved")
+    } catch {
+      toast.error("Unable to save home banner")
+    } finally {
+      setHomeBannerSaving(false)
+    }
+  }
 
   const resetForm = () => {
     setEditingId(null)
@@ -462,6 +554,115 @@ export default function Admin() {
       animate={{ opacity: 1 }}
     >
       <h1 className="text-3xl font-bold">Admin Panel</h1>
+
+      {/* Home Marketing Banner */}
+      <div className="card bg-base-200 p-4 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-bold">Home Marketing Banner</h2>
+            <p className="mt-1 text-sm opacity-70">
+              Shown near the top of the home dashboard. Upload a campaign image and choose where the Buy Now button goes.
+            </p>
+          </div>
+
+          <label className="label cursor-pointer justify-start gap-3 sm:justify-end">
+            <span className="label-text font-semibold">Enabled</span>
+            <input
+              type="checkbox"
+              className="toggle toggle-success"
+              checked={homeBanner.enabled}
+              onChange={(e) =>
+                setHomeBanner((current) => ({ ...current, enabled: e.target.checked }))
+              }
+            />
+          </label>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3">
+            <label className="block text-sm font-semibold">Banner Image</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="file-input file-input-bordered w-full"
+              onChange={(e) => handleHomeBannerImage(e.target.files?.[0])}
+            />
+            <p className="text-xs opacity-60">
+              Recommended: 2400 × 900 (8:3). Maximum file size: 5 MB.
+            </p>
+
+            {homeBanner.image ? (
+              <div className="overflow-hidden rounded-xl border border-base-300 bg-base-100">
+                <div className="aspect-[8/3] w-full">
+                  <img
+                    src={homeBanner.image}
+                    alt="Home banner preview"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex aspect-[8/3] items-center justify-center rounded-xl border border-dashed border-base-300 bg-base-100 text-sm opacity-60">
+                No banner image selected
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold">Button Text</label>
+              <input
+                className="input input-bordered w-full"
+                value={homeBanner.buttonLabel}
+                maxLength={40}
+                placeholder="Buy Now"
+                onChange={(e) =>
+                  setHomeBanner((current) => ({ ...current, buttonLabel: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold">Buy Now Destination</label>
+              <input
+                className="input input-bordered w-full"
+                type="text"
+                value={homeBanner.buyNowUrl}
+                placeholder="https://game3.ca/products/... or /shop"
+                onChange={(e) =>
+                  setHomeBanner((current) => ({ ...current, buyNowUrl: e.target.value }))
+                }
+              />
+              <p className="text-xs opacity-60">
+                Use any full http(s) URL or a MetaBeys path such as /shop.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2 pt-1">
+              <button
+                type="button"
+                className="btn btn-success"
+                disabled={homeBannerSaving}
+                onClick={saveHomeBanner}
+              >
+                {homeBannerSaving ? "Saving..." : "Save Home Banner"}
+              </button>
+
+              {homeBanner.image ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() =>
+                    setHomeBanner((current) => ({ ...current, image: "", enabled: false }))
+                  }
+                >
+                  Clear Image
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Event Form */}
       <div className="card bg-base-200 p-4 space-y-4">
