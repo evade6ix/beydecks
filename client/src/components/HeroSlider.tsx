@@ -61,7 +61,8 @@ export default function HeroSlider({
           <div
             key={b.id}
             className="absolute inset-0 transition-opacity duration-500"
-            style={{ opacity: i === idx ? 1 : 0 }}
+            style={{ opacity: i === idx ? 1 : 0, pointerEvents: i === idx ? "auto" : "none" }}
+            aria-hidden={i !== idx}
           >
             <img
               src={b.image}
@@ -74,10 +75,18 @@ export default function HeroSlider({
             <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/20 to-transparent" />
             <div className="absolute inset-0 bg-[linear-gradient(to_top,rgba(0,0,0,.35),transparent_55%)]" />
 
-            {/* ✅ Centered Buttons ONLY (no title) */}
+            {b.link ? (
+              /^https?:\/\//i.test(b.link) ? (
+                <a href={b.link} aria-label={b.title || "View banner"} tabIndex={i === idx ? 0 : -1} className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[-4px] focus-visible:outline-white" />
+              ) : (
+                <Link to={b.link} aria-label={b.title || "View banner"} tabIndex={i === idx ? 0 : -1} className="absolute inset-0 z-10 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-[-4px] focus-visible:outline-white" />
+              )
+            ) : null}
+
+            {/* Centered buttons remain separate from the banner link. */}
             {b.buttons?.length ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex gap-4 flex-wrap items-center justify-center rounded-2xl border border-white/10 bg-black/30 px-6 py-4 backdrop-blur-sm">
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
+                <div className="pointer-events-auto flex gap-4 flex-wrap items-center justify-center rounded-2xl border border-white/10 bg-black/30 px-6 py-4 backdrop-blur-sm">
                   {b.buttons.map((btn, bi) => {
                     // Disabled button (Coming soon)
                     if (btn.disabled) {
@@ -97,6 +106,7 @@ export default function HeroSlider({
                       return (
                         <a
                           key={bi}
+                          tabIndex={i === idx ? 0 : -1}
                           href={btn.link}
                           target="_blank"
                           rel="noreferrer"
@@ -111,6 +121,7 @@ export default function HeroSlider({
                     return (
                       <Link
                         key={bi}
+                        tabIndex={i === idx ? 0 : -1}
                         to={btn.link || "#"}
                         className="px-6 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm md:text-base transition shadow-lg shadow-indigo-600/30"
                       >
