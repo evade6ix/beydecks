@@ -13,6 +13,7 @@ import Forum from "./pages/Forum"
 import BuildFromMyParts from "./pages/BuildFromMyParts"
 
 // Lazy load each route
+const GoNextHobbies = lazy(() => import("./pages/GoNextHobbies"))
 const Home = lazy(() => import("./pages/Home"))
 const Events = lazy(() => import("./pages/Events"))
 const CompletedEvents = lazy(() => import("./pages/CompletedEvents"))
@@ -82,6 +83,7 @@ export default function App() {
 
           <Route path="/" element={<Landing />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/go-next-hobbies" element={<GoNextHobbies />} />
           <Route path="/events" element={<Events />} />
           <Route path="/events/completed" element={<CompletedEvents />} />
           <Route path="/events/:id" element={<EventDetail />} />
