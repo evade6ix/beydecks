@@ -10,6 +10,7 @@ export type BannerButton = {
 export type HomeBanner = {
   id: string
   image: string
+  link?: string
   title?: string
   buttons?: BannerButton[]
 }
