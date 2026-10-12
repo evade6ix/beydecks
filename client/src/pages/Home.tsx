@@ -44,6 +44,7 @@ type EventItem = {
 type HomeBannerSettings = {
   enabled: boolean
   image: string
+  bannerUrl?: string
   buyNowUrl: string
   buttonLabel: string
 }
@@ -275,6 +276,7 @@ export default function Home() {
                   {
                     id: "admin-home-banner",
                     image: homeBanner.image,
+                    link: homeBanner.bannerUrl?.trim(),
                     title: "MetaBeys featured release",
                     buttons: homeBanner.buyNowUrl.trim() && homeBanner.buttonLabel.trim()
                       ? [
