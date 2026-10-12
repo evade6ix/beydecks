@@ -120,6 +120,7 @@ interface EventSubmission {
 type HomeBannerSettings = {
   enabled: boolean
   image: string
+  bannerUrl: string
   buyNowUrl: string
   buttonLabel: string
 }
@@ -132,6 +133,7 @@ export default function Admin() {
   const [homeBanner, setHomeBanner] = useState<HomeBannerSettings>({
     enabled: false,
     image: "",
+    bannerUrl: "",
     buyNowUrl: "",
     buttonLabel: "Buy Now",
   })
@@ -176,6 +178,7 @@ export default function Admin() {
       setHomeBanner({
         enabled: data?.enabled === true,
         image: typeof data?.image === "string" ? data.image : "",
+        bannerUrl: typeof data?.bannerUrl === "string" ? data.bannerUrl : "",
         buyNowUrl: typeof data?.buyNowUrl === "string" ? data.buyNowUrl : "",
         buttonLabel: typeof data?.buttonLabel === "string"
           ? data.buttonLabel
@@ -253,6 +256,7 @@ export default function Admin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...homeBanner,
+          bannerUrl: homeBanner.bannerUrl.trim(),
           buyNowUrl: homeBanner.buyNowUrl.trim(),
           buttonLabel: homeBanner.buttonLabel.trim(),
         }),
@@ -604,6 +608,16 @@ export default function Admin() {
           </div>
 
           <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="block text-sm font-semibold">Banner Link (optional)</label>
+              <input
+                className="input input-bordered w-full"
+                value={homeBanner.bannerUrl}
+                placeholder="/go-next-hobbies"
+                onChange={(e) => setHomeBanner((current) => ({ ...current, bannerUrl: e.target.value }))}
+              />
+              <p className="text-xs opacity-60">Clicking the banner opens this link. Use /go-next-hobbies for the announcement, or leave blank for an image only.</p>
+            </div>
             <div className="space-y-2">
               <label className="block text-sm font-semibold">Button Text (optional)</label>
               <input
