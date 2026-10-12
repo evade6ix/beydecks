@@ -204,7 +204,7 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
     try {
       const image = String(req.body?.image || "").trim()
       const buyNowUrl = String(req.body?.buyNowUrl || "").trim()
-      const buttonLabel = String(req.body?.buttonLabel || "Buy Now").trim().slice(0, 40) || "Buy Now"
+      const buttonLabel = String(req.body?.buttonLabel ?? "Buy Now").trim().slice(0, 40)
       const enabled = req.body?.enabled !== false
 
       const validImage =
