@@ -185,6 +185,7 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
   const HOME_BANNER_DEFAULT = {
     enabled: false,
     image: "",
+    bannerUrl: "",
     buyNowUrl: "",
     buttonLabel: "Buy Now",
   }
@@ -203,6 +204,7 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
   const saveHomeBannerSetting = async (req, res) => {
     try {
       const image = String(req.body?.image || "").trim()
+      const bannerUrl = String(req.body?.bannerUrl || "").trim()
       const buyNowUrl = String(req.body?.buyNowUrl || "").trim()
       const buttonLabel = String(req.body?.buttonLabel ?? "Buy Now").trim().slice(0, 40)
       const enabled = req.body?.enabled !== false
@@ -212,6 +214,10 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
         image.startsWith("data:image/") ||
         image.startsWith("/") ||
         /^https?:\/\//i.test(image)
+
+      if (bannerUrl && !/^https?:\/\//i.test(bannerUrl) && !(bannerUrl.startsWith("/") && !bannerUrl.startsWith("//"))) {
+        return res.status(400).json({ error: "Banner link must be a site path or http(s) URL" })
+      }
 
       const validBuyNowUrl =
         !buyNowUrl ||
@@ -230,7 +236,7 @@ app.post("/event-submissions/:id/approve", async (req, res) => {
         return res.status(413).json({ error: "Banner image is too large" })
       }
 
-      const value = { enabled, image, buyNowUrl, buttonLabel }
+      const value = { enabled, image, bannerUrl, buyNowUrl, buttonLabel }
 
       await siteSettings.updateOne(
         { key: "home-banner" },
