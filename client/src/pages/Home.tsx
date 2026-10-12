@@ -276,10 +276,10 @@ export default function Home() {
                     id: "admin-home-banner",
                     image: homeBanner.image,
                     title: "MetaBeys featured release",
-                    buttons: homeBanner.buyNowUrl
+                    buttons: homeBanner.buyNowUrl.trim() && homeBanner.buttonLabel.trim()
                       ? [
                           {
-                            label: homeBanner.buttonLabel || "Buy Now",
+                            label: homeBanner.buttonLabel.trim(),
                             link: homeBanner.buyNowUrl,
                             external: /^https?:\/\//i.test(homeBanner.buyNowUrl),
                           },
