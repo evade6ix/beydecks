@@ -177,7 +177,7 @@ export default function Admin() {
         enabled: data?.enabled === true,
         image: typeof data?.image === "string" ? data.image : "",
         buyNowUrl: typeof data?.buyNowUrl === "string" ? data.buyNowUrl : "",
-        buttonLabel: typeof data?.buttonLabel === "string" && data.buttonLabel.trim()
+        buttonLabel: typeof data?.buttonLabel === "string"
           ? data.buttonLabel
           : "Buy Now",
       })
@@ -246,11 +246,6 @@ export default function Admin() {
       return
     }
 
-    if (homeBanner.enabled && !homeBanner.buyNowUrl.trim()) {
-      toast.error("Add a destination for the Buy Now button")
-      return
-    }
-
     try {
       setHomeBannerSaving(true)
       const res = await fetch(`${API}/site-settings/home-banner`, {
@@ -259,7 +254,7 @@ export default function Admin() {
         body: JSON.stringify({
           ...homeBanner,
           buyNowUrl: homeBanner.buyNowUrl.trim(),
-          buttonLabel: homeBanner.buttonLabel.trim() || "Buy Now",
+          buttonLabel: homeBanner.buttonLabel.trim(),
         }),
       })
 
@@ -610,7 +605,7 @@ export default function Admin() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="block text-sm font-semibold">Button Text</label>
+              <label className="block text-sm font-semibold">Button Text (optional)</label>
               <input
                 className="input input-bordered w-full"
                 value={homeBanner.buttonLabel}
@@ -623,7 +618,7 @@ export default function Admin() {
             </div>
 
             <div className="space-y-2">
-              <label className="block text-sm font-semibold">Buy Now Destination</label>
+              <label className="block text-sm font-semibold">Buy Now Destination (optional)</label>
               <input
                 className="input input-bordered w-full"
                 type="text"
@@ -634,7 +629,7 @@ export default function Admin() {
                 }
               />
               <p className="text-xs opacity-60">
-                Use any full http(s) URL or a MetaBeys path such as /shop.
+                Use any full http(s) URL or a MetaBeys path such as /shop. Leave the destination or button text blank to show only the banner image.
               </p>
             </div>
 
